@@ -1,0 +1,152 @@
+#################################################################################
+#                                                                               #
+#     DOCUMENTAÇÃO DA ARQUITETURA DE BACKEND (REVISADA - v1.2 + Estrutura)      #
+#                                                                               #
+#        Sistema: Gestão de Projetos e Melhorias                                #
+#        Foco: Alinhado com BD v1.2, UI Admin-only, Estrutura Projeto WEG       #
+#        Data da Documentação: 07 de Maio de 2025                               #
+#                                                                               #
+#################################################################################
+
+SUMÁRIO:
+1.  Visão Geral da Arquitetura e Estrutura de Diretórios
+2.  Camada de API (Interface de Programação de Aplicações) -> app/api/
+3.  Camada de Aplicação (Serviços de Aplicação) -> app/services/
+4.  Camada de Domínio (Lógica de Negócios e Entidades) -> app/models/ ou app/domain/
+5.  Camada de Infraestrutura (Acesso a Dados e Integrações) -> app/db/, app/repositories/, app/integrations/
+6.  Camada Core e Configuração -> app/core/
+7.  Fluxo de Dados para Operações (Exemplos Conceituais)
+
+---
+
+1.  VISÃO GERAL DA ARQUITETURA E ESTRUTURA DE DIRETÓRIOS
+    ----------------------------------------------------
+
+O backend será um **Monolito com Camadas Bem Definidas**, utilizando Python e FastAPI. O frontend associado (Next.js) será uma interface administrativa **exclusivamente para o perfil de Administrador**. O objetivo é gerenciar dados mestre, planejar horas, sincronizar apontamentos do Jira e fornecer dados para relatórios.
+
+A estrutura física de diretórios do projeto, baseada no padrão WEG fornecido e complementada com as camadas necessárias, será:
+
+AUTOMACAOPMOBACKEND/
+├── app/
+│   ├── api/                  # CAMADA DE API (Entrada HTTP)
+│   │   ├── dtos/             #   -> DTOs/Schemas Pydantic para a API (Ver seção Modelos)
+│   │   │   ├── init.py
+│   │   │   └── ... (ex: recurso_schema.py, projeto_schema.py)
+│   │   ├── routes/           #   -> Endpoints/Roteadores FastAPI
+│   │   │   ├── init.py
+│   │   │   ├── health.py
+│   │   │   └── ... (ex: recursos.py, projetos.py, apontamentos.py)
+│   │   ├── init.py
+│   │   └── main.py           #   -> Agregador dos routers da API (opcional)
+│   ├── services/             # CAMADA DE APLICAÇÃO
+│   │   ├── init.py
+│   │   └── ... (ex: recurso_service.py, planejamento_horas_service.py)
+│   ├── models/               # CAMADA DE DOMÍNIO (Estruturas de Dados / Regras)
+│   │   ├── init.py
+│   │   ├── schemas.py        #   -> Schemas Pydantic (pode substituir ou complementar api/dtos)
+│   │   ├── domain_models.py  #   -> (Opcional) Modelos de domínio mais ricos
+│   │   └── ...
+│   ├── db/                   # CAMADA DE INFRAESTRUTURA (Banco de Dados)
+│   │   ├── init.py
+│   │   ├── session.py        #   -> Configuração da sessão SQLAlchemy/DB
+│   │   └── orm_models.py     #   -> Modelos ORM (SQLAlchemy) mapeando tabelas BD v1.2
+│   ├── repositories/         # CAMADA DE INFRAESTRUTURA (Acesso a Dados)
+│   │   ├── init.py
+│   │   ├── base_repository.py
+│   │   └── ... (ex: recurso_repository.py, apontamento_repository.py)
+│   ├── integrations/         # CAMADA DE INFRAESTRUTURA (Serviços Externos)
+│   │   ├── init.py
+│   │   └── jira_client.py    #   -> Cliente para API do Jira
+│   ├── core/                 # CORE / CONFIGURAÇÃO (Transversal)
+│   │   ├── init.py
+│   │   ├── config.py         #   -> Carrega configurações (ex: .env)
+│   │   └── security.py       #   -> (Opcional) Funções de segurança/autenticação
+│   ├── init.py
+│   └── main.py               # Ponto de entrada principal da aplicação FastAPI
+├── k8s/                        # Configurações Kubernetes (Implantação)
+├── recursos/                   # Recursos adicionais (ex: scripts, templates)
+├── .gitignore
+├── .gitlab-ci.yml              # Configuração de CI/CD GitLab
+├── README.md
+└── requirements.txt            # Dependências Python
+
+---
+
+2.  CAMADA DE API (Interface de Programação de Aplicações) - `app/api/`
+    -------------------------------------------------------------------
+
+* **Propósito Principal:** Porta de entrada HTTP RESTful (`/backend/v1/`).
+* **Localização:** `app/api/`
+* **Componentes:**
+    * **`app/api/routes/`:** Contém os módulos Python com os endpoints FastAPI para cada recurso principal (`recursos.py`, `projetos.py`, `apontamentos.py`, `planejamento_horas.py`, etc.). Responsáveis por receber requisições, validar a entrada básica usando DTOs/Schemas, chamar os serviços da Camada de Aplicação e formatar respostas HTTP.
+    * **`app/api/dtos/` (ou `app/models/schemas.py`):** Contém as definições dos Schemas Pydantic usados para validação de dados de entrada e serialização de dados de saída da API.
+    * **`app/api/main.py` (Opcional):** Pode ser usado para agregar os routers definidos em `app/api/routes/`.
+* **Responsabilidades:** Conforme definido na documentação anterior (Endpoints, Roteamento, Validação Sintática, Serialização, Autenticação/Autorização básica, Tratamento de Erro HTTP).
+* **Dependências:** Depende da Camada de Aplicação (Serviços) e dos Schemas/DTOs.
+
+---
+
+3.  CAMADA DE APLICAÇÃO (Serviços de Aplicação) - `app/services/`
+    -------------------------------------------------------------
+
+* **Propósito Principal:** Orquestrar os casos de uso do Administrador e a lógica de sincronização.
+* **Localização:** `app/services/`
+* **Componentes:** Módulos Python definindo classes de serviço (ex: `RecursoService`, `PlanejamentoHorasService`, `ApontamentoHoraService`, `JiraWebhookService`, `UsuarioService`, etc.).
+* **Responsabilidades:** Conforme definido na documentação anterior (Orquestração, Coordenação Domínio/Infra, Transações, Validação de Negócio, Mapeamento DTO<->Entidade, Segurança de Aplicação). Implementa a lógica específica como:
+    * Regra de não permitir edição/deleção de apontamentos 'JIRA'.
+    * Regra de registrar `id_usuario_admin_criador` para apontamentos manuais.
+    * Validação de planejamento vs. capacidade.
+* **Dependências:** Depende da Camada de Domínio (Entidades, Interfaces de Repositório) e da Camada de Infraestrutura (Implementações de Repositório, Clientes de Integração).
+
+---
+
+4.  CAMADA DE DOMÍNIO (Lógica de Negócios e Entidades) - `app/models/` ou `app/domain/`
+    ------------------------------------------------------------------------------------
+
+* **Propósito Principal:** Coração da aplicação com regras de negócio e representação das entidades.
+* **Localização:**
+    * **Estruturas de Dados (Simples):** Podem estar nos Schemas Pydantic em `app/models/schemas.py` (ou `app/api/dtos/` se renomeado/reutilizado).
+    * **Modelos ORM (Reflexo BD):** Estarão em `app/db/orm_models.py` (parte da Infraestrutura, mas definem a estrutura que o domínio manipula).
+    * **Lógica de Domínio Complexa:** Se houver regras muito complexas ou que não se encaixam nos serviços/ORM, podem ir para um diretório dedicado `app/domain/` contendo classes de domínio puras, value objects, etc.
+    * **Interfaces de Repositório:** Podem ser definidas aqui (ex: `app/domain/repositories.py`) ou junto aos serviços que as utilizam.
+* **Responsabilidades:** Conforme definido na documentação anterior (Entidades, Objetos de Valor, Regras de Negócio, Interfaces de Repositório).
+* **Dependências:** Idealmente, o mínimo de dependências externas. Pode depender de bibliotecas Python padrão.
+
+---
+
+5.  CAMADA DE INFRAESTRUTURA (Acesso a Dados e Integrações) - `app/db/`, `app/repositories/`, `app/integrations/`
+    -------------------------------------------------------------------------------------------------------------
+
+* **Propósito Principal:** Lidar com detalhes técnicos externos: banco de dados, APIs de terceiros.
+* **Localização:**
+    * **`app/db/`:**
+        * `session.py`: Configuração da conexão e sessão com o banco de dados PostgreSQL (usando SQLAlchemy + asyncpg, por exemplo).
+        * `orm_models.py`: Definição das classes SQLAlchemy que mapeiam as tabelas do BD v1.2.
+    * **`app/repositories/`:**
+        * Implementações concretas das interfaces de repositório. Contém a lógica de query (SQLAlchemy ou SQL puro) para interagir com o BD via `orm_models.py`. (Ex: `RecursoRepository`, `ApontamentoHoraRepository` com lógica específica para CRUD manual vs sync Jira).
+    * **`app/integrations/`:**
+        * `jira_client.py`: Implementação do cliente HTTP para interagir com a API REST do Jira (usando `httpx`, por exemplo).
+* **Responsabilidades:** Conforme definido na documentação anterior (Implementação de Repositórios, Acesso ao BD, Cliente Jira API, Autenticação Jira, Resiliência, Gerenciamento de Conexão BD).
+* **Dependências:** Depende dos modelos ORM (`app/db/orm_models.py`), das interfaces de repositório (Domínio) e de bibliotecas externas (SQLAlchemy, httpx, drivers de BD).
+
+---
+
+6.  CAMADA CORE E CONFIGURAÇÃO - `app/core/`
+    -----------------------------------------
+
+* **Propósito Principal:** Configurações e código transversal à aplicação.
+* **Localização:** `app/core/`
+* **Componentes:**
+    * `config.py`: Carrega e fornece acesso a configurações da aplicação (ex: URL do BD, credenciais Jira, chaves de API) a partir de variáveis de ambiente ou arquivos `.env`.
+    * `security.py` (Opcional): Funções relacionadas a hashing de senhas, criação/validação de tokens JWT, gerenciamento de permissões, etc.
+* **Dependências:** Pode ser usado por várias outras camadas.
+
+---
+
+7.  FLUXO DE DADOS PARA OPERAÇÕES (Exemplos Conceituais Revisados)
+    ---------------------------------------------------------------
+    (Manter os exemplos da documentação anterior, que já estavam alinhados com BD v1.2 e as regras de negócio revisadas, como: Criação Manual de Apontamento pelo Admin, Sincronização de Worklog do Jira (sem sobrescrita pelo Admin), Planejamento de Horas Mensais pelo Admin).
+
+---
+
+Esta versão atualizada da documentação da arquitetura integra a estrutura de diretórios do projeto WEG, mapeando claramente onde cada camada lógica reside fisicamente, e está alinhada com o banco de dados v1.2 e todas as regras de negócio e requisitos funcionais que definimos para a interface exclusiva do Administrador.

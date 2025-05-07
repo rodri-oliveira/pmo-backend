@@ -1,0 +1,267 @@
+#################################################################################
+#                                                                               #
+#         DOCUMENTAÇÃO DA DECISÃO ARQUITETURAL - BACKEND                        #
+#                                                                               #
+#        Sistema: Gestão de Projetos e Melhorias                                #
+#        Data da Decisão: 07 de Maio de 2025                                    #
+#                                                                               #
+#################################################################################
+
+**TÓPICO:** Definição do Estilo Arquitetural para o Backend do Sistema.
+
+**DECISÃO ARQUITETURAL:**
+
+Após análise dos requisitos funcionais e não-funcionais do sistema, optou-se pela adoção de uma arquitetura de **Monolito com Camadas Bem Definidas** para o backend.
+
+**ESTRUTURA DAS CAMADAS (Conforme Documentação Detalhada):**
+
+1.  **Camada de API:** Responsável pela interface HTTP (RESTful com FastAPI), recebimento/resposta de requisições, validação de entrada inicial, serialização/deserialização (DTOs). Prefixo base: `/backend/v1/`.
+2.  **Camada de Aplicação:** Orquestra os casos de uso (Serviços), coordena as interações entre domínio e infraestrutura, gerencia transações e validações de nível de aplicação. Focada nas operações do Administrador.
+3.  **Camada de Domínio:** Contém a lógica de negócio principal, entidades (ex: `projeto`, `recurso`, `apontamento`), objetos de valor, regras de negócio e interfaces de repositório. Deve ser independente de detalhes de infraestrutura.
+4.  **Camada de Infraestrutura:** Implementa o acesso a dados (Repositórios usando SQLAlchemy + PostgreSQL), integrações com serviços externos (cliente para API do Jira), gerenciamento de configuração, logging, etc.
+5.  **Não usaremos /api e sim /backend
+
+**JUSTIFICATIVA PARA A ESCOLHA (Monolito com Camadas):**
+
+* **Simplicidade e Coesão:** Para o escopo atual do projeto (gerenciamento de cadastros, planejamento de horas, apontamentos, integração Jira, UI administrativa), um monolito é considerado mais simples de desenvolver, testar, implantar e manter em comparação com arquiteturas distribuídas. As funcionalidades apresentam um grau de acoplamento e coesão que se beneficia de estarem no mesmo serviço.
+* **Organização via Camadas:** A divisão estrita em camadas garante a separação de responsabilidades, modularidade, testabilidade e manutenibilidade dentro do monolito, mitigando os riscos de um "monolito desorganizado".
+* **Performance:** Comunicação entre camadas dentro do processo é eficiente.
+* **Alinhamento com Stack:** A stack escolhida (Python/FastAPI) suporta e incentiva naturalmente essa abordagem em camadas, especialmente com recursos como injeção de dependência.
+
+**CONSIDERAÇÃO SOBRE MICROSERVIÇOS:**
+
+* A arquitetura de Microserviços foi considerada, mas avaliou-se que **não é necessária ou vantajosa para o estágio atual e o escopo definido** do projeto.
+* A complexidade adicional introduzida por microserviços (comunicação inter-serviços, transações distribuídas, múltiplos deployments, monitoramento complexo) não se justifica face aos benefícios esperados para esta aplicação específica no momento.
+* A arquitetura monolítica em camadas, por ser bem estruturada, não impede uma futura refatoração para microserviços caso a aplicação cresça exponencialmente ou os requisitos mudem drasticamente, mas começar com um monolito bem desenhado é considerado a abordagem mais pragmática e eficiente.
+
+**CONCLUSÃO:**
+
+A arquitetura definida é um **Monolito com Camadas**, buscando equilibrar organização, manutenibilidade, testabilidade com a simplicidade de desenvolvimento e implantação para o escopo atual do Sistema de Gestão de Projetos e Melhorias.
+
+
+
+
+#################################################################################
+#                                                                               #
+#   REPRESENTAÇÃO TEXTUAL PARA DIAGRAMA DE CLASSES/ENTIDADE-RELACIONAMENTO      #
+#                     DO BANCO DE DADOS (VERSÃO 1.2)                            #
+#                                                                               #
+#   Esta versão combina elementos da v1.1 e do esquema esq_bd.txt,             #
+#   incorporando tabelas auxiliares e refinando a estrutura central.            #
+#                                                                               #
+#   Data da Documentação: 07 de Maio de 2025                                    #
+#                                                                               #
+#################################################################################
+
+Legenda:
+* PK: Chave Primária
+* FK: Chave Estrangeira
+* UQ: Restrição Única (Unique)
+* NN: Não Nulo (Not Null)
+
+---
+
+1. Entidade: secao
+    * id (INT, PK, NN, AUTO_INCREMENT)
+    * nome (VARCHAR(100), NN, UQ)
+    * descricao (TEXT, NULLABLE)
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+    * ativo (BOOLEAN, NN, DEFAULT TRUE)
+
+---
+
+2. Entidade: equipe
+    * id (INT, PK, NN, AUTO_INCREMENT)
+    * secao_id (INT, FK para secao(id), NN, INDEX)
+    * nome (VARCHAR(100), NN)
+    * descricao (TEXT, NULLABLE)
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+    * ativo (BOOLEAN, NN, DEFAULT TRUE)
+    * *Restrição Adicional: UNIQUE(secao_id, nome) se relevante.*
+
+---
+
+3. Entidade: recurso
+    * id (INT, PK, NN, AUTO_INCREMENT)
+    * equipe_principal_id (INT, FK para equipe(id) ON DELETE SET NULL ON UPDATE CASCADE, NULLABLE, INDEX)
+    * nome (VARCHAR(150), NN)
+    * email (VARCHAR(100), NN, UQ, INDEX)
+    * matricula (VARCHAR(50), UQ, NULLABLE, INDEX)
+    * cargo (VARCHAR(100), NULLABLE)
+    * jira_user_id (VARCHAR(100), UQ, NULLABLE, INDEX)
+    * data_admissao (DATE, NULLABLE)
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+    * ativo (BOOLEAN, NN, DEFAULT TRUE)
+
+---
+
+4. Entidade: status_projeto
+    * id (INT, PK, NN, AUTO_INCREMENT)
+    * nome (VARCHAR(50), NN, UQ)
+    * descricao (VARCHAR(255), NULLABLE)
+    * is_final (BOOLEAN, NN, DEFAULT FALSE)
+    * ordem_exibicao (TINYINT UNSIGNED, UQ, NULLABLE)
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+
+---
+
+5. Entidade: projeto
+    * id (INT, PK, NN, AUTO_INCREMENT)
+    * nome (VARCHAR(200), NN)
+    * codigo_empresa (VARCHAR(50), UQ, NULLABLE, INDEX)
+    * descricao (TEXT, NULLABLE)
+    * jira_project_key (VARCHAR(100), UQ, NULLABLE, INDEX)
+    * status_projeto_id (INT, FK para status_projeto(id) ON DELETE RESTRICT ON UPDATE CASCADE, NN, INDEX)
+    * data_inicio_prevista (DATE, NULLABLE)
+    * data_fim_prevista (DATE, NULLABLE)
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+    * ativo (BOOLEAN, NN, DEFAULT TRUE)
+
+---
+
+6. Entidade: alocacao_recurso_projeto
+    * id (BIGINT, PK, NN, AUTO_INCREMENT)
+    * recurso_id (INT, FK para recurso(id) ON DELETE CASCADE ON UPDATE CASCADE, NN, INDEX)
+    * projeto_id (INT, FK para projeto(id) ON DELETE CASCADE ON UPDATE CASCADE, NN, INDEX)
+    * data_inicio_alocacao (DATE, NN) *(Restaurado da v1.1)*
+    * data_fim_alocacao (DATE, NULLABLE) *(Restaurado da v1.1)*
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+    * *Restrição Adicional: UNIQUE(recurso_id, projeto_id, data_inicio_alocacao)*
+    * *Restrição Adicional: CHECK (data_fim_alocacao IS NULL OR data_fim_alocacao >= data_inicio_alocacao)*
+
+---
+
+7. Entidade: horas_disponiveis_rh
+    *(Mantida da v1.1)*
+    * id (INT, PK, NN, AUTO_INCREMENT)
+    * recurso_id (INT, FK para recurso(id) ON DELETE CASCADE ON UPDATE CASCADE, NN, INDEX)
+    * ano (SMALLINT, NN)
+    * mes (TINYINT UNSIGNED, NN, CHECK (mes >= 1 AND mes <= 12))
+    * horas_disponiveis_mes (DECIMAL(5, 2), NN, CHECK (horas_disponiveis_mes >= 0))
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+    * *Restrição Adicional: UNIQUE(recurso_id, ano, mes)*
+
+---
+
+8. Entidade: horas_planejadas_alocacao
+    *(Mantida da v1.1)*
+    * id (BIGINT, PK, NN, AUTO_INCREMENT)
+    * alocacao_id (BIGINT, FK para alocacao_recurso_projeto(id) ON DELETE CASCADE ON UPDATE CASCADE, NN, INDEX)
+    * ano (SMALLINT, NN)
+    * mes (TINYINT UNSIGNED, NN, CHECK (mes >= 1 AND mes <= 12))
+    * horas_planejadas (DECIMAL(5, 2), NN, CHECK (horas_planejadas >= 0))
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+    * *Restrição Adicional: UNIQUE(alocacao_id, ano, mes)*
+
+---
+
+9. Entidade: apontamento
+    *(Campos Críticos Restaurados da v1.1)*
+    * id (BIGINT, PK, NN, AUTO_INCREMENT)
+    * jira_worklog_id (VARCHAR(255), UQ, NULLABLE, INDEX) *(Restaurado - ESSENCIAL)*
+    * recurso_id (INT, FK para recurso(id) ON DELETE RESTRICT ON UPDATE CASCADE, NN, INDEX)
+    * projeto_id (INT, FK para projeto(id) ON DELETE RESTRICT ON UPDATE CASCADE, NN, INDEX)
+    * jira_issue_key (VARCHAR(50), NULLABLE, INDEX)
+    * data_hora_inicio_trabalho (DATETIME, NULLABLE)
+    * data_apontamento (DATE, NN, INDEX)
+    * horas_apontadas (DECIMAL(5, 2), NN, CHECK (horas_apontadas > 0 AND horas_apontadas <= 24))
+    * descricao (TEXT, NULLABLE)
+    * fonte_apontamento (ENUM('JIRA', 'MANUAL'), NN, DEFAULT 'MANUAL') *(Restaurado - ESSENCIAL)*
+    * id_usuario_admin_criador (INT, FK para usuario(id), NULLABLE, INDEX) *(Restaurado e ligado a 'usuario')*
+    * data_sincronizacao_jira (DATETIME, NULLABLE)
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+    * *Regra Implícita: Edição/deleção pelo Admin restrita a fonte_apontamento = 'MANUAL'.*
+
+---
+
+10. Entidade: usuario (NOVA - do esq_bd.txt)
+    * id (INT, PK, NN, AUTO_INCREMENT)
+    * nome (VARCHAR(100), NN)
+    * email (VARCHAR(100), UQ, NN, INDEX)
+    * senha_hash (VARCHAR(255), NN)
+    * role (ENUM('admin', 'gestor', 'recurso'), NN) *(Inicialmente, só 'admin' interage)*
+    * recurso_id (INT, FK para recurso(id) ON DELETE SET NULL ON UPDATE CASCADE, NULLABLE, UQ)
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+    * ultimo_acesso (DATETIME, NULLABLE)
+    * ativo (BOOLEAN, NN, DEFAULT TRUE)
+
+---
+
+11. Entidade: configuracao (NOVA - do esq_bd.txt)
+    * id (INT, PK, NN, AUTO_INCREMENT)
+    * chave (VARCHAR(100), UQ, NN)
+    * valor (TEXT, NULLABLE)
+    * descricao (TEXT, NULLABLE)
+    * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)
+    * data_atualizacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+
+---
+
+12. Entidade: log_atividade (NOVA - do esq_bd.txt, com ajustes)
+    * id (BIGINT, PK, NN, AUTO_INCREMENT)
+    * usuario_id (INT, FK para usuario(id) ON DELETE SET NULL ON UPDATE CASCADE, NULLABLE, INDEX)
+    * acao (VARCHAR(255), NN)
+    * tabela_afetada (VARCHAR(100), NULLABLE)
+    * registro_id (VARCHAR(255), NULLABLE)
+    * detalhes (TEXT, NULLABLE)
+    * ip_origem (VARCHAR(45), NULLABLE)
+    * data_hora (DATETIME(6), NN, DEFAULT CURRENT_TIMESTAMP(6), INDEX)
+
+---
+
+13. Entidade: sincronizacao_jira (NOVA - do esq_bd.txt, com ajustes)
+    * id (INT, PK, NN, AUTO_INCREMENT)
+    * data_inicio (DATETIME, NN)
+    * data_fim (DATETIME, NN)
+    * status (VARCHAR(50), NN)
+    * mensagem (TEXT, NULLABLE)
+    * quantidade_apontamentos_processados (INT, NULLABLE)
+    * usuario_id (INT, FK para usuario(id), NULLABLE)
+
+---
+
+14. Entidade: dim_tempo (Adaptado do esq_bd.txt)
+    * data_id (INT, PK)
+    * data (DATE, UQ, NN)
+    * ano (SMALLINT, NN)
+    * mes (TINYINT UNSIGNED, NN)
+    * dia (TINYINT UNSIGNED, NN)
+    * trimestre (TINYINT UNSIGNED, NN)
+    * dia_semana (TINYINT UNSIGNED, NN)
+    * nome_dia_semana (VARCHAR(20), NN)
+    * nome_mes (VARCHAR(20), NN)
+    * semana_ano (TINYINT UNSIGNED, NN)
+    * is_dia_util (BOOLEAN, NN)
+    * is_feriado (BOOLEAN, NN, DEFAULT FALSE)
+    * nome_feriado (VARCHAR(100), NULLABLE)
+
+---
+
+Principais Relacionamentos e Cardinalidades (v1.2):
+
+* secao (1) --- (N) equipe
+* equipe (1) --- (N) recurso (via equipe_principal_id)
+* status_projeto (1) --- (N) projeto
+* recurso (N) --- (M) projeto (via alocacao_recurso_projeto)
+* alocacao_recurso_projeto (1) --- (N) horas_planejadas_alocacao
+* recurso (1) --- (N) horas_disponiveis_rh
+* recurso (1) --- (N) apontamento
+* projeto (1) --- (N) apontamento
+* dim_tempo (1) --- (N) apontamento (Lógico, via apontamento.data_apontamento)
+* usuario (1) --- (N) log_atividade
+* usuario (1) --- (N) sincronizacao_jira (Opcional)
+* usuario (1) --- (N?) apontamento (via id_usuario_admin_criador para apontamentos manuais)
+* usuario (1) --- (1?) recurso (via usuario.recurso_id)
+
+---
+FIM DA DOCUMENTAÇÃO BD v1.2 (TXT)
