@@ -1,9 +1,20 @@
+import uvicorn
 from fastapi import FastAPI
 from app.core.config import settings
+from app.core.docs import custom_openapi # Se você estiver usando este import
 
+# --- Adicione estas duas linhas --- #
 from app.api.main import api_router
 from app.api.routes import health
+# --------------------------------- #
 
+from app.db.session import engine, Base # Se esta for sua configuração de DB
+
+# Criar tabelas no banco de dados
+# Comentar esta linha após a primeira execução ou usar Alembic para migrações
+# Base.metadata.create_all(bind=engine) # Verifique se esta linha é do seu projeto atual ou do antigo
+
+# Criar aplicação FastAPI
 app = FastAPI(
     title="automacao-pmo-backend",
     version="0.0.1",
@@ -18,3 +29,7 @@ if settings.swagger_servers_list is not None:
 
 app.include_router(api_router, prefix="/backend/v1")
 app.include_router(health.router, prefix="/health")
+
+# Se você estiver usando uvicorn para rodar diretamente deste arquivo (para desenvolvimento):
+# if __name__ == "__main__":
+# uvicorn.run(app, host="0.0.0.0", port=8000)

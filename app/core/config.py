@@ -1,7 +1,10 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 
 class Settings(BaseSettings):
+    # Informações gerais da API
+    PROJECT_NAME: str = "WEG Automação PMO"
+    API_VERSION: str = "1.0.0"
     root_path: Optional[str] = None
     swagger_servers_list: Optional[str] = None
 
