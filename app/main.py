@@ -1,20 +1,44 @@
+import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.main import api_router, jira_webhook_router
 from app.core.config import settings
+from app.db.session import engine, Base
 
-from app.api.main import api_router
-from app.api.routes import health
+# Criar tabelas no banco de dados
+# Comentar esta linha após a primeira execução ou usar Alembic para migrações
+Base.metadata.create_all(bind=engine)
 
+# Criar aplicação FastAPI
 app = FastAPI(
-    title="automacao-pmo-backend",
-    version="0.0.1",
-    docs_url="/api",
+    title=settings.PROJECT_NAME,
+    version=settings.API_VERSION,
+    description="API para o Sistema de Gestão de Projetos e Melhorias",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    root_path=settings.root_path,
 )
 
-if settings.root_path is not None:
-    app.root_path = settings.root_path
+# Configurar CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-if settings.swagger_servers_list is not None:
-    app.servers = list(map(lambda x: { "url": x }, settings.swagger_servers_list.split(",")))
+# Incluir routers
+app.include_router(api_router)
+app.include_router(jira_webhook_router)
 
-app.include_router(api_router, prefix="/api")
-app.include_router(health.router, prefix="/health")
+
+@app.get("/")
+def root():
+    """Redirecionamento para a documentação."""
+    return {"message": "API WEG Automação PMO - Acesse /docs para a documentação."}
+
+
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
