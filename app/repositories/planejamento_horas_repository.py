@@ -1,11 +1,11 @@
 from typing import List, Optional, Dict, Any
-from sqlalchemy import func, extract, and_, or_
+from sqlalchemy import func, extract, text
 from sqlalchemy.orm import Session, joinedload
 from app.db.orm_models import HorasPlanejadas, AlocacaoRecursoProjeto
 from app.repositories.base_repository import BaseRepository
 
-class PlanejamentoHorasRepository(BaseRepository[HorasPlanejadas, int]):
-    """Repositório para operações com a entidade HorasPlanejadas."""
+class PlanejamentoHorasRepository(BaseRepository[HorasPlanejadas]):
+    """Repositório para planejamento de horas."""
     
     def __init__(self, db: Session):
         super().__init__(db, HorasPlanejadas)
@@ -45,33 +45,36 @@ class PlanejamentoHorasRepository(BaseRepository[HorasPlanejadas, int]):
     
     def list_by_recurso_periodo(self, recurso_id: int, ano: int, mes_inicio: int = 1, mes_fim: int = 12) -> List[Dict[str, Any]]:
         """Lista planejamentos de um recurso em um período."""
-        query = self.db.query(
-            HorasPlanejadas,
-            AlocacaoRecursoProjeto
-        ).join(
-            AlocacaoRecursoProjeto,
-            HorasPlanejadas.alocacao_id == AlocacaoRecursoProjeto.id
-        ).filter(
-            AlocacaoRecursoProjeto.recurso_id == recurso_id,
-            HorasPlanejadas.ano == ano,
-            HorasPlanejadas.mes >= mes_inicio,
-            HorasPlanejadas.mes <= mes_fim
-        ).order_by(
-            HorasPlanejadas.mes
+        # Usar SQL nativo para obter os dados mais facilmente
+        sql = text("""
+            SELECT 
+                hp.id, 
+                hp.alocacao_id, 
+                arp.projeto_id, 
+                arp.recurso_id, 
+                hp.ano, 
+                hp.mes, 
+                hp.horas_planejadas
+            FROM 
+                horas_planejadas_alocacao hp
+            JOIN 
+                alocacao_recurso_projeto arp ON hp.alocacao_id = arp.id
+            WHERE 
+                arp.recurso_id = :recurso_id
+                AND hp.ano = :ano
+                AND hp.mes >= :mes_inicio
+                AND hp.mes <= :mes_fim
+            ORDER BY 
+                hp.mes
+        """)
+        
+        result = self.db.execute(
+            sql, 
+            {"recurso_id": recurso_id, "ano": ano, "mes_inicio": mes_inicio, "mes_fim": mes_fim}
         )
         
-        result = query.all()
-        
-        # Converter para formato mais amigável
-        return [{
-            "id": plano.id,
-            "alocacao_id": plano.alocacao_id,
-            "projeto_id": alocacao.projeto_id,
-            "recurso_id": alocacao.recurso_id,
-            "ano": plano.ano,
-            "mes": plano.mes,
-            "horas_planejadas": plano.horas_planejadas
-        } for plano, alocacao in result]
+        # Converter para uma lista de dicionários
+        return [dict(row._mapping) for row in result.all()]
     
     def get_total_horas_planejadas_por_recurso_mes(self, recurso_id: int, ano: int, mes: int) -> Optional[float]:
         """Obtém o total de horas planejadas para um recurso em um mês específico."""
@@ -86,4 +89,4 @@ class PlanejamentoHorasRepository(BaseRepository[HorasPlanejadas, int]):
             HorasPlanejadas.mes == mes
         ).scalar()
         
-        return result 
+        return float(result) if result is not None else None 

@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
     
+    # Configurações do Jira
+    JIRA_BASE_URL: str = "https://your-domain.atlassian.net"
+    JIRA_USERNAME: str = "your-jira-email@example.com"
+    JIRA_API_TOKEN: str = "your-jira-api-token"
+    
     class Config:
         env_file = ".env"
 

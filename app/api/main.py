@@ -15,7 +15,7 @@ from app.api.routes import (
     configuracoes,
     logs_atividade,
     sincronizacoes_jira,
-    auth,
+    relatorios,
     jira_webhook
 )
 
@@ -37,7 +37,7 @@ api_router.include_router(usuarios.router)
 api_router.include_router(configuracoes.router)
 api_router.include_router(logs_atividade.router)
 api_router.include_router(sincronizacoes_jira.router)
-api_router.include_router(auth.router)
+api_router.include_router(relatorios.router)
 
 # Outros routers serão adicionados aqui conforme o desenvolvimento
 # api_router.include_router(equipes.router)

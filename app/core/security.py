@@ -1,59 +1,68 @@
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
-from jose import jwt
-from passlib.context import CryptContext
+from typing import Dict, Optional, Union
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.repositories.usuario_repository import UsuarioRepository
+from app.models.usuario import UsuarioBase, UsuarioInDB
 
+# Configuração de segurança
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/backend/v1/auth/token")
 
+# Funções de segurança
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifica se a senha em texto corresponde ao hash."""
+    """Verifica se a senha informada corresponde ao hash armazenado."""
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    """Gera o hash de uma senha."""
+    """Gera um hash seguro para a senha informada."""
     return pwd_context.hash(password)
 
-def create_access_token(subject: Any, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
     """
-    Cria um token JWT para autenticação.
+    Cria um token JWT de acesso.
     
     Args:
-        subject: Sujeito do token (geralmente ID do usuário)
-        expires_delta: Tempo de expiração opcional
+        data: Dados a serem codificados no token
+        expires_delta: Tempo de expiração do token
         
     Returns:
-        str: Token JWT codificado
+        Token JWT codificado
     """
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode = data.copy()
+    expires = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expires})
     
-    to_encode = {"exp": expire, "sub": str(subject)}
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    encoded_jwt = jwt.encode(
+        to_encode, 
+        settings.SECRET_KEY, 
+        algorithm=settings.ALGORITHM
+    )
+    
     return encoded_jwt
 
-def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)) -> Dict:
+def get_current_user(
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+) -> UsuarioInDB:
     """
-    Valida o token JWT e retorna o usuário autenticado.
+    Obtém o usuário atual a partir do token JWT.
     
     Args:
+        token: Token JWT de autenticação
         db: Sessão do banco de dados
-        token: Token JWT
         
     Returns:
-        Dict: Dados do usuário autenticado
-    
+        Usuário autenticado
+        
     Raises:
-        HTTPException: Se o token for inválido ou o usuário não for encontrado
+        HTTPException: Se o token for inválido ou expirado
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -62,46 +71,66 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     )
     
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
+        # Decodifica o token
+        payload = jwt.decode(
+            token, 
+            settings.SECRET_KEY, 
+            algorithms=[settings.ALGORITHM]
+        )
+        username: str = payload.get("sub")
+        if username is None:
             raise credentials_exception
-    except jwt.JWTError:
+            
+        # Busca o usuário no banco de dados
+        from app.repositories.usuario_repository import UsuarioRepository
+        usuario_repo = UsuarioRepository(db)
+        usuario = usuario_repo.get_by_username(username)
+        
+        if usuario is None:
+            raise credentials_exception
+            
+        return usuario
+        
+    except JWTError:
         raise credentials_exception
-    
-    repository = UsuarioRepository(db)
-    user = repository.get(int(user_id))
-    
-    if user is None or not user.ativo:
-        raise credentials_exception
-    
-    # Atualizar último acesso
-    repository.update_last_access(int(user_id))
-    
-    return {
-        "id": user.id,
-        "nome": user.nome,
-        "email": user.email,
-        "role": user.role,
-        "ativo": user.ativo
-    }
 
-def get_current_admin_user(current_user: Dict = Depends(get_current_user)) -> Dict:
+def get_current_admin_user(
+    current_user: UsuarioInDB = Depends(get_current_user)
+) -> UsuarioInDB:
     """
-    Verifica se o usuário atual é um administrador.
+    Verifica se o usuário atual tem perfil de administrador.
     
     Args:
         current_user: Usuário autenticado
         
     Returns:
-        Dict: Usuário administrador
-    
+        Usuário administrador
+        
     Raises:
-        HTTPException: Se o usuário não for um administrador
+        HTTPException: Se o usuário não for administrador
     """
-    if current_user["role"] != "admin":
+    if current_user.perfil != "admin":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="Acesso permitido apenas para administradores"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permissão insuficiente. Somente administradores podem acessar este recurso.",
         )
-    return current_user 
+    return current_user
+
+# Função adicional para autenticação com WEG SSO (mock)
+async def authenticate_with_weg_sso(token: str) -> Optional[UsuarioBase]:
+    """
+    Autentica um usuário através do SSO da WEG.
+    
+    Args:
+        token: Token de autenticação SSO
+        
+    Returns:
+        Dados do usuário autenticado ou None se a autenticação falhar
+    """
+    # Aqui seria implementada a lógica de verificação do token SSO com o sistema da WEG
+    # Esta é uma implementação mock para demonstração
+    
+    # Em um cenário real, chamaríamos a API de autenticação da WEG
+    # e receberíamos os dados do usuário
+    
+    return None  # Mock - implementação real seria feita conforme especificações da WEG 

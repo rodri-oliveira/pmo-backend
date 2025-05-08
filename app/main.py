@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router, jira_webhook_router
 from app.core.config import settings
+from app.core.docs import custom_openapi
 from app.db.session import engine, Base
 
 # Criar tabelas no banco de dados
@@ -19,6 +20,9 @@ app = FastAPI(
     redoc_url="/redoc",
     root_path=settings.root_path,
 )
+
+# Configurar documentação OpenAPI personalizada
+app.openapi = lambda: custom_openapi(app)
 
 # Configurar CORS
 app.add_middleware(
