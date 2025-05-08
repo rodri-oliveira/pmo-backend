@@ -7,7 +7,7 @@ from app.api.routes import health
 app = FastAPI(
     title="automacao-pmo-backend",
     version="0.0.1",
-    docs_url="/api",
+    docs_url="/backend/v1/docs",
 )
 
 if settings.root_path is not None:
@@ -16,5 +16,5 @@ if settings.root_path is not None:
 if settings.swagger_servers_list is not None:
     app.servers = list(map(lambda x: { "url": x }, settings.swagger_servers_list.split(",")))
 
-app.include_router(api_router, prefix="/api")
+app.include_router(api_router, prefix="/backend/v1")
 app.include_router(health.router, prefix="/health")
