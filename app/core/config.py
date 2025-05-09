@@ -10,18 +10,14 @@ class Settings(BaseSettings):
     swagger_servers_list: Optional[str] = None
     
     # Configurações do banco de dados PostgreSQL da WEG
-    # Valores separados para facilitar a manipulação
+    DATABASE_URI: str = ""
+    
+    # Valores separados para uso interno
     DB_USER: str = "5e0dceda-d930-5742-a8d9-1f2d1ff22159"
     DB_PASSWORD: str = "b@p5rk8&9BJRVEQ"
     DB_HOST: str = "qas-postgresql-ap.weg.net"
     DB_PORT: str = "40030"
     DB_NAME: str = "automacaopmopostgre"
-    
-    # Compõe a string de conexão usando URL encoding para a senha
-    @property
-    def DATABASE_URI(self) -> str:
-        password = quote_plus(self.DB_PASSWORD)
-        return f"postgresql://{self.DB_USER}:{password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
     
     # Segurança
     SECRET_KEY: str = "supersecretkey"
@@ -41,4 +37,9 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
 
 settings = Settings()
+
+# Se DATABASE_URI não foi definido no .env, construa a string com URL encoding
+if not settings.DATABASE_URI:
+    password = quote_plus(settings.DB_PASSWORD)
+    settings.DATABASE_URI = f"postgresql://{settings.DB_USER}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 
