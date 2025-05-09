@@ -43,3 +43,7 @@ if not settings.DATABASE_URI:
     password = quote_plus(settings.DB_PASSWORD)
     settings.DATABASE_URI = f"postgresql://{settings.DB_USER}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 
+# Defina a URL de conexão diretamente nas configurações do contexto
+def get_url():
+    return settings.DATABASE_URI
+
