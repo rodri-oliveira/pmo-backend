@@ -19,7 +19,7 @@ class BaseSchema(BaseModel):
     """Esquema base para todos os modelos Pydantic."""
     
     class Config:
-        orm_mode = True
+        from_attributes = True
         arbitrary_types_allowed = True
 
 # Schemas para Secao

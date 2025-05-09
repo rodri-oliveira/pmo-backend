@@ -24,7 +24,7 @@ class PlanejamentoHorasResponse(BaseModel):
     horas_planejadas: float
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 router = APIRouter(prefix="/planejamento-horas", tags=["Planejamento de Horas"])
 

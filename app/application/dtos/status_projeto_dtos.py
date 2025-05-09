@@ -23,5 +23,5 @@ class StatusProjetoDTO(StatusProjetoBaseDTO):
     data_atualizacao: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
