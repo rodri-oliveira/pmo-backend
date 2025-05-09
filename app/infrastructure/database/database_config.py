@@ -1,22 +1,26 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
+from fastapi import Depends
 
-DATABASE_URL = settings.DATABASE_URL
+# Use DATABASE_URI que já está configurado corretamente
+DATABASE_URL = settings.DATABASE_URI
 
-engine = create_async_engine(DATABASE_URL, echo=True)
-AsyncSessionLocal = sessionmaker(
-    autocommit=False, autoflush=False, bind=engine, class_=AsyncSession
-)
+# Crie engine e session síncronos
+engine = create_engine(DATABASE_URL, echo=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
-async def get_db() -> AsyncSession:
-    async with AsyncSessionLocal() as session:
-        yield session
+# Função síncrona para fornecer a sessão do DB
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-async def init_db():
-    async with engine.begin() as conn:
-        # await conn.run_sync(Base.metadata.drop_all) # Use with caution
-        await conn.run_sync(Base.metadata.create_all)
+# Inicialização síncrona do banco
+def init_db():
+    Base.metadata.create_all(bind=engine)
 
