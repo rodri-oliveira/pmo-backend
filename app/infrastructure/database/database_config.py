@@ -1,7 +1,10 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, SmallInteger  # Usar SmallInteger para PostgreSQL
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
-from typing import AsyncGenerator
+from typing import Generator
+
+# Remover import do MySQL TINYINT
+# from sqlalchemy.dialects.mysql import TINYINT
 
 DATABASE_URL = settings.DATABASE_URI
 
@@ -11,7 +14,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
-def get_db():
+def get_db() -> Generator:
     db = SessionLocal()
     try:
         yield db
