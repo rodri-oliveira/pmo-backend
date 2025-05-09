@@ -1,51 +1,46 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from starlette import status
-from app.api.dtos.item import Item, ItemFormDto
+from typing import List
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.application.dtos.item_dtos import ItemDTO, ItemCreateDTO, ItemUpdateDTO
+from app.application.services.item_service import ItemService
+from app.infrastructure.repositories.sqlalchemy_item_repository import SQLAlchemyItemRepository
+from app.infrastructure.database.database_config import get_db
 
 router = APIRouter()
 
-items: dict[int, Item] = {}
-index: int = 0
+# Dependency for ItemService using SQLAlchemy repository
+async def get_item_service(db: AsyncSession = Depends(get_db)) -> ItemService:
+    item_repository = SQLAlchemyItemRepository(db_session=db)
+    return ItemService(item_repository=item_repository)
 
-@router.get("/{id}", response_model=Item)
-async def getItem(id: int):
-    item = items.get(id)
-
+@router.get("/{item_id}", response_model=ItemDTO)
+async def get_item(item_id: int, service: ItemService = Depends(get_item_service)):
+    item = await service.get_item_by_id(item_id)
     if item is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND)
-
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     return item
 
-@router.post("/", response_model=Item)
-async def postItem(formDto: ItemFormDto):
-    global index
-    current_index = index
-    item = Item(description=formDto.description, id=current_index)
-    items.update({ index: item} )
+@router.get("/", response_model=List[ItemDTO])
+async def get_all_items(service: ItemService = Depends(get_item_service)):
+    return await service.get_all_items()
 
-    index = current_index  + 1
+@router.post("/", response_model=ItemDTO, status_code=status.HTTP_201_CREATED)
+async def create_item(item_create_dto: ItemCreateDTO, service: ItemService = Depends(get_item_service)):
+    return await service.create_item(item_create_dto)
 
+@router.put("/{item_id}", response_model=ItemDTO)
+async def update_item(item_id: int, item_update_dto: ItemUpdateDTO, service: ItemService = Depends(get_item_service)):
+    item = await service.update_item(item_id, item_update_dto)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     return item
 
-@router.put("/{id}", response_model=Item)
-async def putItem(id: int, formDto: ItemFormDto):
-    item = items.get(id)
-
+@router.delete("/{item_id}", response_model=ItemDTO)
+async def delete_item(item_id: int, service: ItemService = Depends(get_item_service)):
+    item = await service.delete_item(item_id)
     if item is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND)
-
-    new_item = Item(description=formDto.description, id=id)
-    items[id] = new_item
-
-    return new_item
-
-@router.delete("/{id}", response_model=Item)
-async def deleteItem(id: int):
-    item = items.get(id)
-
-    if item is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND)
-
-    del items[id];
-
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     return item
+
