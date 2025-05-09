@@ -8,7 +8,7 @@ from app.core.docs import custom_openapi # Se você estiver usando este import
 from app.api.main import api_router
 from app.api.routes import health
 # --------------------------------- #
-
+from fastapi.responses import RedirectResponse
 from app.db.session import engine, Base # Se esta for sua configuração de DB
 
 # Criar tabelas no banco de dados
