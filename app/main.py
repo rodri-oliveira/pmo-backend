@@ -1,5 +1,6 @@
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from app.core.config import settings
 from app.core.docs import custom_openapi # Se você estiver usando este import
 
@@ -16,9 +17,11 @@ from app.db.session import engine, Base # Se esta for sua configuração de DB
 
 # Criar aplicação FastAPI
 app = FastAPI(
-    title="automacao-pmo-backend",
-    version="0.0.1",
-    docs_url="/backend/v1/docs",
+    title=settings.PROJECT_NAME,
+    version=settings.API_VERSION,
+    description="API para o Sistema de Gestão de Projetos e Melhorias",
+    docs_url="/docs",  # Garante que /docs está disponível
+    redoc_url="/redoc",
 )
 
 if settings.root_path is not None:
