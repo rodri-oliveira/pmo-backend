@@ -1,5 +1,6 @@
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from app.core.config import settings
 from app.core.docs import custom_openapi # Se você estiver usando este import
 
@@ -29,6 +30,11 @@ if settings.swagger_servers_list is not None:
 
 app.include_router(api_router, prefix="/backend/v1")
 app.include_router(health.router, prefix="/health")
+
+@app.get("/")
+def root():
+    """Redireciona para a documentação da API."""
+    return RedirectResponse(url="/docs")
 
 # Se você estiver usando uvicorn para rodar diretamente deste arquivo (para desenvolvimento):
 # if __name__ == "__main__":
