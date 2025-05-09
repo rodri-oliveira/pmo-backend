@@ -33,3 +33,6 @@ app.include_router(health.router, prefix="/health")
 # Se você estiver usando uvicorn para rodar diretamente deste arquivo (para desenvolvimento):
 # if __name__ == "__main__":
 # uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000,reload=True)
