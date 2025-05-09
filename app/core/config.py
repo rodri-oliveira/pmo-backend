@@ -8,8 +8,8 @@ class Settings(BaseSettings):
     root_path: Optional[str] = None
     swagger_servers_list: Optional[str] = None
     
-    # Configurações do banco de dados
-    DATABASE_URI: str = "postgresql://postgres:postgres@localhost:5432/automacaopmo"
+    # Configurações do banco de dados PostgreSQL da WEG
+    DATABASE_URI: str = "postgresql://5e0dceda-d930-5742-a8d9-1f2d1ff22159:b@p5rk8&9BJRVEQ@qas-postgresql-ap.weg.net:40030/automacaopmopostgre"
     
     # Segurança
     SECRET_KEY: str = "supersecretkey"

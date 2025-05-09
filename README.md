@@ -1,3 +1,37 @@
+# WEG Automação PMO Backend
+
+## Configuração do Banco de Dados PostgreSQL
+
+### Credenciais de acesso
+- **Database**: automacaopmopostgre
+- **Username**: 5e0dceda-d930-5742-a8d9-1f2d1ff22159
+- **Password**: b@p5rk8&9BJRVEQ
+- **Host**: qas-postgresql-ap.weg.net
+- **Port**: 40030
+
+### Inicialização do Banco de Dados
+
+1. **Testar a conexão**:
+   ```
+   python -m app.db.test_connection
+   ```
+
+2. **Criar as migrações com Alembic**:
+   ```
+   # Iniciar uma nova migração
+   alembic revision --autogenerate -m "Criação inicial das tabelas"
+   
+   # Aplicar as migrações
+   alembic upgrade head
+   ```
+
+3. **Inicializar dados iniciais**:
+   ```
+   python -m app.db.init_db
+   ```
+
+## Execução da API
+
 This is a [FastAPI](https://fastapi.tiangolo.com/) project bootstrapped with [Developers Portal](https://developers-portal.weg.net/).
 
 ## Getting Started
@@ -26,3 +60,5 @@ The API will be available at [http://localhost:3000/api](http://localhost:3000/a
 To leare more about FastAPI, take a look at the following resources:
 
 - [FastAPI Documentation](https://fastapi.tiangolo.com/learn/) - learn about FastAPI features and API.
+
+A API estará disponível em http://localhost:8000
