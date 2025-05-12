@@ -6,12 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.dtos.status_projeto_dtos import StatusProjetoDTO, StatusProjetoCreateDTO, StatusProjetoUpdateDTO
 from app.application.services.status_projeto_service import StatusProjetoService
 from app.infrastructure.repositories.sqlalchemy_status_projeto_repository import SQLAlchemyStatusProjetoRepository
-from app.infrastructure.database.database_config import get_db
+from app.db.session import get_async_db
 
 router = APIRouter()
 
 # Dependency for StatusProjetoService
-async def get_status_projeto_service(db: AsyncSession = Depends(get_db)) -> StatusProjetoService:
+async def get_status_projeto_service(db: AsyncSession = Depends(get_async_db)) -> StatusProjetoService:
     status_projeto_repository = SQLAlchemyStatusProjetoRepository(db_session=db)
     return StatusProjetoService(status_projeto_repository=status_projeto_repository)
 
@@ -59,4 +59,3 @@ async def delete_status_projeto(status_id: int, service: StatusProjetoService = 
     if status_projeto is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Status de Projeto não encontrado para exclusão")
     return status_projeto
-

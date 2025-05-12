@@ -6,12 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.dtos.secao_dtos import SecaoDTO, SecaoCreateDTO, SecaoUpdateDTO
 from app.application.services.secao_service import SecaoService
 from app.infrastructure.repositories.sqlalchemy_secao_repository import SQLAlchemySecaoRepository
-from app.infrastructure.database.database_config import get_db
+from app.db.session import get_async_db
 
 router = APIRouter()
 
 # Dependency for SecaoService
-async def get_secao_service(db: AsyncSession = Depends(get_db)) -> SecaoService:
+async def get_secao_service(db: AsyncSession = Depends(get_async_db)) -> SecaoService:
     secao_repository = SQLAlchemySecaoRepository(db_session=db)
     return SecaoService(secao_repository=secao_repository)
 
@@ -60,4 +60,3 @@ async def delete_secao(secao_id: int, service: SecaoService = Depends(get_secao_
     if secao is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seção não encontrada para exclusão")
     return secao
-

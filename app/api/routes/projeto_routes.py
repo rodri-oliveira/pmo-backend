@@ -5,17 +5,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.dtos.projeto_dtos import ProjetoDTO, ProjetoCreateDTO, ProjetoUpdateDTO
 from app.application.services.projeto_service import ProjetoService
-from app.application.services.status_projeto_service import StatusProjetoService # For status_projeto_repository dependency
+from app.application.services.status_projeto_service import StatusProjetoService 
 from app.infrastructure.repositories.sqlalchemy_projeto_repository import SQLAlchemyProjetoRepository
-from app.infrastructure.repositories.sqlalchemy_status_projeto_repository import SQLAlchemyStatusProjetoRepository # For status_projeto_repository dependency
-from app.infrastructure.database.database_config import get_db
+from app.infrastructure.repositories.sqlalchemy_status_projeto_repository import SQLAlchemyStatusProjetoRepository 
+from app.db.session import get_async_db
 
 router = APIRouter()
 
 # Dependency for ProjetoService
-async def get_projeto_service(db: AsyncSession = Depends(get_db)) -> ProjetoService:
+async def get_projeto_service(db: AsyncSession = Depends(get_async_db)) -> ProjetoService:
     projeto_repository = SQLAlchemyProjetoRepository(db_session=db)
-    status_projeto_repository = SQLAlchemyStatusProjetoRepository(db_session=db) # ProjetoService needs this
+    status_projeto_repository = SQLAlchemyStatusProjetoRepository(db_session=db) 
     return ProjetoService(projeto_repository=projeto_repository, status_projeto_repository=status_projeto_repository)
 
 @router.post("/", response_model=ProjetoDTO, status_code=status.HTTP_201_CREATED)
@@ -64,4 +64,3 @@ async def delete_projeto(projeto_id: int, service: ProjetoService = Depends(get_
     if projeto is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto não encontrado para exclusão")
     return projeto
-

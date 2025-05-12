@@ -8,12 +8,12 @@ from app.application.services.equipe_service import EquipeService
 from app.application.services.secao_service import SecaoService # For secao_repository dependency
 from app.infrastructure.repositories.sqlalchemy_equipe_repository import SQLAlchemyEquipeRepository
 from app.infrastructure.repositories.sqlalchemy_secao_repository import SQLAlchemySecaoRepository # For secao_repository dependency
-from app.infrastructure.database.database_config import get_db
+from app.db.session import get_async_db
 
 router = APIRouter()
 
 # Dependency for EquipeService
-async def get_equipe_service(db: AsyncSession = Depends(get_db)) -> EquipeService:
+async def get_equipe_service(db: AsyncSession = Depends(get_async_db)) -> EquipeService:
     equipe_repository = SQLAlchemyEquipeRepository(db_session=db)
     secao_repository = SQLAlchemySecaoRepository(db_session=db) # SecaoService needs this
     return EquipeService(equipe_repository=equipe_repository, secao_repository=secao_repository)
@@ -67,4 +67,3 @@ async def delete_equipe(equipe_id: int, service: EquipeService = Depends(get_equ
     if equipe is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Equipe não encontrada para exclusão")
     return equipe
-
