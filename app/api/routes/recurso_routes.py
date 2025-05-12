@@ -8,12 +8,12 @@ from app.application.services.recurso_service import RecursoService
 from app.application.services.equipe_service import EquipeService # For equipe_repository dependency
 from app.infrastructure.repositories.sqlalchemy_recurso_repository import SQLAlchemyRecursoRepository
 from app.infrastructure.repositories.sqlalchemy_equipe_repository import SQLAlchemyEquipeRepository # For equipe_repository dependency
-from app.infrastructure.database.database_config import get_db
+from app.db.session import get_async_db
 
 router = APIRouter()
 
 # Dependency for RecursoService
-async def get_recurso_service(db: AsyncSession = Depends(get_db)) -> RecursoService:
+async def get_recurso_service(db: AsyncSession = Depends(get_async_db)) -> RecursoService:
     recurso_repository = SQLAlchemyRecursoRepository(db_session=db)
     equipe_repository = SQLAlchemyEquipeRepository(db_session=db) # RecursoService needs this
     return RecursoService(recurso_repository=recurso_repository, equipe_repository=equipe_repository)

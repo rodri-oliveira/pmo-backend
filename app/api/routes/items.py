@@ -6,12 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.dtos.item_dtos import ItemDTO, ItemCreateDTO, ItemUpdateDTO
 from app.application.services.item_service import ItemService
 from app.infrastructure.repositories.sqlalchemy_item_repository import SQLAlchemyItemRepository
-from app.infrastructure.database.database_config import get_db
+from app.db.session import get_async_db
 
 router = APIRouter()
 
 # Dependency for ItemService using SQLAlchemy repository
-async def get_item_service(db: AsyncSession = Depends(get_db)) -> ItemService:
+async def get_item_service(db: AsyncSession = Depends(get_async_db)) -> ItemService:
     item_repository = SQLAlchemyItemRepository(db_session=db)
     return ItemService(item_repository=item_repository)
 
@@ -43,4 +43,3 @@ async def delete_item(item_id: int, service: ItemService = Depends(get_item_serv
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     return item
-
