@@ -41,16 +41,17 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
         return None
 
     async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto_id: Optional[int] = None) -> List[DomainProjeto]:
-        query = select(ProjetoSQL)
-        if apenas_ativos:
-            query = query.filter(ProjetoSQL.ativo == True)
-        if status_projeto_id is not None:
-            query = query.filter(ProjetoSQL.status_projeto_id == status_projeto_id)
-        
-        query = query.order_by(ProjetoSQL.nome).offset(skip).limit(limit)
-        result = await self.db_session.execute(query)
-        projetos_sql = result.scalars().all()
-        return [DomainProjeto.model_validate(p) for p in projetos_sql]
+        async with self.db_session.begin():
+            query = select(ProjetoSQL)
+            if apenas_ativos:
+                query = query.filter(ProjetoSQL.ativo == True)
+            if status_projeto_id is not None:
+                query = query.filter(ProjetoSQL.status_projeto_id == status_projeto_id)
+            
+            query = query.order_by(ProjetoSQL.nome).offset(skip).limit(limit)
+            result = await self.db_session.execute(query)
+            projetos_sql = result.scalars().all()
+            return [DomainProjeto.model_validate(p) for p in projetos_sql]
 
     async def create(self, projeto_create_dto: ProjetoCreateDTO) -> DomainProjeto:
         new_projeto_sql = ProjetoSQL(**projeto_create_dto.model_dump())
@@ -81,4 +82,3 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
         await self.db_session.delete(projeto_to_delete_sql)
         await self.db_session.commit()
         return projeto_domain
-
