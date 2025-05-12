@@ -94,27 +94,38 @@ def get_current_user(
     except JWTError:
         raise credentials_exception
 
-def get_current_admin_user(
-    current_user: UsuarioInDB = Depends(get_current_user)
-) -> UsuarioInDB:
+async def get_current_admin_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> dict:
     """
-    Verifica se o usuário atual tem perfil de administrador.
+    Verifica se o usuário atual é administrador.
     
     Args:
-        current_user: Usuário autenticado
+        token: Token JWT
+        db: Sessão do banco de dados
         
     Returns:
-        Usuário administrador
+        dict: Dados do usuário administrador
         
     Raises:
         HTTPException: Se o usuário não for administrador
     """
-    if current_user.perfil != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permissão insuficiente. Somente administradores podem acessar este recurso.",
-        )
-    return current_user
+    try:
+        # Obter usuário autenticado
+        current_user = get_current_user(token, db)
+        
+        # Verificar se é administrador
+        if not current_user.get("is_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permissões de administrador necessárias",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        return current_user
+    except HTTPException as e:
+        raise
 
 # Função adicional para autenticação com WEG SSO (mock)
 async def authenticate_with_weg_sso(token: str) -> Optional[UsuarioBase]:

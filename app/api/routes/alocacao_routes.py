@@ -8,7 +8,14 @@ from app.core.security import get_current_admin_user
 from app.db.session import get_async_db
 from app.services.alocacao_service import AlocacaoService
 
-router = APIRouter(prefix="/alocacoes", tags=["Alocações"])
+# Configurar o router para aceitar URLs com e sem barra final
+router = APIRouter(
+    prefix="/alocacoes",
+    tags=["Alocações"],
+    dependencies=[Depends(get_current_admin_user)],
+    include_in_schema=True,
+    redirect_slashes=False  # Desabilitar redirecionamento automático de URLs
+)
 
 @router.post("/", response_model=AlocacaoResponse, status_code=status.HTTP_201_CREATED)
 async def create_alocacao(
