@@ -2,6 +2,7 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_, or_
+import traceback # Adicionado para logging detalhado
 
 from app.domain.models.recurso_model import Recurso as DomainRecurso
 from app.application.dtos.recurso_dtos import RecursoCreateDTO, RecursoUpdateDTO
@@ -48,9 +49,16 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
             query = query.filter(RecursoSQL.equipe_principal_id == equipe_id)
         
         query = query.offset(skip).limit(limit)
-        result = await self.db_session.execute(query)
-        recursos_sql = result.scalars().all()
-        return [DomainRecurso.model_validate(recurso) for recurso in recursos_sql]
+        
+        try:
+            # Executando a query de forma assíncrona
+            result = await self.db_session.execute(query)
+            recursos_sql = result.scalars().all()
+            return [DomainRecurso.model_validate(recurso) for recurso in recursos_sql]
+        except Exception as e:
+            print(f"Erro ao executar query no get_all: {e}")
+            traceback.print_exc()  # Adiciona stack trace completo para debug
+            raise
 
     async def create(self, recurso_create_dto: RecursoCreateDTO) -> DomainRecurso:
         new_recurso_sql = RecursoSQL(**recurso_create_dto.model_dump())
@@ -81,4 +89,3 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
         await self.db_session.delete(recurso_to_delete_sql)
         await self.db_session.commit()
         return recurso_domain
-

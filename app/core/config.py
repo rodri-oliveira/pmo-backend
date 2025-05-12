@@ -38,12 +38,9 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Se DATABASE_URI não foi definido no .env, construa a string com URL encoding
-if not settings.DATABASE_URI:
-    password = quote_plus(settings.DB_PASSWORD)
-    settings.DATABASE_URI = f"postgresql://{settings.DB_USER}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+# Definir a string de conexão diretamente com o valor que funcionou no teste
+settings.DATABASE_URI = "postgresql+asyncpg://5e0dceda-d930-5742-a8d9-1f2d1ff22159:b%40p5rk8%269BJRVEQ@qas-postgresql-ap.weg.net:40030/automacaopmopostgre"
 
 # Defina a URL de conexão diretamente nas configurações do contexto
 def get_url():
     return settings.DATABASE_URI
-

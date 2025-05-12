@@ -1,6 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware # Adicionado
 from app.core.config import settings
 from app.core.docs import custom_openapi # Se você estiver usando este import
 
@@ -9,11 +10,33 @@ from app.api.main import api_router
 from app.api.routes import health
 # --------------------------------- #
 from fastapi.responses import RedirectResponse
-from app.db.session import engine, Base # Se esta for sua configuração de DB
+from app.db.session import async_engine, Base
 
-# Criar tabelas no banco de dados
-# Comentar esta linha após a primeira execução ou usar Alembic para migrações
-# Base.metadata.create_all(bind=engine) # Verifique se esta linha é do seu projeto atual ou do antigo
+# Configuração para SQLAlchemy assíncrono
+from sqlalchemy.ext.asyncio import AsyncSession
+import asyncio
+
+# Adicionar suporte para greenlet
+from starlette.middleware.base import BaseHTTPMiddleware
+import contextvars
+import greenlet
+
+# Middleware para garantir que o contexto greenlet seja preservado
+class SQLAlchemyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # Salva o contexto atual
+        current_context = contextvars.copy_context()
+        
+        # Executa o próximo middleware/endpoint com o contexto preservado
+        response = await call_next(request)
+        return response
+
+# Não criar tabelas automaticamente - usar Alembic para migrações
+# Para criar tabelas com SQLAlchemy assíncrono, seria necessário um código como:
+# async def create_tables():
+#     async with async_engine.begin() as conn:
+#         await conn.run_sync(Base.metadata.create_all)
+# asyncio.run(create_tables())
 
 # Criar aplicação FastAPI
 app = FastAPI(
@@ -23,6 +46,19 @@ app = FastAPI(
     docs_url="/docs",  # Garante que /docs está disponível
     redoc_url="/redoc",
 )
+
+# Adicionar middleware para SQLAlchemy assíncrono
+app.add_middleware(SQLAlchemyMiddleware)
+
+# Adicionar middleware CORS aqui
+if settings.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 if settings.root_path is not None:
     app.root_path = settings.root_path

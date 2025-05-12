@@ -5,6 +5,8 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import create_async_engine
+import asyncio
 
 from alembic import context
 
@@ -26,7 +28,10 @@ if config.config_file_name is not None:
 
 # Sobrescrever URL de conexão com a do arquivo de configurações
 def get_url():
-    return settings.DATABASE_URI
+    # Para o Alembic, usamos a URL síncrona (sem asyncpg)
+    url = settings.DATABASE_URI
+    # Substituir asyncpg por psycopg2 para operações síncronas do Alembic
+    return url.replace("postgresql+asyncpg", "postgresql")
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -71,6 +76,7 @@ def run_migrations_online():
     and associate a connection with the context.
 
     """
+    # Para o Alembic, usamos um engine síncrono
     connectable = create_engine(get_url())
 
     with connectable.connect() as connection:
@@ -85,4 +91,4 @@ def run_migrations_online():
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online() 
+    run_migrations_online()
