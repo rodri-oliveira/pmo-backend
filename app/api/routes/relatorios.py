@@ -1,10 +1,10 @@
 from typing import List, Dict, Any, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_admin_user
-from app.db.session import get_db
+from app.db.session import get_async_db
 from app.repositories.apontamento_repository import ApontamentoRepository
 from app.db.orm_models import FonteApontamento
 from app.models.usuario import UsuarioInDB
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/relatorios", tags=["Relatórios"])
 
 
 @router.get("/horas-apontadas")
-def relatorio_horas_apontadas(
+async def relatorio_horas_apontadas(
     recurso_id: Optional[int] = None,
     projeto_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
@@ -26,7 +26,7 @@ def relatorio_horas_apontadas(
     agrupar_por_projeto: bool = False,
     agrupar_por_data: bool = False,
     agrupar_por_mes: bool = True,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -52,7 +52,7 @@ def relatorio_horas_apontadas(
     """
     repository = ApontamentoRepository(db)
     
-    return repository.find_with_filters_and_aggregate(
+    return await repository.find_with_filters_and_aggregate(
         recurso_id=recurso_id,
         projeto_id=projeto_id,
         equipe_id=equipe_id,
@@ -68,13 +68,13 @@ def relatorio_horas_apontadas(
 
 
 @router.get("/comparativo-planejado-realizado")
-def relatorio_comparativo(
+async def relatorio_comparativo(
     ano: int = Query(..., description="Ano do relatório"),
     mes: Optional[int] = Query(None, description="Mês do relatório (opcional)"),
     recurso_id: Optional[int] = None,
     projeto_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -144,12 +144,12 @@ def relatorio_comparativo(
     ] 
 
 @router.get("/horas-por-projeto")
-def get_horas_por_projeto(
+async def get_horas_por_projeto(
     data_inicio: Optional[date] = None,
     data_fim: Optional[date] = None,
     secao_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
     """
@@ -164,7 +164,7 @@ def get_horas_por_projeto(
     """
     relatorio_service = RelatorioService(db)
     
-    return relatorio_service.get_horas_por_projeto(
+    return await relatorio_service.get_horas_por_projeto(
         data_inicio=data_inicio,
         data_fim=data_fim,
         secao_id=secao_id,
@@ -172,13 +172,13 @@ def get_horas_por_projeto(
     )
 
 @router.get("/horas-por-recurso")
-def get_horas_por_recurso(
+async def get_horas_por_recurso(
     data_inicio: Optional[date] = None,
     data_fim: Optional[date] = None,
     projeto_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     secao_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
     """
@@ -194,7 +194,7 @@ def get_horas_por_recurso(
     """
     relatorio_service = RelatorioService(db)
     
-    return relatorio_service.get_horas_por_recurso(
+    return await relatorio_service.get_horas_por_recurso(
         data_inicio=data_inicio,
         data_fim=data_fim,
         projeto_id=projeto_id,
@@ -203,14 +203,14 @@ def get_horas_por_recurso(
     )
 
 @router.get("/planejado-vs-realizado")
-def get_planejado_vs_realizado(
+async def get_planejado_vs_realizado(
     ano: int = Query(..., description="Ano de referência"),
     mes: Optional[int] = Query(None, description="Mês de referência (1-12)"),
     projeto_id: Optional[int] = None,
     recurso_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     secao_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
     """
@@ -231,7 +231,7 @@ def get_planejado_vs_realizado(
     
     relatorio_service = RelatorioService(db)
     
-    return relatorio_service.get_analise_planejado_vs_realizado(
+    return await relatorio_service.get_analise_planejado_vs_realizado(
         ano=ano,
         mes=mes,
         projeto_id=projeto_id,
@@ -241,13 +241,13 @@ def get_planejado_vs_realizado(
     )
 
 @router.get("/disponibilidade-recursos")
-def get_disponibilidade_recursos(
+async def get_disponibilidade_recursos(
     ano: int = Query(..., description="Ano de referência"),
     mes: Optional[int] = Query(None, description="Mês de referência (1-12)"),
     recurso_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     secao_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
     """
@@ -267,7 +267,7 @@ def get_disponibilidade_recursos(
     
     relatorio_service = RelatorioService(db)
     
-    return relatorio_service.get_disponibilidade_recursos(
+    return await relatorio_service.get_disponibilidade_recursos(
         ano=ano,
         mes=mes,
         recurso_id=recurso_id,

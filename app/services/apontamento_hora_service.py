@@ -1,6 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dtos.apontamento_schema import (
     ApontamentoCreateSchema,
     ApontamentoUpdateSchema,
@@ -14,13 +14,13 @@ from app.repositories.recurso_repository import RecursoRepository
 from app.repositories.projeto_repository import ProjetoRepository
 
 class ApontamentoHoraService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
         self.repository = ApontamentoRepository(db)
         self.recurso_repository = RecursoRepository(db)
         self.projeto_repository = ProjetoRepository(db)
     
-    def create_manual(self, apontamento_data: ApontamentoCreateSchema, admin_id: int) -> ApontamentoResponseSchema:
+    async def create_manual(self, apontamento_data: ApontamentoCreateSchema, admin_id: int) -> ApontamentoResponseSchema:
         """
         Cria um apontamento manual pelo Admin.
         
@@ -35,12 +35,12 @@ class ApontamentoHoraService:
             ValueError: Se houver erro de validação
         """
         # Verificar se o recurso existe
-        recurso = self.recurso_repository.get(apontamento_data.recurso_id)
+        recurso = await self.recurso_repository.get(apontamento_data.recurso_id)
         if not recurso:
             raise ValueError(f"Recurso com ID {apontamento_data.recurso_id} não encontrado")
         
         # Verificar se o projeto existe
-        projeto = self.projeto_repository.get(apontamento_data.projeto_id)
+        projeto = await self.projeto_repository.get(apontamento_data.projeto_id)
         if not projeto:
             raise ValueError(f"Projeto com ID {apontamento_data.projeto_id} não encontrado")
         
@@ -51,10 +51,10 @@ class ApontamentoHoraService:
         apontamento_dict["id_usuario_admin_criador"] = admin_id
         
         # Criar o apontamento
-        apontamento = self.repository.create_manual(apontamento_dict)
+        apontamento = await self.repository.create_manual(apontamento_dict, admin_id)
         return ApontamentoResponseSchema.from_orm(apontamento)
     
-    def get(self, id: int) -> Optional[ApontamentoResponseSchema]:
+    async def get(self, id: int) -> Optional[ApontamentoResponseSchema]:
         """
         Obtém um apontamento pelo ID.
         
@@ -64,12 +64,12 @@ class ApontamentoHoraService:
         Returns:
             ApontamentoResponseSchema: Dados do apontamento, ou None se não encontrado
         """
-        apontamento = self.repository.get(id)
+        apontamento = await self.repository.get(id)
         if not apontamento:
             return None
         return ApontamentoResponseSchema.from_orm(apontamento)
     
-    def list_with_filters(self, filtros: ApontamentoFilterSchema, skip: int = 0, limit: int = 100) -> List[ApontamentoResponseSchema]:
+    async def list_with_filters(self, filtros: ApontamentoFilterSchema, skip: int = 0, limit: int = 100) -> List[ApontamentoResponseSchema]:
         """
         Lista apontamentos com filtros avançados.
         
@@ -81,7 +81,7 @@ class ApontamentoHoraService:
         Returns:
             List[ApontamentoResponseSchema]: Lista de apontamentos
         """
-        apontamentos = self.repository.find_with_filters(
+        apontamentos = await self.repository.find_with_filters(
             recurso_id=filtros.recurso_id,
             projeto_id=filtros.projeto_id,
             equipe_id=filtros.equipe_id,
@@ -95,7 +95,7 @@ class ApontamentoHoraService:
         )
         return [ApontamentoResponseSchema.from_orm(a) for a in apontamentos]
     
-    def get_agregacoes(self, filtros: ApontamentoFilterSchema, 
+    async def get_agregacoes(self, filtros: ApontamentoFilterSchema, 
                       agrupar_por_recurso: bool, 
                       agrupar_por_projeto: bool,
                       agrupar_por_data: bool,
@@ -113,7 +113,7 @@ class ApontamentoHoraService:
         Returns:
             List[ApontamentoAggregationSchema]: Lista de agregações
         """
-        agregacoes = self.repository.find_with_filters_and_aggregate(
+        agregacoes = await self.repository.find_with_filters_and_aggregate(
             recurso_id=filtros.recurso_id,
             projeto_id=filtros.projeto_id,
             equipe_id=filtros.equipe_id,
@@ -128,12 +128,49 @@ class ApontamentoHoraService:
         )
         return [ApontamentoAggregationSchema(**agg) for agg in agregacoes]
     
-    def update_manual(self, id: int, apontamento: ApontamentoUpdateSchema) -> ApontamentoResponseSchema:
-        """Atualiza um apontamento manual"""
-        # Implementação stub
-        raise ValueError("fonte_apontamento é JIRA, não é permitido editar")
+    async def update_manual(self, id: int, apontamento: ApontamentoUpdateSchema) -> ApontamentoResponseSchema:
+        """
+        Atualiza um apontamento manual.
+        
+        Args:
+            id: ID do apontamento a ser atualizado
+            apontamento: Dados para atualização
+            
+        Returns:
+            ApontamentoResponseSchema: Dados do apontamento atualizado
+            
+        Raises:
+            ValueError: Se o apontamento não for do tipo MANUAL ou se houver erro de validação
+        """
+        # Verificar se o apontamento existe e é do tipo MANUAL
+        apontamento_atual = await self.repository.get(id)
+        if not apontamento_atual:
+            raise ValueError(f"Apontamento com ID {id} não encontrado")
+            
+        if apontamento_atual.fonte_apontamento != FonteApontamento.MANUAL:
+            raise ValueError(f"Apenas apontamentos do tipo MANUAL podem ser editados. Este apontamento é do tipo {apontamento_atual.fonte_apontamento}")
+            
+        # Atualizar o apontamento
+        apontamento_atualizado = await self.repository.update_manual(id, apontamento.dict(exclude_unset=True))
+        return ApontamentoResponseSchema.from_orm(apontamento_atualizado)
     
-    def delete_manual(self, id: int) -> None:
-        """Remove um apontamento manual"""
-        # Implementação stub
-        pass 
+    async def delete_manual(self, id: int) -> None:
+        """
+        Remove um apontamento manual.
+        
+        Args:
+            id: ID do apontamento a ser removido
+            
+        Raises:
+            ValueError: Se o apontamento não for do tipo MANUAL ou se houver erro
+        """
+        # Verificar se o apontamento existe e é do tipo MANUAL
+        apontamento = await self.repository.get(id)
+        if not apontamento:
+            raise ValueError(f"Apontamento com ID {id} não encontrado")
+            
+        if apontamento.fonte_apontamento != FonteApontamento.MANUAL:
+            raise ValueError(f"Apenas apontamentos do tipo MANUAL podem ser removidos. Este apontamento é do tipo {apontamento.fonte_apontamento}")
+            
+        # Remover o apontamento
+        await self.repository.delete(id)

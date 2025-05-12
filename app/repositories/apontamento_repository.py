@@ -1,7 +1,8 @@
 from typing import List, Optional, Dict, Any
 from datetime import date
-from sqlalchemy import func, extract, and_, or_, text
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, extract, and_, or_, text, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 from app.db.orm_models import Apontamento, Recurso, Projeto, Equipe, Secao, FonteApontamento
 from app.repositories.base_repository import BaseRepository
 
@@ -10,20 +11,22 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
     Repositório para operações específicas de apontamentos de horas.
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """
         Inicializa o repositório com uma sessão do banco de dados.
         
         Args:
-            db: Sessão do banco de dados
+            db: Sessão do banco de dados assíncrona
         """
         super().__init__(db, Apontamento)
     
-    def get_by_jira_worklog_id(self, jira_worklog_id: str) -> Optional[Apontamento]:
+    async def get_by_jira_worklog_id(self, jira_worklog_id: str) -> Optional[Apontamento]:
         """Obtém um apontamento pelo ID do worklog do Jira."""
-        return self.db.query(Apontamento).filter(Apontamento.jira_worklog_id == jira_worklog_id).first()
+        query = select(Apontamento).filter(Apontamento.jira_worklog_id == jira_worklog_id)
+        result = await self.db.execute(query)
+        return result.scalars().first()
     
-    def create_manual(self, data: Dict[str, Any], admin_id: int) -> Apontamento:
+    async def create_manual(self, data: Dict[str, Any], admin_id: int) -> Apontamento:
         """
         Cria um apontamento manual feito por um administrador.
         
@@ -39,9 +42,9 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
             "fonte_apontamento": "MANUAL",
             "id_usuario_admin_criador": admin_id
         }
-        return self.create(apontamento_data)
+        return await self.create(apontamento_data)
     
-    def update_manual(self, id: int, data: Dict[str, Any]) -> Optional[Apontamento]:
+    async def update_manual(self, id: int, data: Dict[str, Any]) -> Optional[Apontamento]:
         """
         Atualiza um apontamento manual.
         
@@ -52,13 +55,13 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         Returns:
             Apontamento atualizado ou None se não encontrado ou não for manual
         """
-        apontamento = self.get(id)
+        apontamento = await self.get(id)
         if apontamento is None or apontamento.fonte_apontamento != "MANUAL":
             return None
             
-        return self.update(id, data)
+        return await self.update(id, data)
     
-    def delete_manual(self, id: int) -> bool:
+    async def delete_manual(self, id: int) -> bool:
         """
         Remove um apontamento manual.
         
@@ -68,13 +71,13 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         Returns:
             True se removido com sucesso, False se não encontrado ou não for manual
         """
-        apontamento = self.get(id)
+        apontamento = await self.get(id)
         if apontamento is None or apontamento.fonte_apontamento != "MANUAL":
             return False
             
-        return self.delete(id)
+        return await self.delete(id)
     
-    def sync_jira_apontamento(self, jira_worklog_id: str, data: Dict[str, Any]) -> Apontamento:
+    async def sync_jira_apontamento(self, jira_worklog_id: str, data: Dict[str, Any]) -> Apontamento:
         """
         Cria ou atualiza um apontamento a partir de dados do Jira.
         
@@ -85,9 +88,9 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         Returns:
             Apontamento criado ou atualizado
         """
-        apontamento = self.db.query(self.model).filter(
-            self.model.jira_worklog_id == jira_worklog_id
-        ).first()
+        query = select(Apontamento).filter(Apontamento.jira_worklog_id == jira_worklog_id)
+        result = await self.db.execute(query)
+        apontamento = result.scalars().first()
         
         apontamento_data = {
             **data,
@@ -100,18 +103,18 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
             for key, value in apontamento_data.items():
                 setattr(apontamento, key, value)
                 
-            self.db.commit()
-            self.db.refresh(apontamento)
+            await self.db.commit()
+            await self.db.refresh(apontamento)
             return apontamento
         else:
             # Cria um novo apontamento
             apontamento = self.model(**apontamento_data)
             self.db.add(apontamento)
-            self.db.commit()
-            self.db.refresh(apontamento)
+            await self.db.commit()
+            await self.db.refresh(apontamento)
             return apontamento
     
-    def delete_from_jira(self, jira_worklog_id: str) -> bool:
+    async def delete_from_jira(self, jira_worklog_id: str) -> bool:
         """
         Remove um apontamento com base no ID do worklog do Jira.
         
@@ -121,31 +124,31 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         Returns:
             True se removido com sucesso, False se não encontrado
         """
-        apontamento = self.db.query(self.model).filter(
-            self.model.jira_worklog_id == jira_worklog_id
-        ).first()
+        query = select(Apontamento).filter(Apontamento.jira_worklog_id == jira_worklog_id)
+        result = await self.db.execute(query)
+        apontamento = result.scalars().first()
         
         if apontamento is None:
             return False
             
-        self.db.delete(apontamento)
-        self.db.commit()
+        await self.db.delete(apontamento)
+        await self.db.commit()
         return True
     
-    def find_with_filters(self, 
+    async def find_with_filters(self, 
                         recurso_id: Optional[int] = None,
                         projeto_id: Optional[int] = None,
                         equipe_id: Optional[int] = None,
                         secao_id: Optional[int] = None,
                         data_inicio: Optional[date] = None,
                         data_fim: Optional[date] = None,
-                        fonte_apontamento: Optional[FonteApontamento] = None,
+                        fonte_apontamento: Optional[str] = None,
                         jira_issue_key: Optional[str] = None,
                         skip: int = 0,
                         limit: int = 100
                        ) -> List[Apontamento]:
         """Busca apontamentos com filtros avançados."""
-        query = self.db.query(Apontamento)
+        query = select(Apontamento)
         
         # Aplicar filtros diretos
         if recurso_id:
@@ -177,9 +180,10 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
                 query = query.join(Recurso.equipe_principal).filter(Equipe.secao_id == secao_id)
         
         # Aplicar paginação e ordenação
-        return query.order_by(Apontamento.data_apontamento.desc()).offset(skip).limit(limit).all()
+        result = await self.db.execute(query.order_by(Apontamento.data_apontamento.desc()).offset(skip).limit(limit))
+        return result.scalars().all()
     
-    def find_with_filters_and_aggregate(
+    async def find_with_filters_and_aggregate(
         self,
         recurso_id: Optional[int] = None,
         projeto_id: Optional[int] = None,
@@ -208,7 +212,7 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         Returns:
             Dicionário com resultados e agregações
         """
-        query = self.db.query(self.model)
+        query = select(self.model)
         
         # Aplicar filtros
         if recurso_id:
@@ -236,16 +240,14 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
             query = query.filter(self.model.jira_issue_key == jira_issue_key)
             
         result = {
-            "apontamentos": query.all()
+            "apontamentos": (await self.db.execute(query)).scalars().all()
         }
         
         # Calcular agregações se solicitado
         if aggregate:
-            total_horas = self.db.query(
-                func.sum(self.model.horas_apontadas)
-            ).filter(
+            total_horas = (await self.db.execute(select(func.sum(self.model.horas_apontadas)).filter(
                 *[c for c in query.whereclause.clauses]
-            ).scalar() or 0
+            ))).scalar() or 0
             
             result["agregacoes"] = {
                 "total_horas": total_horas

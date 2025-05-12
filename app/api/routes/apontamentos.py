@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dtos.apontamento_schema import (
     ApontamentoCreateSchema, 
@@ -12,16 +12,16 @@ from app.api.dtos.apontamento_schema import (
     FonteApontamento
 )
 from app.core.security import get_current_admin_user
-from app.db.session import get_db
+from app.db.session import get_async_db
 from app.services.apontamento_hora_service import ApontamentoHoraService
 
 router = APIRouter(prefix="/apontamentos", tags=["Apontamentos"])
 
 
 @router.post("/", response_model=ApontamentoResponseSchema, status_code=status.HTTP_201_CREATED)
-def create_apontamento(
+async def create_apontamento(
     apontamento: ApontamentoCreateSchema,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -41,13 +41,13 @@ def create_apontamento(
     service = ApontamentoHoraService(db)
     try:
         # Passa o ID do admin atual para registrar quem criou o apontamento
-        return service.create_manual(apontamento, current_user["id"])
+        return await service.create_manual(apontamento, current_user["id"])
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/", response_model=List[ApontamentoResponseSchema])
-def list_apontamentos(
+async def list_apontamentos(
     skip: int = 0,
     limit: int = 100,
     recurso_id: Optional[int] = None,
@@ -58,7 +58,7 @@ def list_apontamentos(
     data_fim: Optional[date] = None,
     fonte_apontamento: Optional[FonteApontamento] = None,
     jira_issue_key: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -92,11 +92,11 @@ def list_apontamentos(
         fonte_apontamento=fonte_apontamento,
         jira_issue_key=jira_issue_key
     )
-    return service.list_with_filters(filtros, skip=skip, limit=limit)
+    return await service.list_with_filters(filtros, skip=skip, limit=limit)
 
 
 @router.get("/agregacoes", response_model=List[ApontamentoAggregationSchema])
-def get_apontamentos_agregacoes(
+async def get_apontamentos_agregacoes(
     recurso_id: Optional[int] = None,
     projeto_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
@@ -107,7 +107,7 @@ def get_apontamentos_agregacoes(
     agrupar_por_projeto: bool = False,
     agrupar_por_data: bool = False,
     agrupar_por_mes: bool = False,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -139,7 +139,7 @@ def get_apontamentos_agregacoes(
         data_inicio=data_inicio,
         data_fim=data_fim
     )
-    return service.get_agregacoes(
+    return await service.get_agregacoes(
         filtros, 
         agrupar_por_recurso, 
         agrupar_por_projeto, 
@@ -149,9 +149,9 @@ def get_apontamentos_agregacoes(
 
 
 @router.get("/{apontamento_id}", response_model=ApontamentoResponseSchema)
-def get_apontamento(
+async def get_apontamento(
     apontamento_id: int = Path(..., gt=0),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -169,17 +169,17 @@ def get_apontamento(
         HTTPException: Se o apontamento não for encontrado
     """
     service = ApontamentoHoraService(db)
-    apontamento = service.get(apontamento_id)
+    apontamento = await service.get(apontamento_id)
     if not apontamento:
-        raise HTTPException(status_code=404, detail="Apontamento não encontrado")
+        raise HTTPException(status_code=404, detail=f"Apontamento {apontamento_id} não encontrado")
     return apontamento
 
 
 @router.put("/{apontamento_id}", response_model=ApontamentoResponseSchema)
-def update_apontamento(
+async def update_apontamento(
     apontamento_update: ApontamentoUpdateSchema,
     apontamento_id: int = Path(..., gt=0),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -201,26 +201,29 @@ def update_apontamento(
             - 400: Para outros erros de validação
     """
     service = ApontamentoHoraService(db)
-    apontamento = service.get(apontamento_id)
     
+    # Verificar se o apontamento existe
+    apontamento = await service.get(apontamento_id)
     if not apontamento:
-        raise HTTPException(status_code=404, detail="Apontamento não encontrado")
+        raise HTTPException(status_code=404, detail=f"Apontamento {apontamento_id} não encontrado")
+    
+    # Verificar se é um apontamento manual (apenas estes podem ser editados)
+    if apontamento.fonte != FonteApontamento.MANUAL:
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Apenas apontamentos manuais podem ser editados. Este apontamento é do tipo {apontamento.fonte}"
+        )
     
     try:
-        return service.update_manual(apontamento_id, apontamento_update)
+        return await service.update_manual(apontamento_id, apontamento_update)
     except ValueError as e:
-        if "fonte_apontamento" in str(e) and "JIRA" in str(e):
-            raise HTTPException(
-                status_code=403, 
-                detail="Não é permitido editar apontamentos do tipo JIRA"
-            )
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/{apontamento_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_apontamento(
+async def delete_apontamento(
     apontamento_id: int = Path(..., gt=0),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -238,17 +241,20 @@ def delete_apontamento(
             - 400: Para outros erros
     """
     service = ApontamentoHoraService(db)
-    apontamento = service.get(apontamento_id)
     
+    # Verificar se o apontamento existe
+    apontamento = await service.get(apontamento_id)
     if not apontamento:
-        raise HTTPException(status_code=404, detail="Apontamento não encontrado")
+        raise HTTPException(status_code=404, detail=f"Apontamento {apontamento_id} não encontrado")
+    
+    # Verificar se é um apontamento manual (apenas estes podem ser removidos)
+    if apontamento.fonte != FonteApontamento.MANUAL:
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Apenas apontamentos manuais podem ser removidos. Este apontamento é do tipo {apontamento.fonte}"
+        )
     
     try:
-        service.delete_manual(apontamento_id)
+        await service.delete_manual(apontamento_id)
     except ValueError as e:
-        if "fonte_apontamento" in str(e) and "JIRA" in str(e):
-            raise HTTPException(
-                status_code=403, 
-                detail="Não é permitido remover apontamentos do tipo JIRA"
-            )
-        raise HTTPException(status_code=400, detail=str(e)) 
+        raise HTTPException(status_code=400, detail=str(e))

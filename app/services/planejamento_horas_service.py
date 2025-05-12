@@ -1,17 +1,17 @@
 from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.planejamento_horas_repository import PlanejamentoHorasRepository
 from app.repositories.alocacao_repository import AlocacaoRepository
 from app.repositories.horas_disponiveis_repository import HorasDisponiveisRepository
 
 class PlanejamentoHorasService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
         self.repository = PlanejamentoHorasRepository(db)
         self.alocacao_repository = AlocacaoRepository(db)
         self.horas_disponiveis_repository = HorasDisponiveisRepository(db)
     
-    def create_or_update_planejamento(self, alocacao_id: int, ano: int, mes: int, horas_planejadas: float) -> Dict[str, Any]:
+    async def create_or_update_planejamento(self, alocacao_id: int, ano: int, mes: int, horas_planejadas: float) -> Dict[str, Any]:
         """
         Cria ou atualiza o planejamento de horas para uma alocação em um mês específico.
         
@@ -28,7 +28,7 @@ class PlanejamentoHorasService:
             ValueError: Se a alocação não existir ou se as horas excederem o disponível
         """
         # Verificar se a alocação existe
-        alocacao = self.alocacao_repository.get(alocacao_id)
+        alocacao = await self.alocacao_repository.get(alocacao_id)
         if not alocacao:
             raise ValueError(f"Alocação com ID {alocacao_id} não encontrada")
         
@@ -42,15 +42,15 @@ class PlanejamentoHorasService:
         
         # Verificar se as horas planejadas não excedem as horas disponíveis do recurso
         recurso_id = alocacao.recurso_id
-        horas_disponiveis = self.horas_disponiveis_repository.get_by_recurso_ano_mes(recurso_id, ano, mes)
+        horas_disponiveis = await self.horas_disponiveis_repository.get_by_recurso_ano_mes(recurso_id, ano, mes)
         
         if horas_disponiveis:
             # Se houver configuração de horas disponíveis, verificar limite
-            total_planejado = self.repository.get_total_horas_planejadas_por_recurso_mes(recurso_id, ano, mes)
+            total_planejado = await self.repository.get_total_horas_planejadas_por_recurso_mes(recurso_id, ano, mes)
             total_planejado = total_planejado or 0
             
             # Subtrair horas do planejamento atual se for atualização
-            planejamento_atual = self.repository.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
+            planejamento_atual = await self.repository.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
             if planejamento_atual:
                 total_planejado -= float(planejamento_atual.horas_planejadas)
             
@@ -63,7 +63,7 @@ class PlanejamentoHorasService:
                 )
         
         # Criar ou atualizar o planejamento
-        planejamento = self.repository.create_or_update(alocacao_id, ano, mes, horas_planejadas)
+        planejamento = await self.repository.create_or_update(alocacao_id, ano, mes, horas_planejadas)
         
         # Retornar com dados adicionais
         return {
@@ -76,7 +76,7 @@ class PlanejamentoHorasService:
             "horas_planejadas": float(planejamento.horas_planejadas)
         }
     
-    def get_planejamento(self, alocacao_id: int, ano: int, mes: int) -> Optional[dict]:
+    async def get_planejamento(self, alocacao_id: int, ano: int, mes: int) -> Optional[dict]:
         """
         Obtém o planejamento de horas para uma alocação em um mês específico.
         
@@ -88,9 +88,9 @@ class PlanejamentoHorasService:
         Returns:
             dict: Dados do planejamento, ou None se não encontrado
         """
-        return self.repository.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
+        return await self.repository.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
     
-    def list_by_alocacao(self, alocacao_id: int) -> List[Dict[str, Any]]:
+    async def list_by_alocacao(self, alocacao_id: int) -> List[Dict[str, Any]]:
         """
         Lista todos os planejamentos de uma alocação.
         
@@ -101,11 +101,11 @@ class PlanejamentoHorasService:
             List[Dict[str, Any]]: Lista de planejamentos
         """
         # Verificar se a alocação existe
-        alocacao = self.alocacao_repository.get(alocacao_id)
+        alocacao = await self.alocacao_repository.get(alocacao_id)
         if not alocacao:
             raise ValueError(f"Alocação com ID {alocacao_id} não encontrada")
         
-        planejamentos = self.repository.list_by_alocacao(alocacao_id)
+        planejamentos = await self.repository.list_by_alocacao(alocacao_id)
         
         # Formatar resultado
         return [{
@@ -118,7 +118,7 @@ class PlanejamentoHorasService:
             "horas_planejadas": float(p.horas_planejadas)
         } for p in planejamentos]
     
-    def list_by_recurso_periodo(self, recurso_id: int, ano: int, mes_inicio: int = 1, mes_fim: int = 12) -> List[Dict[str, Any]]:
+    async def list_by_recurso_periodo(self, recurso_id: int, ano: int, mes_inicio: int = 1, mes_fim: int = 12) -> List[Dict[str, Any]]:
         """
         Lista planejamentos de um recurso em um período.
         
@@ -131,9 +131,9 @@ class PlanejamentoHorasService:
         Returns:
             List[Dict[str, Any]]: Lista de planejamentos
         """
-        return self.repository.list_by_recurso_periodo(recurso_id, ano, mes_inicio, mes_fim)
+        return await self.repository.list_by_recurso_periodo(recurso_id, ano, mes_inicio, mes_fim)
     
-    def delete_planejamento(self, planejamento_id: int) -> None:
+    async def delete_planejamento(self, planejamento_id: int) -> None:
         """
         Remove um planejamento de horas.
         
@@ -143,8 +143,8 @@ class PlanejamentoHorasService:
         Raises:
             ValueError: Se o planejamento não for encontrado
         """
-        planejamento = self.repository.get(planejamento_id)
+        planejamento = await self.repository.get(planejamento_id)
         if not planejamento:
             raise ValueError(f"Planejamento com ID {planejamento_id} não encontrado")
         
-        self.repository.delete(planejamento_id) 
+        await self.repository.delete(planejamento_id) 
