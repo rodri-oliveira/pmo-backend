@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date
-from sqlalchemy import func, and_, or_, text, extract
-from sqlalchemy.orm import Session
+from sqlalchemy import func, and_, or_, text, extract, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.orm_models import (
     Apontamento, 
@@ -19,16 +19,16 @@ class RelatorioService:
     Serviço para geração de relatórios e análises do sistema.
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """
         Inicializa o serviço com uma sessão do banco de dados.
         
         Args:
-            db: Sessão do banco de dados
+            db: Sessão do banco de dados assíncrona
         """
         self.db = db
     
-    def get_horas_por_projeto(
+    async def get_horas_por_projeto(
         self, 
         data_inicio: Optional[date] = None, 
         data_fim: Optional[date] = None,
@@ -47,7 +47,7 @@ class RelatorioService:
         Returns:
             Lista de dicionários com informações de horas por projeto
         """
-        query = self.db.query(
+        query = select(
             Projeto.id.label("projeto_id"),
             Projeto.nome.label("projeto_nome"),
             Projeto.codigo.label("projeto_codigo"),
@@ -75,6 +75,9 @@ class RelatorioService:
             if equipe_id:
                 query = query.filter(Recurso.equipe_id == equipe_id)
         
+        result = await self.db.execute(query)
+        rows = result.fetchall()
+        
         return [
             {
                 "projeto_id": row.projeto_id,
@@ -82,10 +85,10 @@ class RelatorioService:
                 "projeto_codigo": row.projeto_codigo,
                 "total_horas": float(row.total_horas) if row.total_horas else 0
             }
-            for row in query.all()
+            for row in rows
         ]
     
-    def get_horas_por_recurso(
+    async def get_horas_por_recurso(
         self, 
         data_inicio: Optional[date] = None, 
         data_fim: Optional[date] = None,
@@ -106,7 +109,7 @@ class RelatorioService:
         Returns:
             Lista de dicionários com informações de horas por recurso
         """
-        query = self.db.query(
+        query = select(
             Recurso.id.label("recurso_id"),
             Recurso.nome.label("recurso_nome"),
             Equipe.nome.label("equipe_nome"),
@@ -137,6 +140,9 @@ class RelatorioService:
         if secao_id:
             query = query.filter(Recurso.secao_id == secao_id)
         
+        result = await self.db.execute(query)
+        rows = result.fetchall()
+        
         return [
             {
                 "recurso_id": row.recurso_id,
@@ -145,10 +151,10 @@ class RelatorioService:
                 "secao_nome": row.secao_nome,
                 "total_horas": float(row.total_horas) if row.total_horas else 0
             }
-            for row in query.all()
+            for row in rows
         ]
     
-    def get_analise_planejado_vs_realizado(
+    async def get_analise_planejado_vs_realizado(
         self,
         ano: int,
         mes: Optional[int] = None,
@@ -172,7 +178,7 @@ class RelatorioService:
             Lista de dicionários com informações comparativas
         """
         # Base da consulta para horas planejadas
-        planejado_query = self.db.query(
+        planejado_query = select(
             AlocacaoRecursoProjeto.recurso_id,
             AlocacaoRecursoProjeto.projeto_id,
             HorasPlanejadas.ano,
@@ -225,7 +231,7 @@ class RelatorioService:
         )
         
         # Base da consulta para horas realizadas
-        realizado_query = self.db.query(
+        realizado_query = select(
             Apontamento.recurso_id,
             Apontamento.projeto_id,
             extract('year', Apontamento.data_apontamento).label('ano'),
@@ -266,7 +272,9 @@ class RelatorioService:
         
         # Converter para dicionário para combinar os resultados
         planejado_dict = {}
-        for row in planejado_query.all():
+        result = await self.db.execute(planejado_query)
+        rows = result.fetchall()
+        for row in rows:
             key = (row.recurso_id, row.projeto_id, row.ano, row.mes)
             planejado_dict[key] = {
                 "recurso_id": row.recurso_id,
@@ -284,7 +292,9 @@ class RelatorioService:
             }
             
         # Combinar com dados realizados
-        for row in realizado_query.all():
+        result = await self.db.execute(realizado_query)
+        rows = result.fetchall()
+        for row in rows:
             key = (row.recurso_id, row.projeto_id, row.ano, row.mes)
             if key in planejado_dict:
                 planejado_dict[key]["horas_realizadas"] = float(row.horas_realizadas) if row.horas_realizadas else 0
@@ -295,7 +305,7 @@ class RelatorioService:
             else:
                 # Caso haja horas realizadas sem planejamento
                 # Buscar informações adicionais
-                recurso = self.db.query(
+                recurso = await self.db.execute(select(
                     Recurso.nome,
                     Equipe.nome.label("equipe_nome"),
                     Secao.nome.label("secao_nome")
@@ -305,9 +315,13 @@ class RelatorioService:
                     Secao, Recurso.secao_id == Secao.id, isouter=True
                 ).filter(
                     Recurso.id == row.recurso_id
-                ).first()
+                ))
                 
-                projeto = self.db.query(Projeto.nome).filter(Projeto.id == row.projeto_id).first()
+                recurso = recurso.fetchone()
+                
+                projeto = await self.db.execute(select(Projeto.nome).filter(Projeto.id == row.projeto_id))
+                
+                projeto = projeto.fetchone()
                 
                 planejado_dict[key] = {
                     "recurso_id": row.recurso_id,
@@ -327,7 +341,7 @@ class RelatorioService:
         # Converter para lista
         return list(planejado_dict.values())
     
-    def get_disponibilidade_recursos(
+    async def get_disponibilidade_recursos(
         self,
         ano: int,
         mes: Optional[int] = None,
@@ -349,7 +363,7 @@ class RelatorioService:
             Lista de dicionários com informações de disponibilidade
         """
         # Base da consulta para horas disponíveis
-        query = self.db.query(
+        query = select(
             Recurso.id.label("recurso_id"),
             Recurso.nome.label("recurso_nome"),
             Equipe.nome.label("equipe_nome"),
@@ -381,7 +395,7 @@ class RelatorioService:
             query = query.filter(Recurso.secao_id == secao_id)
             
         # Subquery para somar horas planejadas
-        planejado_subquery = self.db.query(
+        planejado_subquery = select(
             AlocacaoRecursoProjeto.recurso_id,
             HorasPlanejadas.ano,
             HorasPlanejadas.mes,
@@ -405,7 +419,7 @@ class RelatorioService:
         ).subquery()
         
         # Subquery para somar horas realizadas
-        realizado_subquery = self.db.query(
+        realizado_subquery = select(
             Apontamento.recurso_id,
             extract('year', Apontamento.data_apontamento).label('ano'),
             extract('month', Apontamento.data_apontamento).label('mes'),
@@ -447,8 +461,11 @@ class RelatorioService:
         )
         
         # Processar resultados
+        result = await self.db.execute(query)
+        rows = result.fetchall()
+        
         result = []
-        for row in query.all():
+        for row in rows:
             horas_disponiveis = float(row.horas_disponiveis_mes) if row.horas_disponiveis_mes else 0
             horas_planejadas = float(row.total_planejado) if row.total_planejado else 0
             horas_realizadas = float(row.total_realizado) if row.total_realizado else 0

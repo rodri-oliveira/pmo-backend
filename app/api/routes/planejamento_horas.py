@@ -1,10 +1,10 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends,Query, HTTPException, Path, status
+from fastapi import APIRouter, Depends, Query, HTTPException, Path, status
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_admin_user
-from app.db.session import get_db
+from app.db.session import get_async_db
 from app.services.planejamento_horas_service import PlanejamentoHorasService
 
 # DTOs
@@ -28,30 +28,26 @@ class PlanejamentoHorasResponse(BaseModel):
 
 router = APIRouter(prefix="/planejamento-horas", tags=["Planejamento de Horas"])
 
-
 @router.post("/", response_model=PlanejamentoHorasResponse, status_code=status.HTTP_201_CREATED)
-def create_or_update_planejamento(
+async def create_or_update_planejamento(
     planejamento: PlanejamentoHorasCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
-    Cria ou atualiza um planejamento de horas.
+    Cria ou atualiza planejamento de horas.
     
     Args:
         planejamento: Dados do planejamento
         db: Sessão do banco de dados
         current_user: Usuário administrador autenticado
-    
+        
     Returns:
-        PlanejamentoHorasResponse: Dados do planejamento criado/atualizado
-    
-    Raises:
-        HTTPException: Se houver erro na operação
+        PlanejamentoHorasResponse: Planejamento criado/atualizado
     """
-    service = PlanejamentoHorasService(db)
     try:
-        result = service.create_or_update_planejamento(
+        service = PlanejamentoHorasService(db)
+        result = await service.create_or_update_planejamento(
             planejamento.alocacao_id,
             planejamento.ano,
             planejamento.mes,
@@ -59,13 +55,12 @@ def create_or_update_planejamento(
         )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/alocacao/{alocacao_id}", response_model=List[PlanejamentoHorasResponse])
-def list_planejamento_by_alocacao(
+async def list_planejamento_by_alocacao(
     alocacao_id: int = Path(..., gt=0),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -79,17 +74,19 @@ def list_planejamento_by_alocacao(
     Returns:
         List[PlanejamentoHorasResponse]: Lista de planejamentos
     """
-    service = PlanejamentoHorasService(db)
-    return service.list_by_alocacao(alocacao_id)
-
+    try:
+        service = PlanejamentoHorasService(db)
+        return await service.list_by_alocacao(alocacao_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/recurso/{recurso_id}", response_model=List[PlanejamentoHorasResponse])
-def list_planejamento_by_recurso(
+async def list_planejamento_by_recurso(
     recurso_id: int = Path(..., gt=0),
     ano: int = Query(..., gt=0),
     mes_inicio: int = Query(1, ge=1, le=12),
     mes_fim: int = Query(12, ge=1, le=12),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -107,13 +104,12 @@ def list_planejamento_by_recurso(
         List[PlanejamentoHorasResponse]: Lista de planejamentos
     """
     service = PlanejamentoHorasService(db)
-    return service.list_by_recurso_periodo(recurso_id, ano, mes_inicio, mes_fim)
-
+    return await service.list_by_recurso_periodo(recurso_id, ano, mes_inicio, mes_fim)
 
 @router.delete("/{planejamento_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_planejamento(
+async def delete_planejamento(
     planejamento_id: int = Path(..., gt=0),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     """
@@ -129,6 +125,6 @@ def delete_planejamento(
     """
     service = PlanejamentoHorasService(db)
     try:
-        service.delete_planejamento(planejamento_id)
+        await service.delete_planejamento(planejamento_id)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) 
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

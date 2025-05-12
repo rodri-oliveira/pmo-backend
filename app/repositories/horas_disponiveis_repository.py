@@ -1,50 +1,57 @@
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.orm_models import HorasDisponiveisRH
 from app.repositories.base_repository import BaseRepository
 
-class HorasDisponiveisRepository(BaseRepository[HorasDisponiveisRH, int]):
+class HorasDisponiveisRepository(BaseRepository[HorasDisponiveisRH]):
     """Repositório para operações com a entidade HorasDisponiveisRH."""
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db, HorasDisponiveisRH)
     
-    def get_by_recurso_ano_mes(self, recurso_id: int, ano: int, mes: int) -> Optional[HorasDisponiveisRH]:
+    async def get_by_recurso_ano_mes(self, recurso_id: int, ano: int, mes: int) -> Optional[HorasDisponiveisRH]:
         """Obtém registro de horas disponíveis por recurso, ano e mês."""
-        return self.db.query(HorasDisponiveisRH).filter(
+        query = select(HorasDisponiveisRH).filter(
             HorasDisponiveisRH.recurso_id == recurso_id,
             HorasDisponiveisRH.ano == ano,
             HorasDisponiveisRH.mes == mes
-        ).first()
+        )
+        result = await self.db.execute(query)
+        return result.scalars().first()
     
-    def create_or_update(self, recurso_id: int, ano: int, mes: int, horas_disponiveis: float) -> HorasDisponiveisRH:
+    async def create_or_update(self, recurso_id: int, ano: int, mes: int, horas_disponiveis: float) -> HorasDisponiveisRH:
         """Cria ou atualiza um registro de horas disponíveis."""
-        existing = self.get_by_recurso_ano_mes(recurso_id, ano, mes)
+        existing = await self.get_by_recurso_ano_mes(recurso_id, ano, mes)
         
         if existing:
             # Atualizar existente
             existing.horas_disponiveis_mes = horas_disponiveis
-            self.db.commit()
-            self.db.refresh(existing)
+            await self.db.commit()
+            await self.db.refresh(existing)
             return existing
         else:
             # Criar novo
-            return self.create({
+            return await self.create({
                 "recurso_id": recurso_id,
                 "ano": ano,
                 "mes": mes,
                 "horas_disponiveis_mes": horas_disponiveis
             })
     
-    def list_by_recurso(self, recurso_id: int) -> List[HorasDisponiveisRH]:
+    async def list_by_recurso(self, recurso_id: int) -> List[HorasDisponiveisRH]:
         """Lista todos os registros de horas disponíveis para um recurso."""
-        return self.db.query(HorasDisponiveisRH).filter(
+        query = select(HorasDisponiveisRH).filter(
             HorasDisponiveisRH.recurso_id == recurso_id
-        ).order_by(HorasDisponiveisRH.ano, HorasDisponiveisRH.mes).all()
+        ).order_by(HorasDisponiveisRH.ano, HorasDisponiveisRH.mes)
+        result = await self.db.execute(query)
+        return result.scalars().all()
     
-    def list_by_ano_mes(self, ano: int, mes: int) -> List[HorasDisponiveisRH]:
+    async def list_by_ano_mes(self, ano: int, mes: int) -> List[HorasDisponiveisRH]:
         """Lista todos os registros de horas disponíveis para um mês/ano específico."""
-        return self.db.query(HorasDisponiveisRH).filter(
+        query = select(HorasDisponiveisRH).filter(
             HorasDisponiveisRH.ano == ano,
             HorasDisponiveisRH.mes == mes
-        ).all() 
+        )
+        result = await self.db.execute(query)
+        return result.scalars().all()
