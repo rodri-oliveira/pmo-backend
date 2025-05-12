@@ -13,12 +13,12 @@ class RecursoService:
     async def get_recurso_by_id(self, recurso_id: int) -> Optional[RecursoDTO]:
         recurso = await self.recurso_repository.get_by_id(recurso_id)
         if recurso:
-            return RecursoDTO.from_orm(recurso)
+            return RecursoDTO.model_validate(recurso)
         return None
 
     async def get_all_recursos(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, equipe_id: Optional[int] = None) -> List[RecursoDTO]:
         recursos = await self.recurso_repository.get_all(skip=skip, limit=limit, apenas_ativos=apenas_ativos, equipe_id=equipe_id)
-        return [RecursoDTO.from_orm(recurso) for recurso in recursos]
+        return [RecursoDTO.model_validate(recurso) for recurso in recursos]
 
     async def create_recurso(self, recurso_create_dto: RecursoCreateDTO) -> RecursoDTO:
         # Check if email already exists
@@ -47,7 +47,7 @@ class RecursoService:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Equipe principal com ID {recurso_create_dto.equipe_principal_id} não está ativa.")
 
         recurso = await self.recurso_repository.create(recurso_create_dto)
-        return RecursoDTO.from_orm(recurso)
+        return RecursoDTO.model_validate(recurso)
 
     async def update_recurso(self, recurso_id: int, recurso_update_dto: RecursoUpdateDTO) -> Optional[RecursoDTO]:
         # Fetch current recurso to compare unique fields if they are being changed
@@ -83,13 +83,12 @@ class RecursoService:
 
         recurso = await self.recurso_repository.update(recurso_id, recurso_update_dto)
         if recurso:
-            return RecursoDTO.from_orm(recurso)
+            return RecursoDTO.model_validate(recurso)
         return None
 
     async def delete_recurso(self, recurso_id: int) -> Optional[RecursoDTO]:
         # Add logic here to check if recurso can be deleted (e.g., no active alocacoes)
         recurso_deletado = await self.recurso_repository.delete(recurso_id)
         if recurso_deletado:
-            return RecursoDTO.from_orm(recurso_deletado)
+            return RecursoDTO.model_validate(recurso_deletado)
         return None
-

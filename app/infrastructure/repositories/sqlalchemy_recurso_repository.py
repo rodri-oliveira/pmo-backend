@@ -51,10 +51,19 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
         query = query.offset(skip).limit(limit)
         
         try:
-            # Executando a query de forma assíncrona
+            # Executando a query de forma assíncrona sem usar transaction.execute
             result = await self.db_session.execute(query)
             recursos_sql = result.scalars().all()
-            return [DomainRecurso.model_validate(recurso) for recurso in recursos_sql]
+            
+            # Converter objetos SQLAlchemy para dicionários e depois para modelos de domínio
+            recursos = []
+            for recurso in recursos_sql:
+                # Criar um dicionário com os atributos do objeto SQLAlchemy
+                recurso_dict = {c.name: getattr(recurso, c.name) for c in recurso.__table__.columns}
+                # Converter para modelo de domínio
+                recursos.append(DomainRecurso.model_validate(recurso_dict))
+            
+            return recursos
         except Exception as e:
             print(f"Erro ao executar query no get_all: {e}")
             traceback.print_exc()  # Adiciona stack trace completo para debug
@@ -75,10 +84,44 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
         update_data = recurso_update_dto.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(recurso_sql, key, value)
+        
+        try:
+            await self.db_session.commit()
+            await self.db_session.refresh(recurso_sql)
+            return DomainRecurso.model_validate(recurso_sql)
+        except Exception as e:
+            await self.db_session.rollback()
+            print(f"Error updating recurso: {e}")
+            traceback.print_exc()
+            return None
+
+    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, equipe_id: Optional[int] = None) -> List[DomainRecurso]:
+        query = select(RecursoSQL)
+        if apenas_ativos:
+            query = query.filter(RecursoSQL.ativo == True)
+        if equipe_id is not None:
+            query = query.filter(RecursoSQL.equipe_principal_id == equipe_id)
+        
+        query = query.offset(skip).limit(limit)
+        
+        try:
+            # Executando a query de forma assíncrona sem usar transaction.execute
+            result = await self.db_session.execute(query)
+            recursos_sql = result.scalars().all()
             
-        await self.db_session.commit()
-        await self.db_session.refresh(recurso_sql)
-        return DomainRecurso.model_validate(recurso_sql)
+            # Converter objetos SQLAlchemy para dicionários e depois para modelos de domínio
+            recursos = []
+            for recurso in recursos_sql:
+                # Criar um dicionário com os atributos do objeto SQLAlchemy
+                recurso_dict = {c.name: getattr(recurso, c.name) for c in recurso.__table__.columns}
+                # Converter para modelo de domínio
+                recursos.append(DomainRecurso.model_validate(recurso_dict))
+            
+            return recursos
+        except Exception as e:
+            print(f"Erro ao executar query no get_all: {e}")
+            traceback.print_exc()  # Adiciona stack trace completo para debug
+            raise
 
     async def delete(self, recurso_id: int) -> Optional[DomainRecurso]:
         recurso_to_delete_sql = await self.db_session.get(RecursoSQL, recurso_id)

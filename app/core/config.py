@@ -38,8 +38,10 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Definir a string de conexão diretamente com o valor que funcionou no teste
-settings.DATABASE_URI = "postgresql+asyncpg://5e0dceda-d930-5742-a8d9-1f2d1ff22159:b%40p5rk8%269BJRVEQ@qas-postgresql-ap.weg.net:40030/automacaopmopostgre"
+# String de conexão para o banco de dados
+from urllib.parse import quote_plus
+password = quote_plus(settings.DB_PASSWORD)
+settings.DATABASE_URI = f"postgresql+asyncpg://{settings.DB_USER}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 
 # Defina a URL de conexão diretamente nas configurações do contexto
 def get_url():

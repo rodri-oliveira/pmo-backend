@@ -43,7 +43,15 @@ async def get_all_recursos(
     equipe_id: Optional[int] = Query(default=None, description="Filtrar recursos por ID da equipe principal"),
     service: RecursoService = Depends(get_recurso_service)
 ):
-    return await service.get_all_recursos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, equipe_id=equipe_id)
+    try:
+        return await service.get_all_recursos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, equipe_id=equipe_id)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        import traceback
+        print(f"Erro detalhado ao buscar recursos: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao buscar recursos: {str(e)}")
 
 @router.put("/{recurso_id}", response_model=RecursoDTO)
 async def update_recurso(recurso_id: int, recurso_update_dto: RecursoUpdateDTO, service: RecursoService = Depends(get_recurso_service)):
@@ -64,4 +72,3 @@ async def delete_recurso(recurso_id: int, service: RecursoService = Depends(get_
     if recurso is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurso não encontrado para exclusão")
     return recurso
-
