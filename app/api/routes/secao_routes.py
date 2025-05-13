@@ -7,13 +7,18 @@ from app.application.dtos.secao_dtos import SecaoDTO, SecaoCreateDTO, SecaoUpdat
 from app.application.services.secao_service import SecaoService
 from app.infrastructure.repositories.sqlalchemy_secao_repository import SQLAlchemySecaoRepository
 from app.db.session import get_async_db
+from app.infrastructure.repositories.sqlalchemy_equipe_repository import SQLAlchemyEquipeRepository
 
 router = APIRouter()
 
 # Dependency for SecaoService
 async def get_secao_service(db: AsyncSession = Depends(get_async_db)) -> SecaoService:
     secao_repository = SQLAlchemySecaoRepository(db_session=db)
-    return SecaoService(secao_repository=secao_repository)
+    equipe_repository = SQLAlchemyEquipeRepository(db_session=db)
+    return SecaoService(
+        secao_repository=secao_repository,
+        equipe_repository=equipe_repository
+    )
 
 @router.post("/", response_model=SecaoDTO, status_code=status.HTTP_201_CREATED)
 async def create_secao(secao_create_dto: SecaoCreateDTO, service: SecaoService = Depends(get_secao_service)):

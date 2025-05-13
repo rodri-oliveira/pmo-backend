@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-
+from app.api.routes import auth
 # Importar cada módulo individualmente
 from app.api.routes import items, secao_routes
 from app.api.routes import equipe_routes
@@ -10,6 +10,9 @@ from app.api.routes import planejamento_horas
 from app.api.routes import apontamentos
 from app.api.routes import relatorios
 from app.api.routes import alocacao_routes # Adicionar importação para alocacao_routes
+import logging
+logging.basicConfig(level=logging.INFO)
+logging.info("api_router está sendo configurado!")
 
 api_router = APIRouter()
 api_router.include_router(items.router, prefix="/items", tags=["Items"])
@@ -22,4 +25,5 @@ api_router.include_router(planejamento_horas.router, prefix="/planejamento-horas
 api_router.include_router(apontamentos.router, prefix="/apontamentos", tags=["Apontamentos"])
 api_router.include_router(relatorios.router, prefix="/relatorios", tags=["Relatórios"])
 api_router.include_router(alocacao_routes.router, prefix="/alocacoes", tags=["Alocações"]) # Incluir a rota de alocações
+api_router.include_router(auth.router, prefix="", tags=["Autenticação"])
 

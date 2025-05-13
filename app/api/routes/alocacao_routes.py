@@ -7,6 +7,9 @@ from app.api.dtos.alocacao_schema import AlocacaoCreate, AlocacaoUpdate, Alocaca
 from app.core.security import get_current_admin_user
 from app.db.session import get_async_db
 from app.services.alocacao_service import AlocacaoService
+import logging
+logging.basicConfig(level=logging.INFO)
+logging.info("Arquivo alocacao_routes.py foi carregado!")
 
 # Configurar o router para aceitar URLs com e sem barra final
 router = APIRouter(

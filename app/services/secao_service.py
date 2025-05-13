@@ -22,13 +22,15 @@ class SecaoService:
         Raises:
             ValueError: Se o nome da seção já existir
         """
-        # Verificar se já existe seção com esse nome
-        if self.repository.get_by_nome(secao_data.nome):
-            raise ValueError(f"Já existe uma seção com o nome '{secao_data.nome}'")
-        
+        # Preencher datas
+        agora = datetime.utcnow()
+        secao_data_dict = secao_data.model_dump()
+        secao_data_dict["data_criacao"] = agora
+        secao_data_dict["data_atualizacao"] = agora
+
         # Criar nova seção
-        secao = self.repository.create(secao_data)
-        return SecaoResponseSchema.from_orm(secao)
+        secao = self.repository.create(SecaoCreateSchema(**secao_data_dict))
+        return SecaoResponseSchema.model_validate(secao)
     
     def get(self, id: int) -> Optional[SecaoResponseSchema]:
         """
@@ -43,7 +45,7 @@ class SecaoService:
         secao = self.repository.get(id)
         if not secao:
             return None
-        return SecaoResponseSchema.from_orm(secao)
+        return SecaoResponseSchema.model_validate(secao)
     
     def list(self, skip: int = 0, limit: int = 100, nome: Optional[str] = None, ativo: Optional[bool] = None) -> List[SecaoResponseSchema]:
         """
@@ -59,7 +61,7 @@ class SecaoService:
             List[SecaoResponseSchema]: Lista de seções
         """
         secoes = self.repository.list(skip, limit, nome, ativo)
-        return [SecaoResponseSchema.from_orm(secao) for secao in secoes]
+        return [SecaoResponseSchema.model_validate(secao) for secao in secoes]
     
     def update(self, id: int, secao_data: SecaoUpdateSchema) -> SecaoResponseSchema:
         """
@@ -88,7 +90,7 @@ class SecaoService:
         
         # Atualizar seção
         secao = self.repository.update(id, secao_data)
-        return SecaoResponseSchema.from_orm(secao)
+        return SecaoResponseSchema.model_validate(secao)
     
     def delete(self, id: int) -> None:
         """

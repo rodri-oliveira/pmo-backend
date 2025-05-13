@@ -12,6 +12,9 @@ from app.api.routes import health
 
 # Importar configuração do banco de dados
 from app.db.session import async_engine, Base
+import logging
+logging.basicConfig(level=logging.INFO)
+logging.info("FastAPI principal está iniciando!")
 
 # Configuração para SQLAlchemy assíncrono
 from sqlalchemy.ext.asyncio import async_scoped_session, AsyncSession

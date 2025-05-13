@@ -7,6 +7,7 @@ from app.domain.models.secao_model import Secao as DomainSecao
 from app.application.dtos.secao_dtos import SecaoCreateDTO, SecaoUpdateDTO
 from app.domain.repositories.secao_repository import SecaoRepository
 from app.infrastructure.database.secao_sql_model import SecaoSQL
+from datetime import datetime
 
 class SQLAlchemySecaoRepository(SecaoRepository):
     def __init__(self, db_session: AsyncSession):
@@ -36,9 +37,13 @@ class SQLAlchemySecaoRepository(SecaoRepository):
         return [DomainSecao.model_validate(secao) for secao in secoes_sql]
 
     async def create(self, secao_create_dto: SecaoCreateDTO) -> DomainSecao:
+        agora = datetime.utcnow()
         new_secao_sql = SecaoSQL(
             nome=secao_create_dto.nome,
-            descricao=secao_create_dto.descricao
+            descricao=secao_create_dto.descricao,
+            data_criacao=agora,
+            data_atualizacao=agora,
+            ativo=True
         )
         self.db_session.add(new_secao_sql)
         await self.db_session.commit()
