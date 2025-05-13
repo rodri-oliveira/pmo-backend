@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_, or_
 import traceback # Adicionado para logging detalhado
-
+from datetime import datetime
 from app.domain.models.recurso_model import Recurso as DomainRecurso
 from app.application.dtos.recurso_dtos import RecursoCreateDTO, RecursoUpdateDTO
 from app.domain.repositories.recurso_repository import RecursoRepository
@@ -51,26 +51,21 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
         query = query.offset(skip).limit(limit)
         
         try:
-            # Executando a query de forma assíncrona sem usar transaction.execute
             result = await self.db_session.execute(query)
             recursos_sql = result.scalars().all()
-            
-            # Converter objetos SQLAlchemy para dicionários e depois para modelos de domínio
-            recursos = []
-            for recurso in recursos_sql:
-                # Criar um dicionário com os atributos do objeto SQLAlchemy
-                recurso_dict = {c.name: getattr(recurso, c.name) for c in recurso.__table__.columns}
-                # Converter para modelo de domínio
-                recursos.append(DomainRecurso.model_validate(recurso_dict))
-            
-            return recursos
+            return [DomainRecurso.model_validate(recurso) for recurso in recursos_sql]
         except Exception as e:
             print(f"Erro ao executar query no get_all: {e}")
-            traceback.print_exc()  # Adiciona stack trace completo para debug
+            traceback.print_exc()
             raise
 
     async def create(self, recurso_create_dto: RecursoCreateDTO) -> DomainRecurso:
-        new_recurso_sql = RecursoSQL(**recurso_create_dto.model_dump())
+        new_recurso_sql = RecursoSQL(
+            **recurso_create_dto.model_dump(),
+            data_criacao=datetime.utcnow(),
+            data_atualizacao=datetime.utcnow(),
+            ativo=True  # se necessário
+        )
         self.db_session.add(new_recurso_sql)
         await self.db_session.commit()
         await self.db_session.refresh(new_recurso_sql)
