@@ -25,4 +25,7 @@ class StatusProjetoResponseSchema(BaseResponseSchema):
     nome: str
     descricao: Optional[str] = None
     is_final: bool
-    ordem_exibicao: Optional[int] = None 
+    ordem_exibicao: Optional[int] = None
+
+    class Config:
+        from_attributes = True

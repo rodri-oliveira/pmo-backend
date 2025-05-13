@@ -2,7 +2,7 @@ from datetime import datetime, date
 from decimal import Decimal
 from enum import Enum
 from typing import Optional
-from pydantic import Field, validator
+from pydantic import Field, field_validator
 
 from .base_schema import BaseSchema, BaseResponseSchema
 
@@ -23,7 +23,8 @@ class ApontamentoCreateSchema(BaseSchema):
     horas_apontadas: Decimal = Field(..., gt=0, le=24)
     descricao: Optional[str] = None
     
-    @validator('horas_apontadas')
+    @field_validator('horas_apontadas')
+    @classmethod
     def validate_horas_apontadas(cls, v):
         """Valida que as horas apontadas estão entre 0 e 24."""
         if v <= 0 or v > 24:
@@ -41,7 +42,8 @@ class ApontamentoUpdateSchema(BaseSchema):
     horas_apontadas: Optional[Decimal] = Field(None, gt=0, le=24)
     descricao: Optional[str] = None
     
-    @validator('horas_apontadas')
+    @field_validator('horas_apontadas')
+    @classmethod
     def validate_horas_apontadas(cls, v):
         """Valida que as horas apontadas estão entre 0 e 24."""
         if v is not None and (v <= 0 or v > 24):

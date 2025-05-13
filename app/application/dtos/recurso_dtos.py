@@ -33,4 +33,3 @@ class RecursoDTO(RecursoBaseDTO):
     # Configuração atualizada para funcionar tanto com Pydantic v1 quanto v2
     class Config:
         from_attributes = True
-        orm_mode = True
