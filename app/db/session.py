@@ -4,10 +4,13 @@ from fastapi import Depends
 
 from app.core.config import settings
 
-# Criar engine de conexão assíncrona com o PostgreSQL
 async_engine = create_async_engine(
     settings.DATABASE_URI,
-    echo=False, # Mantenha False para produção, True para debug de SQL
+    echo=False,  # Mantenha False para produção, True para debug de SQL
+    pool_pre_ping=True,      # Garante que a conexão está viva antes de usar
+    pool_recycle=1800,       # Recicla conexões antigas a cada 30 minutos
+    pool_size=10,            # Número de conexões simultâneas (ajuste conforme necessário)
+    max_overflow=20          # Número extra de conexões temporárias (ajuste conforme necessário)
 )
 
 # Base para modelos ORM
