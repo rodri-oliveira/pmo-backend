@@ -24,9 +24,9 @@ class ProjetoService:
             ValueError: Se o status não existir ou código/jira_key duplicado
         """
         # Verificar se o status existe
-        status = self.status_repository.get(projeto_data.status_projeto_id)
+        status = self.status_repository.get(projeto_data.status_projeto)
         if not status:
-            raise ValueError(f"Status com ID {projeto_data.status_projeto_id} não encontrado")
+            raise ValueError(f"Status com ID {projeto_data.status_projeto} não encontrado")
         
         # Verificar se já existe projeto com o mesmo código empresa
         if projeto_data.codigo_empresa:
@@ -60,7 +60,7 @@ class ProjetoService:
         return ProjetoResponseSchema.from_orm(projeto)
     
     def list(self, skip: int = 0, limit: int = 100, nome: Optional[str] = None, 
-             codigo_empresa: Optional[str] = None, status_projeto_id: Optional[int] = None, 
+             codigo_empresa: Optional[str] = None, status_projeto: Optional[int] = None, 
              ativo: Optional[bool] = None) -> List[ProjetoResponseSchema]:
         """
         Lista projetos com opção de filtros.
@@ -70,7 +70,7 @@ class ProjetoService:
             limit: Limite de registros (paginação)
             nome: Filtro opcional por nome
             codigo_empresa: Filtro opcional por código empresa
-            status_projeto_id: Filtro opcional por status
+            status_projeto: Filtro opcional por status
             ativo: Filtro opcional por status ativo
             
         Returns:
@@ -80,7 +80,7 @@ class ProjetoService:
             skip, limit, 
             nome=nome, 
             codigo_empresa=codigo_empresa, 
-            status_projeto_id=status_projeto_id, 
+            status_projeto=status_projeto, 
             ativo=ativo
         )
         return [ProjetoResponseSchema.from_orm(projeto) for projeto in projetos]
@@ -105,10 +105,10 @@ class ProjetoService:
             raise ValueError(f"Projeto com ID {id} não encontrado")
         
         # Verificar se o novo status (se fornecido) existe
-        if projeto_data.status_projeto_id is not None and projeto_data.status_projeto_id != projeto.status_projeto_id:
-            status = self.status_repository.get(projeto_data.status_projeto_id)
+        if projeto_data.status_projeto is not None and projeto_data.status_projeto != projeto.status_projeto:
+            status = self.status_repository.get(projeto_data.status_projeto)
             if not status:
-                raise ValueError(f"Status com ID {projeto_data.status_projeto_id} não encontrado")
+                raise ValueError(f"Status com ID {projeto_data.status_projeto} não encontrado")
         
         # Verificar se o novo código empresa (se fornecido) já está em uso
         if projeto_data.codigo_empresa is not None and projeto_data.codigo_empresa != projeto.codigo_empresa:

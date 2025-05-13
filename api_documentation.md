@@ -793,7 +793,7 @@ Resposta (200 OK):
       "codigo_empresa": "PRJ001",
       "descricao": "Descrição do projeto A",
       "jira_project_key": "PRJA",
-      "status_projeto_id": 2,
+      "status_projeto": 2,
       "status_projeto": {
         "id": 2,
         "nome": "Em Andamento"
@@ -808,7 +808,7 @@ Resposta (200 OK):
       "codigo_empresa": "PRJ002",
       "descricao": "Descrição do projeto B",
       "jira_project_key": "PRJB",
-      "status_projeto_id": 1,
+      "status_projeto": 1,
       "status_projeto": {
         "id": 1,
         "nome": "Não Iniciado"
@@ -829,7 +829,7 @@ Obter Projeto por ID
   "codigo_empresa": "PRJ001",
   "descricao": "Descrição do projeto A",
   "jira_project_key": "PRJA",
-  "status_projeto_id": 2,
+  "status_projeto": 2,
   "status_projeto": {
     "id": 2,
     "nome": "Em Andamento"
@@ -848,7 +848,7 @@ Corpo da Requisição:
   "codigo_empresa": "PRJ013",
   "descricao": "Descrição do novo projeto",
   "jira_project_key": "PRJN",
-  "status_projeto_id": 1,
+  "status_projeto": 1,
   "data_inicio_prevista": "2025-08-01",
   "data_fim_prevista": "2026-02-28"
 }
@@ -859,7 +859,7 @@ Resposta (201 Created):
   "codigo_empresa": "PRJ013",
   "descricao": "Descrição do novo projeto",
   "jira_project_key": "PRJN",
-  "status_projeto_id": 1,
+  "status_projeto": 1,
   "data_inicio_prevista": "2025-08-01",
   "data_fim_prevista": "2026-02-28",
   "data_criacao": "2025-05-11T14:30:00",
@@ -874,7 +874,7 @@ PUT /projetos/{projeto_id}
 {
   "nome": "Nome Atualizado",
   "descricao": "Descrição atualizada",
-  "status_projeto_id": 2,
+  "status_projeto": 2,
   "data_inicio_prevista": "2025-09-01",
   "data_fim_prevista": "2026-03-31",
   "ativo": true
@@ -889,7 +889,7 @@ PUT /projetos/{projeto_id}
   "codigo_empresa": "PRJ013",
   "descricao": "Descrição atualizada",
   "jira_project_key": "PRJN",
-  "status_projeto_id": 2,
+  "status_projeto": 2,
   "data_inicio_prevista": "2025-09-01",
   "data_fim_prevista": "2026-03-31",
   "data_criacao": "2025-05-11T14:30:00",

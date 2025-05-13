@@ -118,7 +118,7 @@ class ProjetoBase(BaseSchema):
     codigo_empresa: Optional[str] = None
     descricao: Optional[str] = None
     jira_project_key: Optional[str] = None
-    status_projeto_id: int
+    status_projeto: str
     data_inicio_prevista: Optional[date] = None
     data_fim_prevista: Optional[date] = None
     ativo: bool = True
@@ -131,7 +131,7 @@ class ProjetoUpdate(BaseSchema):
     codigo_empresa: Optional[str] = None
     descricao: Optional[str] = None
     jira_project_key: Optional[str] = None
-    status_projeto_id: Optional[int] = None
+    status_projeto: Optional[str] = None
     data_inicio_prevista: Optional[date] = None
     data_fim_prevista: Optional[date] = None
     ativo: Optional[bool] = None

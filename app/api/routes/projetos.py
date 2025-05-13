@@ -44,7 +44,7 @@ def list_projetos(
     limit: int = 100,
     nome: Optional[str] = None,
     codigo_empresa: Optional[str] = None,
-    status_projeto_id: Optional[int] = None,
+    status_projeto: Optional[int] = None,
     ativo: Optional[bool] = None,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_admin_user)
@@ -57,7 +57,7 @@ def list_projetos(
         limit: Limite de registros (paginação)
         nome: Filtro opcional por nome
         codigo_empresa: Filtro opcional por código da empresa
-        status_projeto_id: Filtro opcional por status
+        status_projeto: Filtro opcional por status
         ativo: Filtro opcional por status ativo
         db: Sessão do banco de dados
         current_user: Usuário administrador autenticado
@@ -71,7 +71,7 @@ def list_projetos(
         limit=limit, 
         nome=nome, 
         codigo_empresa=codigo_empresa, 
-        status_projeto_id=status_projeto_id, 
+        status_projeto=status_projeto, 
         ativo=ativo
     )
 
