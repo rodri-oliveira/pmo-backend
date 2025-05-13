@@ -17,5 +17,5 @@ class ProjetoSQL(Base):
     data_atualizacao = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     ativo = Column(Boolean, nullable=False, default=True)
 
-    status_projeto = relationship("StatusProjetoSQL") # Define relationship
+    status_projeto = relationship("StatusProjetoSQL")
 

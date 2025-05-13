@@ -224,7 +224,7 @@ Gerencia os projetos e melhorias.
           "codigo_empresa": "string", // Opcional, Único se fornecido
           "descricao": "string", // Opcional
           "jira_project_key": "string", // Opcional, Único se fornecido
-          "status_projeto_id": integer, // Obrigatório, ID de um StatusProjeto existente
+          "status_projeto": integer, // Obrigatório, ID de um StatusProjeto existente
           "data_inicio_prevista": "YYYY-MM-DD", // Opcional
           "data_fim_prevista": "YYYY-MM-DD" // Opcional
         }
@@ -236,12 +236,12 @@ Gerencia os projetos e melhorias.
     *   **Resposta (200 OK):** `ProjetoDTO`.
 
 *   **`GET /` - Listar Todos os Projetos**
-    *   **Funcionalidade:** Retorna uma lista de projetos. Aceita paginação, filtro por status ativo e filtro por `status_projeto_id`.
+    *   **Funcionalidade:** Retorna uma lista de projetos. Aceita paginação, filtro por status ativo e filtro por `status_projeto`.
     *   **Query Params:**
         *   `skip` (int, opcional, default 0)
         *   `limit` (int, opcional, default 100)
         *   `apenas_ativos` (bool, opcional, default False)
-        *   `status_projeto_id` (int, opcional): Filtra projetos por ID do status.
+        *   `status_projeto` (int, opcional): Filtra projetos por ID do status.
     *   **Resposta (200 OK):** Lista de `ProjetoDTO`.
 
 *   **`PUT /{projeto_id}` - Atualizar Projeto**
@@ -253,7 +253,7 @@ Gerencia os projetos e melhorias.
           "codigo_empresa": "string", // Único se fornecido e diferente do atual
           "descricao": "string",
           "jira_project_key": "string", // Único se fornecido e diferente do atual
-          "status_projeto_id": integer, // ID de um StatusProjeto existente
+          "status_projeto": integer, // ID de um StatusProjeto existente
           "data_inicio_prevista": "YYYY-MM-DD",
           "data_fim_prevista": "YYYY-MM-DD",
           "ativo": boolean
@@ -289,7 +289,7 @@ Endpoint de exemplo, mantido e refatorado.
 *   **Tratamento de Datas:** Datas são geralmente enviadas e recebidas no formato `YYYY-MM-DD`. Data e hora (DATETIME) seguem o padrão ISO 8601.
 *   **Paginação:** Para listagens, o frontend deve implementar controles de paginação (`skip`, `limit`) e informar ao usuário o total de registros/páginas, se o backend fornecer essa informação (atualmente, o backend retorna apenas a lista limitada).
 *   **Feedback ao Usuário:** É crucial que o frontend forneça feedback claro ao usuário sobre o resultado das operações (sucesso, erro, mensagens de validação retornadas pelo backend).
-*   **Dropdowns/Seletores:** Para campos como `secao_id` em Equipes, `equipe_principal_id` em Recursos, `status_projeto_id` em Projetos, o frontend precisará primeiro carregar as opções disponíveis através dos respectivos endpoints de listagem (ex: `GET /backend/v1/secoes` para popular um dropdown de seções).
+*   **Dropdowns/Seletores:** Para campos como `secao_id` em Equipes, `equipe_principal_id` em Recursos, `status_projeto` em Projetos, o frontend precisará primeiro carregar as opções disponíveis através dos respectivos endpoints de listagem (ex: `GET /backend/v1/secoes` para popular um dropdown de seções).
 *   **Consistência com `esq_frontend.txt`:** Esta cartilha foca nos endpoints do backend. O design visual e a experiência do usuário devem seguir o `esq_frontend.txt`. Por exemplo, as telas de CRUD padrão descritas no `esq_frontend.txt` consumirão os endpoints de CRUD listados aqui para cada entidade.
 
 Esta cartilha deve ser usada como referência inicial. Conforme o desenvolvimento do frontend avança e novas entidades/funcionalidades são adicionadas ao backend, este documento pode precisar ser atualizado.

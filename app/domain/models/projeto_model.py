@@ -1,8 +1,7 @@
-from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, date
+from datetime import date
 
-class Projeto(BaseModel):
+class Projeto:
     id: int
     nome: str
     codigo_empresa: Optional[str] = None
@@ -12,6 +11,3 @@ class Projeto(BaseModel):
     data_inicio_prevista: Optional[date] = None
     data_fim_prevista: Optional[date] = None
     ativo: bool
-    data_criacao: datetime
-    data_atualizacao: datetime
-

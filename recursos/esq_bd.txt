@@ -115,7 +115,7 @@ Legenda:
     * codigo_empresa (VARCHAR(50), UQ, NULLABLE, INDEX)
     * descricao (TEXT, NULLABLE)
     * jira_project_key (VARCHAR(100), UQ, NULLABLE, INDEX)
-    * status_projeto_id (INT, FK para status_projeto(id) ON DELETE RESTRICT ON UPDATE CASCADE, NN, INDEX)
+    * status_projeto (INT, FK para status_projeto(id) ON DELETE RESTRICT ON UPDATE CASCADE, NN, INDEX)
     * data_inicio_prevista (DATE, NULLABLE)
     * data_fim_prevista (DATE, NULLABLE)
     * data_criacao (DATETIME, NN, DEFAULT CURRENT_TIMESTAMP)

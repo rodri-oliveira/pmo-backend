@@ -86,18 +86,18 @@ def upgrade():
     sa.Column('codigo_empresa', sa.String(length=50), nullable=True),
     sa.Column('descricao', sa.Text(), nullable=True),
     sa.Column('jira_project_key', sa.String(length=100), nullable=True),
-    sa.Column('status_projeto_id', sa.Integer(), nullable=False),
+    sa.Column('status_projeto', sa.Integer(), nullable=False),
     sa.Column('data_inicio_prevista', sa.Date(), nullable=True),
     sa.Column('data_fim_prevista', sa.Date(), nullable=True),
     sa.Column('data_criacao', sa.DateTime(), nullable=False),
     sa.Column('data_atualizacao', sa.DateTime(), nullable=False),
     sa.Column('ativo', sa.Boolean(), nullable=False),
-    sa.ForeignKeyConstraint(['status_projeto_id'], ['status_projeto.id'], onupdate='CASCADE', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['status_projeto'], ['status_projeto.id'], onupdate='CASCADE', ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_projeto_codigo_empresa'), 'projeto', ['codigo_empresa'], unique=True)
     op.create_index(op.f('ix_projeto_jira_project_key'), 'projeto', ['jira_project_key'], unique=True)
-    op.create_index(op.f('ix_projeto_status_projeto_id'), 'projeto', ['status_projeto_id'], unique=False)
+    op.create_index(op.f('ix_projeto_status_projeto'), 'projeto', ['status_projeto'], unique=False)
     op.create_table('recurso',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('equipe_principal_id', sa.Integer(), nullable=True),
@@ -263,7 +263,7 @@ def downgrade():
     op.drop_index(op.f('ix_recurso_equipe_principal_id'), table_name='recurso')
     op.drop_index(op.f('ix_recurso_email'), table_name='recurso')
     op.drop_table('recurso')
-    op.drop_index(op.f('ix_projeto_status_projeto_id'), table_name='projeto')
+    op.drop_index(op.f('ix_projeto_status_projeto'), table_name='projeto')
     op.drop_index(op.f('ix_projeto_jira_project_key'), table_name='projeto')
     op.drop_index(op.f('ix_projeto_codigo_empresa'), table_name='projeto')
     op.drop_table('projeto')

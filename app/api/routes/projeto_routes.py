@@ -40,10 +40,10 @@ async def get_all_projetos(
     skip: int = 0,
     limit: int = Query(default=100, ge=1, le=1000),
     apenas_ativos: bool = False,
-    status_projeto_id: Optional[int] = Query(default=None, description="Filtrar projetos por ID do status"),
+    status_projeto: Optional[int] = Query(default=None, description="Filtrar projetos por ID do status"),
     service: ProjetoService = Depends(get_projeto_service)
 ):
-    return await service.get_all_projetos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, status_projeto_id=status_projeto_id)
+    return await service.get_all_projetos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, status_projeto=status_projeto)
 
 @router.put("/{projeto_id}", response_model=ProjetoDTO)
 async def update_projeto(projeto_id: int, projeto_update_dto: ProjetoUpdateDTO, service: ProjetoService = Depends(get_projeto_service)):

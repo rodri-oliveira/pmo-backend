@@ -40,13 +40,13 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             return DomainProjeto.model_validate(projeto_sql)
         return None
 
-    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto_id: Optional[int] = None) -> List[DomainProjeto]:
+    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto: Optional[int] = None) -> List[DomainProjeto]:
         async with self.db_session.begin():
             query = select(ProjetoSQL)
             if apenas_ativos:
                 query = query.filter(ProjetoSQL.ativo == True)
-            if status_projeto_id is not None:
-                query = query.filter(ProjetoSQL.status_projeto_id == status_projeto_id)
+            if status_projeto is not None:
+                query = query.filter(ProjetoSQL.status_projeto == status_projeto)
             
             query = query.order_by(ProjetoSQL.nome).offset(skip).limit(limit)
             result = await self.db_session.execute(query)
