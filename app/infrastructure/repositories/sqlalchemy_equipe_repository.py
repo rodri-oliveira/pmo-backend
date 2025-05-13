@@ -7,6 +7,7 @@ from app.domain.models.equipe_model import Equipe as DomainEquipe
 from app.application.dtos.equipe_dtos import EquipeCreateDTO, EquipeUpdateDTO
 from app.domain.repositories.equipe_repository import EquipeRepository
 from app.infrastructure.database.equipe_sql_model import EquipeSQL
+from datetime import datetime
 
 class SQLAlchemyEquipeRepository(EquipeRepository):
     def __init__(self, db_session: AsyncSession):
@@ -50,7 +51,10 @@ class SQLAlchemyEquipeRepository(EquipeRepository):
         new_equipe_sql = EquipeSQL(
             nome=equipe_create_dto.nome,
             descricao=equipe_create_dto.descricao,
-            secao_id=equipe_create_dto.secao_id
+            secao_id=equipe_create_dto.secao_id,
+            data_criacao=datetime.utcnow(),
+            data_atualizacao=datetime.utcnow(),
+            ativo=True
         )
         self.db_session.add(new_equipe_sql)
         await self.db_session.commit()

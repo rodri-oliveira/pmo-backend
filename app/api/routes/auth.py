@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy.future import select
 
 from app.api.dtos.auth_schema import Token, UserCreate, UserUpdate
 from app.core.config import settings
@@ -59,34 +60,29 @@ def login_access_token(
 def create_user(
     user_data: UserCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_admin_user),
+    # Remova temporariamente a dependência de admin:
+    # current_user: dict = Depends(get_current_admin_user),
 ) -> Any:
     """
     Cria um novo usuário (apenas admin).
-    
-    Args:
-        user_data: Dados do usuário a ser criado
-        db: Sessão do banco de dados
-        current_user: Usuário administrador autenticado
-        
-    Returns:
-        Any: Dados do usuário criado
-    
-    Raises:
-        HTTPException: Se o email já estiver em uso
     """
     repository = UsuarioRepository(db)
+    # Verifique se já existe algum usuário cadastrado
+    existing_users = db.query(Usuario).count()
+    if existing_users > 0:
+        # Se já existe, exija autenticação (adicione o parâmetro de volta depois)
+        raise HTTPException(
+            status_code=403,
+            detail="Apenas administradores podem criar novos usuários"
+        )
+
     existing_user = repository.get_by_email(user_data.email)
-    
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email já está em uso",
         )
-    
-    # Criar usuário
     user_dict = user_data.dict()
     user_dict["senha_hash"] = get_password_hash(user_data.password)
     del user_dict["password"]
-    
-    return repository.create(user_dict) 
+    return repository.create(user_dict)

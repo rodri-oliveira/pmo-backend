@@ -10,3 +10,5 @@ class Secao(BaseModel):
     data_criacao: datetime
     data_atualizacao: datetime
 
+    class Config:
+        from_attributes = True  # Pydantic v2 - permite validar a partir de objetos ORM

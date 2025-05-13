@@ -1,6 +1,6 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr, validator
-
+from pydantic import BaseModel, EmailStr
+from pydantic import field_validator    
 from app.models.schemas import UserRole
 
 class Token(BaseModel):
@@ -16,8 +16,8 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
-    
-    @validator('password')
+    @classmethod
+    @field_validator('password')
     def password_min_length(cls, v):
         if len(v) < 8:
             raise ValueError('A senha deve ter pelo menos 8 caracteres')
@@ -30,8 +30,8 @@ class UserUpdate(BaseModel):
     role: Optional[UserRole] = None
     recurso_id: Optional[int] = None
     ativo: Optional[bool] = None
-    
-    @validator('password')
+    @classmethod
+    @field_validator('password')
     def password_min_length(cls, v):
         if v is not None and len(v) < 8:
             raise ValueError('A senha deve ter pelo menos 8 caracteres')
