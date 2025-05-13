@@ -37,4 +37,7 @@ class RecursoResponseSchema(BaseResponseSchema):
     matricula: Optional[str] = None
     cargo: Optional[str] = None
     jira_user_id: Optional[str] = None
-    data_admissao: Optional[date] = None 
+    data_admissao: Optional[date] = None
+
+    class Config:
+        from_attributes = True

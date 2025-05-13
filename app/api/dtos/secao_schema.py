@@ -21,4 +21,7 @@ class SecaoUpdateSchema(BaseSchema):
 class SecaoResponseSchema(BaseResponseSchema):
     """Schema para resposta com dados de seção."""
     nome: str
-    descricao: Optional[str] = None 
+    descricao: Optional[str] = None
+
+    class Config:
+        from_attributes = True

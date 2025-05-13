@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from starlette import status
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.api.dtos.projeto_schema import ProjetoCreateSchema
 from app.application.dtos.projeto_dtos import ProjetoDTO, ProjetoCreateDTO, ProjetoUpdateDTO
 from app.application.services.projeto_service import ProjetoService
 from app.application.services.status_projeto_service import StatusProjetoService 
@@ -19,9 +19,9 @@ async def get_projeto_service(db: AsyncSession = Depends(get_async_db)) -> Proje
     return ProjetoService(projeto_repository=projeto_repository, status_projeto_repository=status_projeto_repository)
 
 @router.post("/", response_model=ProjetoDTO, status_code=status.HTTP_201_CREATED)
-async def create_projeto(projeto_create_dto: ProjetoCreateDTO, service: ProjetoService = Depends(get_projeto_service)):
+async def create_projeto(projeto_create: ProjetoCreateSchema, service: ProjetoService = Depends(get_projeto_service)):
     try:
-        return await service.create_projeto(projeto_create_dto)
+        return await service.create_projeto(projeto_create)
     except HTTPException as e:
         raise e
     except Exception as e:
