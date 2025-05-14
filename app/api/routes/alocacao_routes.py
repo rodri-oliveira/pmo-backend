@@ -2,14 +2,15 @@ from typing import List, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from datetime import datetime
+import logging
 
 from app.api.dtos.alocacao_schema import AlocacaoCreate, AlocacaoUpdate, AlocacaoResponse
 # Manter a importação para compatibilidade, mas não usar como dependência
 from app.core.security import get_current_admin_user
 from app.db.session import get_async_db
 from app.services.alocacao_service import AlocacaoService
-import logging
 logging.basicConfig(level=logging.INFO)
 logging.info("Arquivo alocacao_routes.py foi carregado!")
 
@@ -166,16 +167,35 @@ async def get_alocacao(
     Raises:
         HTTPException: Se a alocação não for encontrada
     """
-    service = AlocacaoService(db)
-    alocacao = await service.get(alocacao_id)
-    
-    if not alocacao:
+    try:
+        service = AlocacaoService(db)
+        alocacao = await service.get(alocacao_id)
+        
+        if not alocacao:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Alocação com ID {alocacao_id} não encontrada"
+            )
+        
+        return alocacao
+    except ValueError as e:
+        # Tratamento específico para erros de validação
+        logging.error(f"Erro de validação ao buscar alocação {alocacao_id}: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except SQLAlchemyError as e:
+        # Tratamento para erros de banco de dados
+        logging.error(f"Erro de banco de dados ao buscar alocação {alocacao_id}: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Alocação com ID {alocacao_id} não encontrada"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar alocação: {str(e)}"
         )
-    
-    return alocacao
+    except Exception as e:
+        # Tratamento para outros erros não previstos
+        logging.error(f"Erro inesperado ao buscar alocação {alocacao_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor ao processar a solicitação"
+        )
 
 @router.get("/alocacoes/{alocacao_id}", response_model=AlocacaoResponse, include_in_schema=False)
 async def get_alocacao_duplicated_path(
@@ -274,7 +294,25 @@ async def delete_alocacao(
         await service.delete(alocacao_id)
         
     except ValueError as e:
+        # Tratamento específico para erros de validação
+        logging.error(f"Erro de validação ao excluir alocação {alocacao_id}: {str(e)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except SQLAlchemyError as e:
+        # Tratamento para erros de banco de dados
+        logging.error(f"Erro de banco de dados ao excluir alocação {alocacao_id}: {str(e)}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao excluir alocação: {str(e)}"
+        )
+    except Exception as e:
+        # Tratamento para outros erros não previstos
+        logging.error(f"Erro inesperado ao excluir alocação {alocacao_id}: {str(e)}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor ao processar a solicitação"
+        )
 
 @router.delete("/alocacoes/{alocacao_id}", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
 async def delete_alocacao_duplicated_path(
