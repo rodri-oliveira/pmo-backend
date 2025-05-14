@@ -2,6 +2,7 @@ from typing import List, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
 
 from app.api.dtos.alocacao_schema import AlocacaoCreate, AlocacaoUpdate, AlocacaoResponse
 # Manter a importação para compatibilidade, mas não usar como dependência
@@ -67,8 +68,8 @@ async def create_alocacao_duplicated_path(
 async def list_alocacoes(
     recurso_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do recurso"),
     projeto_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do projeto"),
-    data_inicio: Optional[date] = Query(None, description="Filtrar por data inicial do período"),
-    data_fim: Optional[date] = Query(None, description="Filtrar por data final do período"),
+    data_inicio: Optional[str] = Query(None, description="Filtrar por data inicial do período (formatos: YYYY-MM-DD ou DD/MM/YYYY)"),
+    data_fim: Optional[str] = Query(None, description="Filtrar por data final do período (formatos: YYYY-MM-DD ou DD/MM/YYYY)"),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -77,8 +78,8 @@ async def list_alocacoes(
     Args:
         recurso_id: Filtrar por ID do recurso
         projeto_id: Filtrar por ID do projeto
-        data_inicio: Filtrar por data inicial do período
-        data_fim: Filtrar por data final do período
+        data_inicio: Filtrar por data inicial do período (formatos: YYYY-MM-DD ou DD/MM/YYYY)
+        data_fim: Filtrar por data final do período (formatos: YYYY-MM-DD ou DD/MM/YYYY)
         db: Sessão do banco de dados
     
     Returns:
@@ -86,12 +87,50 @@ async def list_alocacoes(
     """
     service = AlocacaoService(db)
     
+    # Converter strings de data para objetos date
+    data_inicio_obj = None
+    data_fim_obj = None
+    
+    def parse_date(date_str):
+        """Tenta converter uma string de data em vários formatos."""
+        if not date_str:
+            return None
+            
+        formats = [
+            "%Y-%m-%d",  # ISO (YYYY-MM-DD)
+            "%d/%m/%Y",  # Brasileiro (DD/MM/YYYY)
+            "%d-%m-%Y"   # Alternativo (DD-MM-YYYY)
+        ]
+        
+        for fmt in formats:
+            try:
+                return datetime.strptime(date_str, fmt).date()
+            except ValueError:
+                continue
+                
+        # Se nenhum formato funcionar, lança exceção
+        raise ValueError(f"Formato de data inválido: {date_str}. Use YYYY-MM-DD ou DD/MM/YYYY.")
+    
+    # Processar data_inicio
+    if data_inicio:
+        try:
+            data_inicio_obj = parse_date(data_inicio)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+    
+    # Processar data_fim
+    if data_fim:
+        try:
+            data_fim_obj = parse_date(data_fim)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+    
     if recurso_id:
         return await service.list_by_recurso(recurso_id)
     elif projeto_id:
         return await service.list_by_projeto(projeto_id)
-    elif data_inicio or data_fim:
-        return await service.list_by_periodo(data_inicio, data_fim)
+    elif data_inicio_obj or data_fim_obj:
+        return await service.list_by_periodo(data_inicio_obj, data_fim_obj)
     else:
         return await service.list_all()
 
@@ -99,8 +138,8 @@ async def list_alocacoes(
 async def list_alocacoes_duplicated_path(
     recurso_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do recurso"),
     projeto_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do projeto"),
-    data_inicio: Optional[date] = Query(None, description="Filtrar por data inicial do período"),
-    data_fim: Optional[date] = Query(None, description="Filtrar por data final do período"),
+    data_inicio: Optional[str] = Query(None, description="Filtrar por data inicial do período (formatos: YYYY-MM-DD ou DD/MM/YYYY)"),
+    data_fim: Optional[str] = Query(None, description="Filtrar por data final do período (formatos: YYYY-MM-DD ou DD/MM/YYYY)"),
     db: AsyncSession = Depends(get_async_db)
 ):
     """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
