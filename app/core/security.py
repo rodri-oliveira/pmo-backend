@@ -36,7 +36,7 @@ def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -
         Token JWT codificado
     """
     to_encode = data.copy()
-    expires = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    expires = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expires})
     
     encoded_jwt = jwt.encode(

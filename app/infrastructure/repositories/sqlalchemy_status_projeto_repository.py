@@ -2,13 +2,14 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import class_mapper
-
+from fastapi import HTTPException
 from app.domain.models.status_projeto_model import StatusProjeto as DomainStatusProjeto
 from app.application.dtos.status_projeto_dtos import StatusProjetoCreateDTO, StatusProjetoUpdateDTO
 from app.domain.repositories.status_projeto_repository import StatusProjetoRepository
 from app.infrastructure.database.status_projeto_sql_model import StatusProjetoSQL
+from app.utils.dependency_checker import check_dependents
 
 class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
     def __init__(self, db_session: AsyncSession):
@@ -78,15 +79,9 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
         status_dict = self._to_dict(status_sql)
         return DomainStatusProjeto.model_validate(status_dict)
 
-    async def delete(self, status_id: int) -> Optional[DomainStatusProjeto]:
-        status_to_delete_sql = await self.db_session.get(StatusProjetoSQL, status_id)
-        if not status_to_delete_sql:
-            return None
-        
-        # Converter para dicionário antes de validar
-        status_dict = self._to_dict(status_to_delete_sql)
-        status_domain = DomainStatusProjeto.model_validate(status_dict)
-        
-        await self.db_session.delete(status_to_delete_sql)
-        await self.db_session.commit()
-        return status_domain
+    async def delete_status_projeto(status_id: int, db: AsyncSession, status_projeto_repository):
+        # Checa dependentes usando a função utilitária (já lança exceção se houver projetos vinculados)
+        await check_dependents(db, ProjetoSQL, "status_projeto_id", status_id, "projetos vinculados a este status")
+
+        # Executa o soft delete normalmente
+        await status_projeto_repository.delete(status_id, db)

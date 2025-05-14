@@ -3,11 +3,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_, or_
 import traceback # Adicionado para logging detalhado
-from datetime import datetime
+from datetime import datetime, timezone
 from app.domain.models.recurso_model import Recurso as DomainRecurso
 from app.application.dtos.recurso_dtos import RecursoCreateDTO, RecursoUpdateDTO
 from app.domain.repositories.recurso_repository import RecursoRepository
 from app.infrastructure.database.recurso_sql_model import RecursoSQL
+from app.utils.dependency_checker import check_dependents
+from fastapi import HTTPException
+from sqlalchemy import func
+from app.db.orm_models import AlocacaoRecursoProjeto, HorasDisponiveisRH, Usuario, Apontamento
 
 class SQLAlchemyRecursoRepository(RecursoRepository):
     def __init__(self, db_session: AsyncSession):
@@ -62,8 +66,8 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
     async def create(self, recurso_create_dto: RecursoCreateDTO) -> DomainRecurso:
         new_recurso_sql = RecursoSQL(
             **recurso_create_dto.model_dump(),
-            data_criacao=datetime.utcnow(),
-            data_atualizacao=datetime.utcnow(),
+            data_criacao=datetime.now(timezone.utc),
+            data_atualizacao=datetime.now(timezone.utc),
             ativo=True  # se necessário
         )
         self.db_session.add(new_recurso_sql)
@@ -91,11 +95,74 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
             return None
 
     async def delete(self, recurso_id: int) -> Optional[DomainRecurso]:
-        recurso_to_delete_sql = await self.db_session.get(RecursoSQL, recurso_id)
-        if not recurso_to_delete_sql:
-            return None
-        
-        recurso_domain = DomainRecurso.model_validate(recurso_to_delete_sql)
-        await self.db_session.delete(recurso_to_delete_sql)
-        await self.db_session.commit()
-        return recurso_domain
+        try:
+            # Verificar dependências manualmente com consultas SQL diretas
+            # Verificar alocações
+            result = await self.db_session.execute(
+                select(func.count()).select_from(AlocacaoRecursoProjeto).where(
+                    AlocacaoRecursoProjeto.recurso_id == recurso_id
+                )
+            )
+            if result.scalar_one() > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Não é possível excluir pois existem alocações de recurso em projeto vinculados."
+                )
+                
+            # Verificar horas disponíveis
+            result = await self.db_session.execute(
+                select(func.count()).select_from(HorasDisponiveisRH).where(
+                    HorasDisponiveisRH.recurso_id == recurso_id
+                )
+            )
+            if result.scalar_one() > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Não é possível excluir pois existem horas disponíveis RH vinculadas."
+                )
+                
+            # Verificar usuários
+            result = await self.db_session.execute(
+                select(func.count()).select_from(Usuario).where(
+                    Usuario.recurso_id == recurso_id
+                )
+            )
+            if result.scalar_one() > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Não é possível excluir pois existem usuários vinculados."
+                )
+                
+            # Verificar apontamentos
+            result = await self.db_session.execute(
+                select(func.count()).select_from(Apontamento).where(
+                    Apontamento.recurso_id == recurso_id
+                )
+            )
+            if result.scalar_one() > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Não é possível excluir pois existem apontamentos vinculados."
+                )
+
+            # Buscar o recurso
+            recurso_to_delete_sql = await self.db_session.get(RecursoSQL, recurso_id)
+            if not recurso_to_delete_sql:
+                return None
+
+            # Inativar o recurso em vez de deletar
+            recurso_to_delete_sql.ativo = False
+            recurso_to_delete_sql.data_atualizacao = datetime.now(timezone.utc)
+            await self.db_session.commit()
+            await self.db_session.refresh(recurso_to_delete_sql)
+            
+            return DomainRecurso.model_validate(recurso_to_delete_sql)
+        except HTTPException as e:
+            # Propagar exceções HTTP (como 409 Conflict) para o service/rota
+            raise e
+        except Exception as e:
+            # Logar e tratar outros erros
+            await self.db_session.rollback()
+            print(f"Error deleting recurso: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Erro ao deletar recurso: {str(e)}")

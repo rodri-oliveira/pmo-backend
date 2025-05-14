@@ -31,5 +31,4 @@ class RecursoDTO(RecursoBaseDTO):
     data_atualizacao: datetime
 
     # Configuração atualizada para funcionar tanto com Pydantic v1 quanto v2
-    class Config:
-        from_attributes = True
+    model_config = {'from_attributes': True}

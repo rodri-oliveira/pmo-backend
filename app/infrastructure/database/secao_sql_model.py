@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, func
 from app.infrastructure.database.database_config import Base
+from sqlalchemy import Column, DateTime
 
 class SecaoSQL(Base):
     __tablename__ = "secao"
@@ -7,7 +8,7 @@ class SecaoSQL(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     nome = Column(String(100), nullable=False, unique=True)
     descricao = Column(Text, nullable=True)
-    data_criacao = Column(DateTime, nullable=False, server_default=func.now())
-    data_atualizacao = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    data_criacao = Column(DateTime(timezone=True), nullable=False)
+    data_atualizacao = Column(DateTime(timezone=True), nullable=False)
     ativo = Column(Boolean, nullable=False, default=True)
 

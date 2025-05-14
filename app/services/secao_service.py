@@ -23,7 +23,7 @@ class SecaoService:
             ValueError: Se o nome da seção já existir
         """
         # Preencher datas
-        agora = datetime.utcnow()
+        agora = datetime.now(timezone.utc)
         secao_data_dict = secao_data.model_dump()
         secao_data_dict["data_criacao"] = agora
         secao_data_dict["data_atualizacao"] = agora
