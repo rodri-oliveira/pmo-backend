@@ -16,8 +16,8 @@ class ProjetoService:
             return ProjetoDTO.model_validate(projeto)
         return None
 
-    async def get_all_projetos(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto_id: Optional[int] = None) -> List[ProjetoDTO]:
-        projetos = await self.projeto_repository.get_all(skip=skip, limit=limit, apenas_ativos=apenas_ativos, status_projeto_id=status_projeto_id)
+    async def get_all_projetos(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto: Optional[int] = None) -> List[ProjetoDTO]:
+        projetos = await self.projeto_repository.get_all(skip=skip, limit=limit, apenas_ativos=apenas_ativos, status_projeto=status_projeto)
         return [ProjetoDTO.model_validate(p) for p in projetos]
 
     async def create_projeto(self, projeto_create_dto: ProjetoBaseDTO) -> ProjetoDTO:
