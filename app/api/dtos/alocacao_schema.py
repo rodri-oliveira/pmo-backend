@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 class AlocacaoBase(BaseModel):
@@ -23,8 +23,8 @@ class AlocacaoUpdate(BaseModel):
 class AlocacaoResponse(AlocacaoBase):
     """Esquema para resposta de alocação."""
     id: int
-    data_criacao: date
-    data_atualizacao: date
+    data_criacao: datetime
+    data_atualizacao: datetime
     
     # Informações adicionais do recurso
     recurso_nome: Optional[str] = None

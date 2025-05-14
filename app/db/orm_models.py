@@ -97,7 +97,7 @@ class Projeto(Base):
     codigo_empresa = Column(String(50), nullable=True, unique=True, index=True)
     descricao = Column(Text, nullable=True)
     jira_project_key = Column(String(100), nullable=True, unique=True, index=True)
-    status_projeto = Column(Integer, ForeignKey("status_projeto", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False, index=True)
+    status_projeto_id = Column(Integer, ForeignKey("status_projeto.id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False, index=True)
     data_inicio_prevista = Column(Date, nullable=True)
     data_fim_prevista = Column(Date, nullable=True)
     data_criacao = Column(DateTime, nullable=False, default=func.now())

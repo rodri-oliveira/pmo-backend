@@ -24,6 +24,6 @@ api_router.include_router(projeto_routes.router, prefix="/projetos", tags=["Proj
 api_router.include_router(planejamento_horas.router, prefix="/planejamento-horas", tags=["Planejamento de Horas"])
 api_router.include_router(apontamentos.router, prefix="/apontamentos", tags=["Apontamentos"])
 api_router.include_router(relatorios.router, prefix="/relatorios", tags=["Relatórios"])
-api_router.include_router(alocacao_routes.router, prefix="/alocacoes", tags=["Alocações"]) # Incluir a rota de alocações
+# Remover o prefixo para o router de alocações, já que ele já define internamente
+api_router.include_router(alocacao_routes.router, tags=["Alocações"]) # Incluir a rota de alocações
 api_router.include_router(auth.router, prefix="", tags=["Autenticação"])
-
