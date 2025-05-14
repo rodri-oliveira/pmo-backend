@@ -2,9 +2,9 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import class_mapper
-
+from app.utils.dependency_checker import check_dependents
 from app.domain.models.projeto_model import Projeto as DomainProjeto
 from app.application.dtos.projeto_dtos import ProjetoCreateDTO, ProjetoUpdateDTO
 from app.domain.repositories.projeto_repository import ProjetoRepository
@@ -100,14 +100,17 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
         return DomainProjeto.model_validate(projeto_dict)
 
     async def delete(self, projeto_id: int) -> Optional[DomainProjeto]:
+
+        await check_dependents(self.db_session, "projeto_id", projeto_id, "alocações de recurso em projeto")
+        await check_dependents(self.db_session, ApontamentoSQL, "projeto_id", projeto_id, "apontamentos")
+
         projeto_to_delete_sql = await self.db_session.get(ProjetoSQL, projeto_id)
         if not projeto_to_delete_sql:
             return None
-        
-        # Converter para dicionário antes de validar
-        projeto_dict = self._to_dict(projeto_to_delete_sql)
-        projeto_domain = DomainProjeto.model_validate(projeto_dict)
-        
-        await self.db_session.delete(projeto_to_delete_sql)
+
+        projeto_to_delete_sql.ativo = False
+        projeto_to_delete_sql.data_atualizacao = datetime.now(timezone.utc)
         await self.db_session.commit()
-        return projeto_domain
+        await self.db_session.refresh(projeto_to_delete_sql)
+
+        return DomainProjeto.model_validate(projeto_to_delete_sql)

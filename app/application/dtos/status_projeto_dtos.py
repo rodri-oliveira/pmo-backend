@@ -22,6 +22,5 @@ class StatusProjetoDTO(StatusProjetoBaseDTO):
     data_criacao: datetime
     data_atualizacao: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {'from_attributes': True}
 

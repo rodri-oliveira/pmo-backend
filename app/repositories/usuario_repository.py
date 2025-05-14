@@ -19,5 +19,5 @@ class UsuarioRepository(BaseRepository[Usuario]):
         """Atualiza o timestamp de último acesso do usuário."""
         user = self.get(id)
         if user:
-            user.ultimo_acesso = datetime.utcnow()
+            user.ultimo_acesso = datetime.now(timezone.utc)
             self.db.commit() 

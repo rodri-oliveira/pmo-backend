@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Date, ForeignKey, func
 from sqlalchemy.orm import relationship
 from app.infrastructure.database.database_config import Base
+from sqlalchemy import Column, DateTime
 
 class ProjetoSQL(Base):
     __tablename__ = "projeto"
@@ -13,8 +14,8 @@ class ProjetoSQL(Base):
     status_projeto_id = Column(Integer, ForeignKey("status_projeto.id", ondelete="RESTRICT"), nullable=False, index=True)
     data_inicio_prevista = Column(Date, nullable=True)
     data_fim_prevista = Column(Date, nullable=True)
-    data_criacao = Column(DateTime, nullable=False, server_default=func.now())
-    data_atualizacao = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    data_criacao = Column(DateTime(timezone=True), nullable=False)
+    data_atualizacao = Column(DateTime(timezone=True), nullable=False)
     ativo = Column(Boolean, nullable=False, default=True)
 
     status_projeto = relationship("StatusProjetoSQL")

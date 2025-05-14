@@ -20,10 +20,5 @@ class SecaoDTO(SecaoBaseDTO):
     data_criacao: datetime
     data_atualizacao: datetime
 
-    class Config:
-        from_attributes = True # Pydantic V2 uses from_attributes=True
-        # For Pydantic V2, it should be:
-        # model_config = {
-        #     "from_attributes": True
-        # }
+    model_config = {'from_attributes': True}
 

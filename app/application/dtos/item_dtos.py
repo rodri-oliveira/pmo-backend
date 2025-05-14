@@ -1,8 +1,8 @@
 from pydantic import BaseModel
 
 class ItemDTO(BaseModel):
-    id: int
-    description: str
+    # campos...
+    model_config = {'from_attributes': True}
 
 class ItemCreateDTO(BaseModel):
     description: str

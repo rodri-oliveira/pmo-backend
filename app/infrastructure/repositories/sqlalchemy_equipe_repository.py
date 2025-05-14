@@ -2,12 +2,13 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_
-
+from app.utils.dependency_checker import check_dependents
 from app.domain.models.equipe_model import Equipe as DomainEquipe
 from app.application.dtos.equipe_dtos import EquipeCreateDTO, EquipeUpdateDTO
 from app.domain.repositories.equipe_repository import EquipeRepository
 from app.infrastructure.database.equipe_sql_model import EquipeSQL
-from datetime import datetime
+from app.infrastructure.database.recurso_sql_model import RecursoSQL  # Certifique-se de importar o modelo correto!
+from datetime import datetime, timezone
 
 class SQLAlchemyEquipeRepository(EquipeRepository):
     def __init__(self, db_session: AsyncSession):
@@ -52,8 +53,8 @@ class SQLAlchemyEquipeRepository(EquipeRepository):
             nome=equipe_create_dto.nome,
             descricao=equipe_create_dto.descricao,
             secao_id=equipe_create_dto.secao_id,
-            data_criacao=datetime.utcnow(),
-            data_atualizacao=datetime.utcnow(),
+            data_criacao=datetime.now(timezone.utc),
+            data_atualizacao=datetime.now(timezone.utc),
             ativo=True
         )
         self.db_session.add(new_equipe_sql)
@@ -69,18 +70,21 @@ class SQLAlchemyEquipeRepository(EquipeRepository):
         update_data = equipe_update_dto.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(equipe_sql, key, value)
-            
+
         await self.db_session.commit()
         await self.db_session.refresh(equipe_sql)
         return DomainEquipe.model_validate(equipe_sql)
 
     async def delete(self, equipe_id: int) -> Optional[DomainEquipe]:
+        await check_dependents(self.db_session, RecursoSQL, "equipe_principal_id", equipe_id, "recursos")
+
         equipe_to_delete_sql = await self.db_session.get(EquipeSQL, equipe_id)
         if not equipe_to_delete_sql:
             return None
-        
-        equipe_domain = DomainEquipe.model_validate(equipe_to_delete_sql)
-        await self.db_session.delete(equipe_to_delete_sql)
-        await self.db_session.commit()
-        return equipe_domain
 
+        equipe_to_delete_sql.ativo = False
+        equipe_to_delete_sql.data_atualizacao = datetime.now(timezone.utc)
+        await self.db_session.commit()
+        await self.db_session.refresh(equipe_to_delete_sql)
+
+        return DomainEquipe.model_validate(equipe_to_delete_sql)

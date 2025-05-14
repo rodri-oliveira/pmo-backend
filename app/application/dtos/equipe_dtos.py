@@ -22,10 +22,4 @@ class EquipeDTO(EquipeBaseDTO):
     data_criacao: datetime
     data_atualizacao: datetime
 
-    class Config:
-        from_attributes = True # Pydantic V1
-        # For Pydantic V2, it should be:
-        # model_config = {
-        #     "from_attributes": True
-        # }
-
+    model_config = {'from_attributes': True}

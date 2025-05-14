@@ -32,7 +32,7 @@ class SincronizacaoJiraService:
         """
         # Registrar início da sincronização
         sincronizacao = self.sincronizacao_repository.create({
-            "data_inicio": datetime.utcnow(),
+            "data_inicio": datetime.now(timezone.utc),
             "data_fim": None,  # Será atualizado ao final
             "status": "PROCESSANDO",
             "mensagem": "Iniciando sincronização com o Jira",
@@ -45,7 +45,7 @@ class SincronizacaoJiraService:
             ultima_sincronizacao = self.sincronizacao_repository.get_last_successful()
             
             # Determinar a data desde a qual buscar atualizações
-            since = ultima_sincronizacao.data_fim if ultima_sincronizacao else datetime.utcnow() - timedelta(days=30)
+            since = ultima_sincronizacao.data_fim if ultima_sincronizacao else datetime.now(timezone.utc) - timedelta(days=30)
             
             # Buscar worklogs atualizados
             worklogs = self.jira_client.get_worklogs_updated_since(since)
@@ -63,7 +63,7 @@ class SincronizacaoJiraService:
             
             # Atualizar registro de sincronização
             self.sincronizacao_repository.update(sincronizacao.id, {
-                "data_fim": datetime.utcnow(),
+                "data_fim": datetime.now(timezone.utc),
                 "status": "SUCESSO",
                 "mensagem": f"Sincronização concluída com sucesso. {count} apontamentos processados.",
                 "quantidade_apontamentos_processados": count
@@ -78,7 +78,7 @@ class SincronizacaoJiraService:
         except Exception as e:
             # Registrar falha
             self.sincronizacao_repository.update(sincronizacao.id, {
-                "data_fim": datetime.utcnow(),
+                "data_fim": datetime.now(timezone.utc),
                 "status": "ERRO",
                 "mensagem": f"Erro na sincronização: {str(e)}",
                 "quantidade_apontamentos_processados": 0

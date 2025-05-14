@@ -2,12 +2,16 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_
-
+from app.utils.dependency_checker import check_dependents
 from app.domain.models.secao_model import Secao as DomainSecao
 from app.application.dtos.secao_dtos import SecaoCreateDTO, SecaoUpdateDTO
 from app.domain.repositories.secao_repository import SecaoRepository
 from app.infrastructure.database.secao_sql_model import SecaoSQL
-from datetime import datetime
+from datetime import datetime , timezone
+from app.infrastructure.database.secao_sql_model import SecaoSQL
+from app.infrastructure.database.equipe_sql_model import EquipeSQL
+from app.infrastructure.database.recurso_sql_model import RecursoSQL
+# ... demais imports
 
 class SQLAlchemySecaoRepository(SecaoRepository):
     def __init__(self, db_session: AsyncSession):
@@ -37,7 +41,7 @@ class SQLAlchemySecaoRepository(SecaoRepository):
         return [DomainSecao.model_validate(secao) for secao in secoes_sql]
 
     async def create(self, secao_create_dto: SecaoCreateDTO) -> DomainSecao:
-        agora = datetime.utcnow()
+        agora = datetime.now(timezone.utc)
         new_secao_sql = SecaoSQL(
             nome=secao_create_dto.nome,
             descricao=secao_create_dto.descricao,
@@ -66,19 +70,18 @@ class SQLAlchemySecaoRepository(SecaoRepository):
         return DomainSecao.model_validate(secao_sql)
 
     async def delete(self, secao_id: int) -> Optional[DomainSecao]:
+        # Checagem de dependentes usando utilitário
+        await check_dependents(self.db_session, EquipeSQL, "secao_id", secao_id, "equipes")
+        # Linha removida: await check_dependents(self.db_session, RecursoSQL, "secao_id", secao_id, "recursos")
+
         secao_to_delete_sql = await self.db_session.get(SecaoSQL, secao_id)
         if not secao_to_delete_sql:
             return None
-        
-        # For soft delete, we update the 'ativo' flag
-        # secao_to_delete_sql.ativo = False
-        # await self.db_session.commit()
-        # await self.db_session.refresh(secao_to_delete_sql)
-        # return DomainSecao.model_validate(secao_to_delete_sql)
 
-        # For hard delete:
-        secao_domain = DomainSecao.model_validate(secao_to_delete_sql) # convert before deleting
-        await self.db_session.delete(secao_to_delete_sql)
+        secao_to_delete_sql.ativo = False
+        secao_to_delete_sql.data_atualizacao = datetime.now(timezone.utc)
         await self.db_session.commit()
-        return secao_domain
+        await self.db_session.refresh(secao_to_delete_sql)
+
+        return DomainSecao.model_validate(secao_to_delete_sql)
 

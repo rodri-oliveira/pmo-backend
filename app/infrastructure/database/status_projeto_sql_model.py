@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, func, SmallInteger
 from app.infrastructure.database.database_config import Base
+from sqlalchemy import Column, DateTime
 
 class StatusProjetoSQL(Base):
     __tablename__ = "status_projeto"
@@ -9,6 +10,6 @@ class StatusProjetoSQL(Base):
     descricao = Column(String(255), nullable=True)
     is_final = Column(Boolean, nullable=False, default=False)
     ordem_exibicao = Column(SmallInteger, unique=True, nullable=True)  # Usando SmallInteger em vez de TinyInt
-    data_criacao = Column(DateTime, nullable=False, server_default=func.now())
-    data_atualizacao = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    data_criacao = Column(DateTime(timezone=True), nullable=False)
+    data_atualizacao = Column(DateTime(timezone=True), nullable=False)
 
