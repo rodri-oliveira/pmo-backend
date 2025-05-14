@@ -64,27 +64,47 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
             raise
 
     async def create(self, recurso_create_dto: RecursoCreateDTO) -> DomainRecurso:
-        new_recurso_sql = RecursoSQL(
-            **recurso_create_dto.model_dump(),
-            data_criacao=datetime.now(timezone.utc),
-            data_atualizacao=datetime.now(timezone.utc),
-            ativo=True  # se necessário
-        )
-        self.db_session.add(new_recurso_sql)
-        await self.db_session.commit()
-        await self.db_session.refresh(new_recurso_sql)
-        return DomainRecurso.model_validate(new_recurso_sql)
+        try:
+            # Converter strings vazias para None (NULL no banco)
+            data = recurso_create_dto.model_dump()
+            for key, value in data.items():
+                if isinstance(value, str) and (value == "" or value.upper() == "NULL"):
+                    data[key] = None
+                    
+            new_recurso_sql = RecursoSQL(
+                **data,
+                data_criacao=datetime.now(timezone.utc),
+                data_atualizacao=datetime.now(timezone.utc),
+                ativo=True
+            )
+            self.db_session.add(new_recurso_sql)
+            await self.db_session.commit()
+            await self.db_session.refresh(new_recurso_sql)
+            
+            return DomainRecurso.model_validate(new_recurso_sql)
+        except Exception as e:
+            await self.db_session.rollback()
+            print(f"Error creating recurso: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Erro ao criar recurso: {str(e)}")
 
     async def update(self, recurso_id: int, recurso_update_dto: RecursoUpdateDTO) -> Optional[DomainRecurso]:
-        recurso_sql = await self.db_session.get(RecursoSQL, recurso_id)
-        if not recurso_sql:
-            return None
-
-        update_data = recurso_update_dto.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
-            setattr(recurso_sql, key, value)
-        
         try:
+            recurso_sql = await self.db_session.get(RecursoSQL, recurso_id)
+            if not recurso_sql:
+                return None
+
+            # Converter strings vazias para None (NULL no banco)
+            update_data = recurso_update_dto.model_dump(exclude_unset=True)
+            for key, value in update_data.items():
+                if isinstance(value, str) and (value == "" or value.upper() == "NULL"):
+                    update_data[key] = None
+            
+            # Atualizar os campos
+            for key, value in update_data.items():
+                setattr(recurso_sql, key, value)
+            
+            recurso_sql.data_atualizacao = datetime.now(timezone.utc)
             await self.db_session.commit()
             await self.db_session.refresh(recurso_sql)
             return DomainRecurso.model_validate(recurso_sql)
@@ -92,7 +112,7 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
             await self.db_session.rollback()
             print(f"Error updating recurso: {e}")
             traceback.print_exc()
-            return None
+            raise HTTPException(status_code=500, detail=f"Erro ao atualizar recurso: {str(e)}")
 
     async def delete(self, recurso_id: int) -> Optional[DomainRecurso]:
         try:
