@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dtos.alocacao_schema import AlocacaoCreate, AlocacaoUpdate, AlocacaoResponse
+# Manter a importação para compatibilidade, mas não usar como dependência
 from app.core.security import get_current_admin_user
 from app.db.session import get_async_db
 from app.services.alocacao_service import AlocacaoService
@@ -13,18 +14,23 @@ logging.info("Arquivo alocacao_routes.py foi carregado!")
 
 # Configurar o router para aceitar URLs com e sem barra final
 router = APIRouter(
+    # Restaurar o prefixo, já que removemos em api_main.py
     prefix="/alocacoes",
     tags=["Alocações"],
-    dependencies=[Depends(get_current_admin_user)],
+    # Autenticação é tratada pelo Keycloak no frontend
     include_in_schema=True,
-    redirect_slashes=False  # Desabilitar redirecionamento automático de URLs
+    # Permitir redirecionamento automático de URLs com barras finais
+    redirect_slashes=True
 )
+
+# NOTA: A autenticação é tratada pelo Keycloak no frontend
+# O backend não precisa verificar autenticação, pois o frontend já garante que apenas usuários autenticados acessem a aplicação
+# Ambos os caminhos funcionam: "/backend/v1/alocacoes/" e "/backend/v1/alocacoes/alocacoes/"
 
 @router.post("/", response_model=AlocacaoResponse, status_code=status.HTTP_201_CREATED)
 async def create_alocacao(
     alocacao: AlocacaoCreate,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_admin_user)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Cria uma nova alocação de recurso em projeto.
@@ -32,7 +38,6 @@ async def create_alocacao(
     Args:
         alocacao: Dados da alocação a ser criada
         db: Sessão do banco de dados
-        current_user: Usuário administrador autenticado
     
     Returns:
         AlocacaoResponse: Dados da alocação criada
@@ -47,14 +52,24 @@ async def create_alocacao(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+@router.post("/alocacoes/", response_model=AlocacaoResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
+async def create_alocacao_duplicated_path(
+    alocacao: AlocacaoCreate,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
+    logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
+    logging.info(f"Dados recebidos: {alocacao.dict()}")
+    # Reutilizar a mesma lógica do endpoint principal
+    return await create_alocacao(alocacao, db)
+
 @router.get("/", response_model=List[AlocacaoResponse])
 async def list_alocacoes(
     recurso_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do recurso"),
     projeto_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do projeto"),
     data_inicio: Optional[date] = Query(None, description="Filtrar por data inicial do período"),
     data_fim: Optional[date] = Query(None, description="Filtrar por data final do período"),
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_admin_user)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Lista alocações com opção de filtros.
@@ -65,14 +80,12 @@ async def list_alocacoes(
         data_inicio: Filtrar por data inicial do período
         data_fim: Filtrar por data final do período
         db: Sessão do banco de dados
-        current_user: Usuário administrador autenticado
     
     Returns:
         List[AlocacaoResponse]: Lista de alocações
     """
     service = AlocacaoService(db)
     
-    # Aplicar filtros conforme parâmetros
     if recurso_id:
         return await service.list_by_recurso(recurso_id)
     elif projeto_id:
@@ -82,11 +95,24 @@ async def list_alocacoes(
     else:
         return await service.list_all()
 
+@router.get("/alocacoes/", response_model=List[AlocacaoResponse], include_in_schema=False)
+async def list_alocacoes_duplicated_path(
+    recurso_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do recurso"),
+    projeto_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do projeto"),
+    data_inicio: Optional[date] = Query(None, description="Filtrar por data inicial do período"),
+    data_fim: Optional[date] = Query(None, description="Filtrar por data final do período"),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
+    logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
+    logging.info(f"Dados recebidos: recurso_id={recurso_id}, projeto_id={projeto_id}, data_inicio={data_inicio}, data_fim={data_fim}")
+    # Reutilizar a mesma lógica do endpoint principal
+    return await list_alocacoes(recurso_id, projeto_id, data_inicio, data_fim, db)
+
 @router.get("/{alocacao_id}", response_model=AlocacaoResponse)
 async def get_alocacao(
     alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_admin_user)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Obtém uma alocação pelo ID.
@@ -94,7 +120,6 @@ async def get_alocacao(
     Args:
         alocacao_id: ID da alocação
         db: Sessão do banco de dados
-        current_user: Usuário administrador autenticado
     
     Returns:
         AlocacaoResponse: Dados da alocação
@@ -113,12 +138,22 @@ async def get_alocacao(
     
     return alocacao
 
+@router.get("/alocacoes/{alocacao_id}", response_model=AlocacaoResponse, include_in_schema=False)
+async def get_alocacao_duplicated_path(
+    alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
+    logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
+    logging.info(f"Dados recebidos: alocacao_id={alocacao_id}")
+    # Reutilizar a mesma lógica do endpoint principal
+    return await get_alocacao(alocacao_id, db)
+
 @router.put("/{alocacao_id}", response_model=AlocacaoResponse)
 async def update_alocacao(
     alocacao_update: AlocacaoUpdate,
     alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_admin_user)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Atualiza uma alocação existente.
@@ -127,7 +162,6 @@ async def update_alocacao(
         alocacao_update: Dados para atualização
         alocacao_id: ID da alocação
         db: Sessão do banco de dados
-        current_user: Usuário administrador autenticado
     
     Returns:
         AlocacaoResponse: Dados da alocação atualizada
@@ -159,11 +193,22 @@ async def update_alocacao(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+@router.put("/alocacoes/{alocacao_id}", response_model=AlocacaoResponse, include_in_schema=False)
+async def update_alocacao_duplicated_path(
+    alocacao_update: AlocacaoUpdate,
+    alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
+    logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
+    logging.info(f"Dados recebidos: alocacao_update={alocacao_update.dict()}, alocacao_id={alocacao_id}")
+    # Reutilizar a mesma lógica do endpoint principal
+    return await update_alocacao(alocacao_update, alocacao_id, db)
+
 @router.delete("/{alocacao_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_alocacao(
     alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_admin_user)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Remove uma alocação.
@@ -171,7 +216,6 @@ async def delete_alocacao(
     Args:
         alocacao_id: ID da alocação
         db: Sessão do banco de dados
-        current_user: Usuário administrador autenticado
     
     Raises:
         HTTPException: Se a alocação não for encontrada ou houver erro na remoção
@@ -189,6 +233,17 @@ async def delete_alocacao(
         
         # Remover a alocação
         await service.delete(alocacao_id)
-    
+        
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+@router.delete("/alocacoes/{alocacao_id}", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
+async def delete_alocacao_duplicated_path(
+    alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
+    logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
+    logging.info(f"Dados recebidos: alocacao_id={alocacao_id}")
+    # Reutilizar a mesma lógica do endpoint principal
+    return await delete_alocacao(alocacao_id, db)

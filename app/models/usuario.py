@@ -1,6 +1,12 @@
 from pydantic import BaseModel
 from typing import Optional
 
+class TokenData(BaseModel):
+    """
+    Modelo para os dados contidos no token JWT.
+    """
+    username: Optional[str] = None
+
 class UsuarioBase(BaseModel):
     username: str
     email: str
