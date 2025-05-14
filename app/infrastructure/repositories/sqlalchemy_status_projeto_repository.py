@@ -22,66 +22,216 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
         return {c.key: getattr(obj, c.key) for c in class_mapper(obj.__class__).columns}
 
     async def get_by_id(self, status_id: int) -> Optional[DomainStatusProjeto]:
-        result = await self.db_session.execute(select(StatusProjetoSQL).filter(StatusProjetoSQL.id == status_id))
-        status_sql = result.scalars().first()
-        if status_sql:
-            return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
-        return None
+        try:
+            result = await self.db_session.execute(select(StatusProjetoSQL).filter(StatusProjetoSQL.id == status_id))
+            status_sql = result.scalars().first()
+            if status_sql:
+                return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
+            return None
+        except Exception as e:
+            # Log the error
+            print(f"Erro ao buscar status por ID: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao buscar status de projeto: {str(e)}"
+            )
 
     async def get_by_nome(self, nome: str) -> Optional[DomainStatusProjeto]:
-        result = await self.db_session.execute(select(StatusProjetoSQL).filter(StatusProjetoSQL.nome == nome))
-        status_sql = result.scalars().first()
-        if status_sql:
-            return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
-        return None
+        try:
+            result = await self.db_session.execute(select(StatusProjetoSQL).filter(StatusProjetoSQL.nome == nome))
+            status_sql = result.scalars().first()
+            if status_sql:
+                return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
+            return None
+        except Exception as e:
+            # Log the error
+            print(f"Erro ao buscar status por nome: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao buscar status de projeto por nome: {str(e)}"
+            )
 
     async def get_all(self, skip: int = 0, limit: int = 100) -> List[DomainStatusProjeto]:
-        query = select(StatusProjetoSQL).order_by(StatusProjetoSQL.ordem_exibicao, StatusProjetoSQL.nome).offset(skip).limit(limit)
-        result = await self.db_session.execute(query)
-        status_sql = result.scalars().all()
-        return [DomainStatusProjeto.model_validate(self._to_dict(s)) for s in status_sql]
+        try:
+            query = select(StatusProjetoSQL).order_by(StatusProjetoSQL.ordem_exibicao, StatusProjetoSQL.nome).offset(skip).limit(limit)
+            result = await self.db_session.execute(query)
+            status_sql = result.scalars().all()
+            return [DomainStatusProjeto.model_validate(self._to_dict(s)) for s in status_sql]
+        except Exception as e:
+            # Log the error
+            print(f"Erro ao listar status: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao listar status de projeto: {str(e)}"
+            )
 
     async def create(self, status_create_dto: StatusProjetoCreateDTO) -> DomainStatusProjeto:
-        # Extrair dados do DTO
-        data = status_create_dto.model_dump()
-        
-        # Adicionar manualmente as datas
-        now = datetime.now()
-        data["data_criacao"] = now
-        data["data_atualizacao"] = now
-        
-        # Criar o objeto SQL e salvá-lo
-        new_status_sql = StatusProjetoSQL(**data)
-        self.db_session.add(new_status_sql)
-        await self.db_session.commit()
-        await self.db_session.refresh(new_status_sql)
-        
-        # Converter para dicionário antes de validar
-        status_dict = self._to_dict(new_status_sql)
-        return DomainStatusProjeto.model_validate(status_dict)
+        try:
+            # Verificar se já existe um status com o mesmo nome
+            existing_status = await self.get_by_nome(status_create_dto.nome)
+            if existing_status:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Já existe um status de projeto com o nome '{status_create_dto.nome}'."
+                )
+            
+            # Verificar se a ordem_exibicao já existe, se fornecida
+            if status_create_dto.ordem_exibicao is not None:
+                # Consultar se já existe um status com a mesma ordem_exibicao
+                query = select(StatusProjetoSQL).filter(StatusProjetoSQL.ordem_exibicao == status_create_dto.ordem_exibicao)
+                result = await self.db_session.execute(query)
+                existing_order = result.scalars().first()
+                
+                if existing_order:
+                    # Opção 1: Encontrar a próxima ordem disponível
+                    # Buscar a maior ordem_exibicao atual
+                    max_order_query = select(StatusProjetoSQL).order_by(StatusProjetoSQL.ordem_exibicao.desc())
+                    max_order_result = await self.db_session.execute(max_order_query)
+                    max_order_status = max_order_result.scalars().first()
+                    
+                    next_order = 1
+                    if max_order_status and max_order_status.ordem_exibicao:
+                        next_order = max_order_status.ordem_exibicao + 1
+                    
+                    # Atualizar o DTO com a nova ordem
+                    status_create_dto.ordem_exibicao = next_order
+                    
+                    # Opção 2: Lançar um erro informativo (descomente se preferir esta abordagem)
+                    # raise HTTPException(
+                    #     status_code=400,
+                    #     detail=f"Já existe um status de projeto com a ordem de exibição {status_create_dto.ordem_exibicao}. Próxima ordem disponível: {next_order}."
+                    # )
+            
+            # Extrair dados do DTO
+            data = status_create_dto.model_dump()
+            
+            # Adicionar manualmente as datas
+            agora = datetime.now(timezone.utc)
+            data["data_criacao"] = agora
+            data["data_atualizacao"] = agora
+            
+            # Criar o objeto SQL e salvá-lo
+            new_status_sql = StatusProjetoSQL(**data)
+            self.db_session.add(new_status_sql)
+            await self.db_session.commit()
+            await self.db_session.refresh(new_status_sql)
+            
+            # Converter para dicionário antes de validar
+            status_dict = self._to_dict(new_status_sql)
+            return DomainStatusProjeto.model_validate(status_dict)
+        except HTTPException:
+            # Repassar exceções HTTP
+            raise
+        except Exception as e:
+            # Log the error
+            print(f"Erro ao criar status: {str(e)}")
+            # Rollback da transação em caso de erro
+            await self.db_session.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao criar status de projeto: {str(e)}"
+            )
 
     async def update(self, status_id: int, status_update_dto: StatusProjetoUpdateDTO) -> Optional[DomainStatusProjeto]:
-        status_sql = await self.db_session.get(StatusProjetoSQL, status_id)
-        if not status_sql:
-            return None
+        try:
+            status_sql = await self.db_session.get(StatusProjetoSQL, status_id)
+            if not status_sql:
+                return None
 
-        update_data = status_update_dto.model_dump(exclude_unset=True)
-        # Atualizar a data de atualização manualmente
-        update_data["data_atualizacao"] = datetime.now()
-        
-        for key, value in update_data.items():
-            setattr(status_sql, key, value)
+            # Verificar se o nome já existe (se estiver sendo atualizado)
+            if status_update_dto.nome is not None and status_update_dto.nome != status_sql.nome:
+                existing_status = await self.get_by_nome(status_update_dto.nome)
+                if existing_status:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Já existe um status de projeto com o nome '{status_update_dto.nome}'."
+                    )
+
+            # Verificar se a ordem_exibicao já existe (se estiver sendo atualizada)
+            if status_update_dto.ordem_exibicao is not None and status_update_dto.ordem_exibicao != status_sql.ordem_exibicao:
+                query = select(StatusProjetoSQL).filter(
+                    StatusProjetoSQL.ordem_exibicao == status_update_dto.ordem_exibicao,
+                    StatusProjetoSQL.id != status_id
+                )
+                result = await self.db_session.execute(query)
+                existing_order = result.scalars().first()
+                
+                if existing_order:
+                    # Opção 1: Encontrar a próxima ordem disponível
+                    max_order_query = select(StatusProjetoSQL).order_by(StatusProjetoSQL.ordem_exibicao.desc())
+                    max_order_result = await self.db_session.execute(max_order_query)
+                    max_order_status = max_order_result.scalars().first()
+                    
+                    next_order = 1
+                    if max_order_status and max_order_status.ordem_exibicao:
+                        next_order = max_order_status.ordem_exibicao + 1
+                    
+                    # Atualizar o DTO com a nova ordem
+                    status_update_dto.ordem_exibicao = next_order
+
+            update_data = status_update_dto.model_dump(exclude_unset=True)
+            # Atualizar a data de atualização manualmente
+            update_data["data_atualizacao"] = datetime.now(timezone.utc)
             
-        await self.db_session.commit()
-        await self.db_session.refresh(status_sql)
-        
-        # Converter para dicionário antes de validar
-        status_dict = self._to_dict(status_sql)
-        return DomainStatusProjeto.model_validate(status_dict)
+            for key, value in update_data.items():
+                setattr(status_sql, key, value)
+                
+            await self.db_session.commit()
+            await self.db_session.refresh(status_sql)
+            
+            # Converter para dicionário antes de validar
+            status_dict = self._to_dict(status_sql)
+            return DomainStatusProjeto.model_validate(status_dict)
+        except HTTPException:
+            # Repassar exceções HTTP
+            raise
+        except Exception as e:
+            # Log the error
+            print(f"Erro ao atualizar status: {str(e)}")
+            # Rollback da transação em caso de erro
+            await self.db_session.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao atualizar status de projeto: {str(e)}"
+            )
 
-    async def delete_status_projeto(status_id: int, db: AsyncSession, status_projeto_repository):
-        # Checa dependentes usando a função utilitária (já lança exceção se houver projetos vinculados)
-        await check_dependents(db, ProjetoSQL, "status_projeto_id", status_id, "projetos vinculados a este status")
-
-        # Executa o soft delete normalmente
-        await status_projeto_repository.delete(status_id, db)
+    async def delete(self, status_id: int) -> Optional[DomainStatusProjeto]:
+        try:
+            # Importar ProjetoSQL aqui para evitar importação circular
+            from app.infrastructure.database.projeto_sql_model import ProjetoSQL
+            
+            # Verificar dependências antes de excluir
+            await check_dependents(
+                self.db_session, 
+                ProjetoSQL, 
+                "status_projeto_id", 
+                status_id, 
+                "projetos vinculados a este status"
+            )
+            
+            # Buscar o status pelo ID
+            status_sql = await self.db_session.get(StatusProjetoSQL, status_id)
+            if not status_sql:
+                return None
+                
+            # Salvar uma cópia dos dados antes de deletar
+            status_dict = self._to_dict(status_sql)
+            
+            # Remover o status do banco de dados (hard delete)
+            await self.db_session.delete(status_sql)
+            await self.db_session.commit()
+            
+            # Retornar o objeto de domínio do status que foi deletado
+            return DomainStatusProjeto.model_validate(status_dict)
+        except HTTPException:
+            # Repassar exceções HTTP
+            raise
+        except Exception as e:
+            # Log the error
+            print(f"Erro ao excluir status: {str(e)}")
+            # Rollback da transação em caso de erro
+            await self.db_session.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao excluir status de projeto: {str(e)}"
+            )
