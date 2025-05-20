@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.planejamento_horas_repository import PlanejamentoHorasRepository
 from app.repositories.alocacao_repository import AlocacaoRepository
@@ -148,3 +148,43 @@ class PlanejamentoHorasService:
             raise ValueError(f"Planejamento com ID {planejamento_id} não encontrado")
         
         await self.repository.delete(planejamento_id) 
+    
+    async def list_planejamentos_com_filtros_e_paginacao(
+        self, 
+        skip: int, 
+        limit: int, 
+        ano: Optional[int],
+        mes: Optional[int],
+        recurso_id: Optional[int],
+        projeto_id: Optional[int]
+    ) -> Tuple[List[Any], int]: # Retorna List[PlanejamentoHorasSQL] e total
+        """
+        Lista planejamentos de horas com base em filtros e paginação.
+
+        Args:
+            skip: Número de registros a pular.
+            limit: Número máximo de registros a retornar.
+            ano: Filtro opcional por ano.
+            mes: Filtro opcional por mês.
+            recurso_id: Filtro opcional por ID do recurso (requer join com Alocacao).
+            projeto_id: Filtro opcional por ID do projeto (requer join com Alocacao).
+
+        Returns:
+            Tuple[List[Any], int]: Uma tupla contendo a lista de planejamentos (modelos ORM)
+                                     e o número total de registros que correspondem aos filtros.
+        """
+        filters = {
+            "ano": ano,
+            "mes": mes,
+            "recurso_id": recurso_id,
+            "projeto_id": projeto_id
+        }
+        # Remove chaves com valor None para não passá-las ao repositório
+        active_filters = {k: v for k, v in filters.items() if v is not None}
+
+        planejamentos, total_count = await self.repository.list_with_filters_and_pagination(
+            skip=skip,
+            limit=limit,
+            filters=active_filters
+        )
+        return planejamentos, total_count
