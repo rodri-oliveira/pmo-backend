@@ -350,144 +350,117 @@ class RelatorioService:
         secao_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
-        Obtém análise de disponibilidade de recursos x alocação.
-        
+        Calcula e retorna a disponibilidade dos recursos, incluindo horas disponíveis,
+        planejadas, realizadas, e métricas de utilização.
+
         Args:
-            ano: Ano de referência
-            mes: Mês de referência (opcional)
-            recurso_id: Filtrar por recurso
-            equipe_id: Filtrar por equipe
-            secao_id: Filtrar por seção
-            
+            ano: Ano de referência.
+            mes: Mês de referência (opcional, se não fornecido, retorna para o ano todo).
+            recurso_id: ID do recurso específico (opcional).
+
         Returns:
-            Lista de dicionários com informações de disponibilidade
+            Lista de dicionários com os dados de disponibilidade por recurso e mês.
         """
-        # Base da consulta para horas disponíveis
-        query = select(
-            Recurso.id.label("recurso_id"),
-            Recurso.nome.label("recurso_nome"),
-            Equipe.nome.label("equipe_nome"),
-            Secao.nome.label("secao_nome"),
-            HorasDisponiveisRH.ano,
-            HorasDisponiveisRH.mes,
-            HorasDisponiveisRH.horas_disponiveis_mes
-        ).join(
-            HorasDisponiveisRH, HorasDisponiveisRH.recurso_id == Recurso.id
-        ).join(
-            Equipe, Recurso.equipe_id == Equipe.id, isouter=True
-        ).join(
-            Secao, Recurso.secao_id == Secao.id, isouter=True
-        ).filter(
-            HorasDisponiveisRH.ano == ano
+        # Subconsulta para agregar horas planejadas por recurso, ano e mês
+        subquery_planejadas = (
+            select(
+                AlocacaoRecursoProjeto.recurso_id,
+                HorasPlanejadas.ano,
+                HorasPlanejadas.mes,
+                func.sum(HorasPlanejadas.horas_planejadas).label("total_horas_planejadas")
+            )
+            .join(HorasPlanejadas, HorasPlanejadas.alocacao_id == AlocacaoRecursoProjeto.id)
+            .group_by(AlocacaoRecursoProjeto.recurso_id, HorasPlanejadas.ano, HorasPlanejadas.mes)
+            .filter(HorasPlanejadas.ano == ano)
         )
-        
-        # Aplicar filtros
+        if mes:
+            subquery_planejadas = subquery_planejadas.filter(HorasPlanejadas.mes == mes)
+        if recurso_id:
+            subquery_planejadas = subquery_planejadas.filter(AlocacaoRecursoProjeto.recurso_id == recurso_id)
+        subquery_planejadas = subquery_planejadas.cte("planejadas_cte")
+
+        # Subconsulta para agregar horas apontadas por recurso, ano e mês
+        subquery_apontadas = (
+            select(
+                Apontamento.recurso_id,
+                extract("year", Apontamento.data_apontamento).label("ano"),
+                extract("month", Apontamento.data_apontamento).label("mes"),
+                func.sum(Apontamento.horas_apontadas).label("total_horas_realizadas")
+            )
+            .group_by(Apontamento.recurso_id, extract("year", Apontamento.data_apontamento), extract("month", Apontamento.data_apontamento))
+            .filter(extract("year", Apontamento.data_apontamento) == ano)
+        )
+        if mes:
+            subquery_apontadas = subquery_apontadas.filter(extract("month", Apontamento.data_apontamento) == mes)
+        if recurso_id:
+            subquery_apontadas = subquery_apontadas.filter(Apontamento.recurso_id == recurso_id)
+        subquery_apontadas = subquery_apontadas.cte("apontadas_cte")
+
+        # Consulta principal
+        query = (
+            select(
+                Recurso.id.label("recurso_id"),
+                Recurso.nome.label("recurso_nome"),
+                HorasDisponiveisRH.ano,
+                HorasDisponiveisRH.mes,
+                HorasDisponiveisRH.horas_disponiveis_mes,
+                func.coalesce(subquery_planejadas.c.total_horas_planejadas, 0).label("total_horas_planejadas"),
+                func.coalesce(subquery_apontadas.c.total_horas_realizadas, 0).label("total_horas_realizadas")
+            )
+            .join(Recurso, Recurso.id == HorasDisponiveisRH.recurso_id)
+            .outerjoin(
+                subquery_planejadas,
+                and_(
+                    subquery_planejadas.c.recurso_id == HorasDisponiveisRH.recurso_id,
+                    subquery_planejadas.c.ano == HorasDisponiveisRH.ano,
+                    subquery_planejadas.c.mes == HorasDisponiveisRH.mes
+                )
+            )
+            .outerjoin(
+                subquery_apontadas,
+                and_(
+                    subquery_apontadas.c.recurso_id == HorasDisponiveisRH.recurso_id,
+                    subquery_apontadas.c.ano == HorasDisponiveisRH.ano,
+                    subquery_apontadas.c.mes == HorasDisponiveisRH.mes
+                )
+            )
+            .filter(HorasDisponiveisRH.ano == ano)
+        )
+
         if mes:
             query = query.filter(HorasDisponiveisRH.mes == mes)
-            
         if recurso_id:
-            query = query.filter(Recurso.id == recurso_id)
-            
-        if equipe_id:
-            query = query.filter(Recurso.equipe_id == equipe_id)
-            
-        if secao_id:
-            query = query.filter(Recurso.secao_id == secao_id)
-            
-        # Subquery para somar horas planejadas
-        planejado_subquery = select(
-            AlocacaoRecursoProjeto.recurso_id,
-            HorasPlanejadas.ano,
-            HorasPlanejadas.mes,
-            func.sum(HorasPlanejadas.horas_planejadas).label("total_planejado")
-        ).join(
-            HorasPlanejadas, HorasPlanejadas.alocacao_id == AlocacaoRecursoProjeto.id
-        ).filter(
-            HorasPlanejadas.ano == ano
-        )
+            query = query.filter(HorasDisponiveisRH.recurso_id == recurso_id)
+
+        query = query.order_by(Recurso.nome, HorasDisponiveisRH.mes)
         
-        if mes:
-            planejado_subquery = planejado_subquery.filter(HorasPlanejadas.mes == mes)
-            
-        if recurso_id:
-            planejado_subquery = planejado_subquery.filter(AlocacaoRecursoProjeto.recurso_id == recurso_id)
-            
-        planejado_subquery = planejado_subquery.group_by(
-            AlocacaoRecursoProjeto.recurso_id,
-            HorasPlanejadas.ano,
-            HorasPlanejadas.mes
-        ).subquery()
-        
-        # Subquery para somar horas realizadas
-        realizado_subquery = select(
-            Apontamento.recurso_id,
-            extract('year', Apontamento.data_apontamento).label('ano'),
-            extract('month', Apontamento.data_apontamento).label('mes'),
-            func.sum(Apontamento.horas_apontadas).label("total_realizado")
-        ).filter(
-            extract('year', Apontamento.data_apontamento) == ano
-        )
-        
-        if mes:
-            realizado_subquery = realizado_subquery.filter(extract('month', Apontamento.data_apontamento) == mes)
-            
-        if recurso_id:
-            realizado_subquery = realizado_subquery.filter(Apontamento.recurso_id == recurso_id)
-            
-        realizado_subquery = realizado_subquery.group_by(
-            Apontamento.recurso_id,
-            'ano',
-            'mes'
-        ).subquery()
-        
-        # Juntar com as subqueries
-        query = query.outerjoin(
-            planejado_subquery,
-            and_(
-                Recurso.id == planejado_subquery.c.recurso_id,
-                HorasDisponiveisRH.ano == planejado_subquery.c.ano,
-                HorasDisponiveisRH.mes == planejado_subquery.c.mes
-            )
-        ).outerjoin(
-            realizado_subquery,
-            and_(
-                Recurso.id == realizado_subquery.c.recurso_id,
-                HorasDisponiveisRH.ano == realizado_subquery.c.ano,
-                HorasDisponiveisRH.mes == realizado_subquery.c.mes
-            )
-        ).add_columns(
-            planejado_subquery.c.total_planejado,
-            realizado_subquery.c.total_realizado
-        )
-        
-        # Processar resultados
         result = await self.db.execute(query)
         rows = result.fetchall()
-        
-        result = []
+
+        response_data = []
         for row in rows:
-            horas_disponiveis = float(row.horas_disponiveis_mes) if row.horas_disponiveis_mes else 0
-            horas_planejadas = float(row.total_planejado) if row.total_planejado else 0
-            horas_realizadas = float(row.total_realizado) if row.total_realizado else 0
-            
-            # Calcular percentuais e diferenças
-            percentual_alocacao = (horas_planejadas / horas_disponiveis * 100) if horas_disponiveis > 0 else None
-            percentual_utilizacao = (horas_realizadas / horas_disponiveis * 100) if horas_disponiveis > 0 else None
+            horas_disponiveis = row.horas_disponiveis_mes if row.horas_disponiveis_mes else 0
+            horas_planejadas = row.total_horas_planejadas if row.total_horas_planejadas else 0
+            horas_realizadas = row.total_horas_realizadas if row.total_horas_realizadas else 0
+
             horas_livres = horas_disponiveis - horas_planejadas
             
-            result.append({
+            percentual_alocacao = (horas_planejadas / horas_disponiveis * 100) if horas_disponiveis > 0 else 0
+            percentual_utilizacao_planejado = (horas_realizadas / horas_planejadas * 100) if horas_planejadas > 0 else 0
+            percentual_utilizacao_disponivel = (horas_realizadas / horas_disponiveis * 100) if horas_disponiveis > 0 else 0
+
+            response_data.append({
                 "recurso_id": row.recurso_id,
                 "recurso_nome": row.recurso_nome,
-                "equipe_nome": row.equipe_nome,
-                "secao_nome": row.secao_nome,
                 "ano": row.ano,
                 "mes": row.mes,
-                "horas_disponiveis": horas_disponiveis,
+                "horas_disponiveis_rh": horas_disponiveis,
                 "horas_planejadas": horas_planejadas,
                 "horas_realizadas": horas_realizadas,
                 "horas_livres": horas_livres,
-                "percentual_alocacao": percentual_alocacao,
-                "percentual_utilizacao": percentual_utilizacao
+                "percentual_alocacao_rh": round(percentual_alocacao, 2),
+                "percentual_utilizacao_sobre_planejado": round(percentual_utilizacao_planejado, 2),
+                "percentual_utilizacao_sobre_disponivel_rh": round(percentual_utilizacao_disponivel, 2)
             })
             
-        return result 
+        return response_data

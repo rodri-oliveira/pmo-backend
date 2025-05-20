@@ -6,7 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.api.dtos.auth_schema import Token, UserCreate, UserUpdate
+from app.api.dtos.auth_schema import Token, UserCreate, UserUpdate, UserBase
 from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash, verify_password, get_current_admin_user
 from app.db.session import get_async_db
@@ -79,28 +79,16 @@ async def login_access_token(
     }
 
 
-@router.post("/usuarios", response_model=Any)
+@router.post("/usuarios", response_model=UserBase)
 async def create_user(
     user_data: UserCreate,
     db: AsyncSession = Depends(get_async_db),
-    # Remova temporariamente a dependência de admin:
-    # current_user: dict = Depends(get_current_admin_user),
+    current_user: Usuario = Depends(get_current_admin_user),
 ) -> Any:
     """
     Cria um novo usuário (apenas admin).
     """
     repository = UsuarioRepository(db)
-    # Verifique se já existe algum usuário cadastrado
-    result = await db.execute(select(Usuario))
-    existing_users = len(result.scalars().all())
-    
-    if existing_users > 0:
-        # Se já existe, exija autenticação (adicione o parâmetro de volta depois)
-        raise HTTPException(
-            status_code=403,
-            detail="Apenas administradores podem criar novos usuários"
-        )
-
     existing_user = await repository.get_by_email(user_data.email)
     if existing_user:
         raise HTTPException(
