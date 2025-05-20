@@ -241,36 +241,43 @@ async def get_planejado_vs_realizado(
     )
 
 @router.get("/disponibilidade-recursos")
-async def get_disponibilidade_recursos(
-    ano: int = Query(..., description="Ano de referência"),
-    mes: Optional[int] = Query(None, description="Mês de referência (1-12)"),
-    recurso_id: Optional[int] = None,
-    equipe_id: Optional[int] = None,
-    secao_id: Optional[int] = None,
+async def get_disponibilidade_recursos_endpoint(
+    ano: int = Query(..., description="Ano de referência para a disponibilidade"),
+    mes: Optional[int] = Query(None, description="Mês de referência (1-12). Se não informado, retorna para o ano todo.", ge=1, le=12),
+    recurso_id: Optional[int] = Query(None, description="ID do recurso para filtrar a disponibilidade"),
+    # Adicionar outros Query Params para filtros como equipe_id, secao_id se necessário
     db: AsyncSession = Depends(get_async_db),
-    current_user: UsuarioInDB = Depends(get_current_admin_user)
+    current_user: UsuarioInDB = Depends(get_current_admin_user) # Protegendo o endpoint
 ):
     """
-    Obter relatório de disponibilidade de recursos.
-    
-    - **ano**: Ano de referência (obrigatório)
-    - **mes**: Mês de referência (opcional)
-    - **recurso_id**: Filtrar por recurso específico
-    - **equipe_id**: Filtrar por equipe específica
-    - **secao_id**: Filtrar por seção específica
-    
-    Retorna uma lista com análise de disponibilidade, alocação e utilização dos recursos.
+    Retorna um relatório detalhado sobre a disponibilidade dos recursos.
+
+    Inclui horas disponíveis (cadastro RH), horas planejadas em projetos,
+    horas efetivamente realizadas (apontamentos), horas livres, e percentuais
+    de alocação e utilização.
+
+    - **ano**: Ano para o qual o relatório de disponibilidade é gerado.
+    - **mes**: Mês específico para filtrar o relatório (opcional).
+    - **recurso_id**: ID do recurso para obter disponibilidade específica (opcional).
     """
-    # Validar mês
-    if mes is not None and (mes < 1 or mes > 12):
-        raise HTTPException(status_code=400, detail="Mês deve estar entre 1 e 12")
-    
     relatorio_service = RelatorioService(db)
-    
-    return await relatorio_service.get_disponibilidade_recursos(
-        ano=ano,
-        mes=mes,
-        recurso_id=recurso_id,
-        equipe_id=equipe_id,
-        secao_id=secao_id
-    ) 
+    try:
+        dados_disponibilidade = await relatorio_service.get_disponibilidade_recursos(
+            ano=ano,
+            mes=mes,
+            recurso_id=recurso_id
+        )
+        if not dados_disponibilidade and (recurso_id or mes):
+            # Se filtros específicos foram aplicados e nada foi encontrado, pode ser um 404
+            # ou simplesmente não há dados para essa combinação específica.
+            # Para este exemplo, retornamos uma lista vazia, mas poderia ser um 404 se apropriado.
+            # Ex: if recurso_id and not any(d['recurso_id'] == recurso_id for d in dados_disponibilidade):
+            # raise HTTPException(status_code=404, detail="Recurso não encontrado ou sem dados de disponibilidade para o período.")
+            pass # Retorna lista vazia por padrão se filtros não encontrarem dados
+            
+        return dados_disponibilidade
+    except Exception as e:
+        # Logar a exceção e retornar um erro genérico pode ser uma boa prática
+        # import logging
+        # logging.exception("Erro ao gerar relatório de disponibilidade")
+        raise HTTPException(status_code=500, detail=f"Erro interno ao processar o relatório: {str(e)}")

@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.routes import auth
 # Importar cada módulo individualmente
-from app.api.routes import items, secao_routes
+from app.api.routes import secao_routes
 from app.api.routes import equipe_routes
 from app.api.routes import recurso_routes
 from app.api.routes import status_projeto_routes
@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logging.info("api_router está sendo configurado!")
 
 api_router = APIRouter()
-api_router.include_router(items.router, prefix="/items", tags=["Items"])
+#api_router.include_router(items.router, prefix="/items", tags=["Items"])
 api_router.include_router(secao_routes.router, prefix="/secoes", tags=["Seções"])
 api_router.include_router(equipe_routes.router, prefix="/equipes", tags=["Equipes"])
 api_router.include_router(recurso_routes.router, prefix="/recursos", tags=["Recursos"])
