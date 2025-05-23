@@ -92,6 +92,12 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         result = await self.db.execute(query)
         apontamento = result.scalars().first()
         
+        # Remover timezone de todos os campos datetime (se houver)
+        for campo in ["data_hora_inicio_trabalho", "data_criacao", "data_atualizacao", "data_sincronizacao_jira"]:
+            valor = data.get(campo)
+            if isinstance(valor, datetime) and valor.tzinfo is not None:
+                data[campo] = valor.replace(tzinfo=None)
+        
         apontamento_data = {
             **data,
             "fonte_apontamento": "JIRA",
@@ -374,12 +380,7 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
             }
             
         except Exception as e:
-            # Log do erro e retorna erro genérico
+            # Log do erro e lança exceção HTTP 500
             print(f"Erro ao processar relatório de horas apontadas: {str(e)}")
-            # Retornar estrutura vazia em caso de erro
-            return {
-                "items": [],
-                "total": 0,
-                "total_horas": 0,
-                "erro": "Erro ao processar relatório de horas apontadas"
-            }
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail=f"Erro ao processar relatório de horas apontadas: {str(e)}")

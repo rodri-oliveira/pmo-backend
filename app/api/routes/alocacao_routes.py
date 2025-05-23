@@ -34,6 +34,20 @@ async def create_alocacao(
     alocacao: AlocacaoCreate,
     db: AsyncSession = Depends(get_async_db)
 ):
+    logger = logging.getLogger("app.api.routes.alocacao_routes")
+    logger.info("[create_alocacao] Início")
+    try:
+        service = AlocacaoService(db)
+        result = await service.create(alocacao.dict())
+        logger.info("[create_alocacao] Sucesso")
+        return result
+    except ValueError as e:
+        logger.warning(f"[create_alocacao] ValueError: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"[create_alocacao] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao criar alocação: {str(e)}")
+
     """
     Cria uma nova alocação de recurso em projeto.
     
@@ -47,12 +61,6 @@ async def create_alocacao(
     Raises:
         HTTPException: Se houver erro na criação
     """
-    try:
-        service = AlocacaoService(db)
-        result = await service.create(alocacao.dict())
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.post("/alocacoes/", response_model=AlocacaoResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def create_alocacao_duplicated_path(
@@ -73,6 +81,22 @@ async def list_alocacoes(
     data_fim: Optional[str] = Query(None, description="Filtrar por data final do período (formatos: YYYY-MM-DD ou DD/MM/YYYY)"),
     db: AsyncSession = Depends(get_async_db)
 ):
+    logger = logging.getLogger("app.api.routes.alocacao_routes")
+    logger.info(f"[list_alocacoes] Início - filtros: recurso_id={recurso_id}, projeto_id={projeto_id}, data_inicio={data_inicio}, data_fim={data_fim}")
+    try:
+        service = AlocacaoService(db)
+        result = await service.list(
+            recurso_id=recurso_id,
+            projeto_id=projeto_id,
+            data_inicio=data_inicio,
+            data_fim=data_fim
+        )
+        logger.info(f"[list_alocacoes] Sucesso - {len(result)} registros retornados")
+        return result
+    except Exception as e:
+        logger.error(f"[list_alocacoes] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar alocações: {str(e)}")
+
     """
     Lista alocações com opção de filtros.
     
@@ -147,7 +171,27 @@ async def list_alocacoes_duplicated_path(
     logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
     logging.info(f"Dados recebidos: recurso_id={recurso_id}, projeto_id={projeto_id}, data_inicio={data_inicio}, data_fim={data_fim}")
     # Reutilizar a mesma lógica do endpoint principal
-    return await list_alocacoes(recurso_id, projeto_id, data_inicio, data_fim, db)
+    from datetime import datetime, date
+    def parse_date_field(v):
+        if v is None:
+            return v
+        if isinstance(v, date) and not isinstance(v, datetime):
+            return v
+        if isinstance(v, datetime):
+            return v.date()
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00')).date()
+            except Exception:
+                pass
+            try:
+                return datetime.strptime(v, "%d/%m/%Y").date()
+            except Exception:
+                pass
+        return v
+    data_inicio_conv = parse_date_field(data_inicio)
+    data_fim_conv = parse_date_field(data_fim)
+    return await list_alocacoes(recurso_id, projeto_id, data_inicio_conv, data_fim_conv, db)
 
 @router.get("/{alocacao_id}", response_model=AlocacaoResponse)
 async def get_alocacao(

@@ -1053,3 +1053,14 @@ A API fornece endpoints para verificar seu estado operacional.
 *   `GET /liveness`: Indica se a aplicação está viva (não travou).
 
 Ambos retornam `{"status": "ok"}` e geralmente não são incluídos na documentação Swagger pública.
+
+## Formatos de data aceitos nos filtros
+
+Todos os endpoints que recebem filtros de data aceitam tanto o formato internacional ISO (`YYYY-MM-DD`) quanto o formato brasileiro (`DD/MM/YYYY`).
+
+**Exemplos válidos:**
+- `2025-05-23`
+- `23/05/2025`
+- `2025-05-23T14:57:42.839Z` (para filtros que aceitam datetime)
+
+> **Recomendação:** O padrão ISO é preferido em integrações automáticas, mas o formato brasileiro é aceito para facilitar o uso manual e integração com sistemas nacionais.

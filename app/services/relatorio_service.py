@@ -50,12 +50,12 @@ class RelatorioService:
         query = select(
             Projeto.id.label("projeto_id"),
             Projeto.nome.label("projeto_nome"),
-            Projeto.codigo.label("projeto_codigo"),
+            Projeto.codigo_empresa.label("projeto_codigo"),
             func.sum(Apontamento.horas_apontadas).label("total_horas")
         ).join(
             Apontamento, Apontamento.projeto_id == Projeto.id
         ).group_by(
-            Projeto.id, Projeto.nome, Projeto.codigo
+            Projeto.id, Projeto.nome, Projeto.codigo_empresa
         )
         
         if data_inicio:
@@ -70,10 +70,11 @@ class RelatorioService:
             )
             
             if secao_id:
-                query = query.filter(Recurso.secao_id == secao_id)
+                query = query.join(Equipe, Recurso.equipe_principal_id == Equipe.id)
+                query = query.filter(Equipe.secao_id == secao_id)
                 
             if equipe_id:
-                query = query.filter(Recurso.equipe_id == equipe_id)
+                query = query.filter(Recurso.equipe_principal_id == equipe_id)
         
         result = await self.db.execute(query)
         rows = result.fetchall()

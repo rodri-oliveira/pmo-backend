@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from sqlalchemy.orm import Session
+import logging
 
 from app.api.dtos.recurso_schema import RecursoCreateSchema, RecursoUpdateSchema, RecursoResponseSchema
 from app.core.security import get_current_admin_user
@@ -9,32 +10,25 @@ from app.services.recurso_service import RecursoService
 
 router = APIRouter(prefix="/recursos", tags=["Recursos"])
 
-
 @router.post("/", response_model=RecursoResponseSchema, status_code=status.HTTP_201_CREATED)
 def create_recurso(
     recurso: RecursoCreateSchema,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
-    """
-    Cria um novo recurso.
-    
-    Args:
-        recurso: Dados do recurso a ser criado
-        db: Sessão do banco de dados
-        current_user: Usuário administrador autenticado
-    
-    Returns:
-        RecursoResponseSchema: Dados do recurso criado
-    
-    Raises:
-        HTTPException: Se houver erro na criação
-    """
+    logger = logging.getLogger("app.api.routes.recursos")
+    logger.info("[create_recurso] Início")
     service = RecursoService(db)
     try:
-        return service.create(recurso)
+        result = service.create(recurso)
+        logger.info("[create_recurso] Sucesso")
+        return result
     except ValueError as e:
+        logger.warning(f"[create_recurso] ValueError: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[create_recurso] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao criar recurso: {str(e)}")
 
 
 @router.get("/", response_model=List[RecursoResponseSchema])
@@ -49,33 +43,24 @@ def list_recursos(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
-    """
-    Lista recursos com opção de filtros.
-    
-    Args:
-        skip: Registros para pular (paginação)
-        limit: Limite de registros (paginação)
-        nome: Filtro opcional por nome
-        email: Filtro opcional por email
-        matricula: Filtro opcional por matrícula
-        equipe_id: Filtro opcional por equipe
-        ativo: Filtro opcional por status ativo
-        db: Sessão do banco de dados
-        current_user: Usuário administrador autenticado
-    
-    Returns:
-        List[RecursoResponseSchema]: Lista de recursos
-    """
+    logger = logging.getLogger("app.api.routes.recursos")
+    logger.info(f"[list_recursos] Início - filtros: nome={nome}, email={email}, matricula={matricula}, equipe_id={equipe_id}, ativo={ativo}")
     service = RecursoService(db)
-    return service.list(
-        skip=skip, 
-        limit=limit, 
-        nome=nome, 
-        email=email, 
-        matricula=matricula,
-        equipe_id=equipe_id,
-        ativo=ativo
-    )
+    try:
+        result = service.list(
+            skip=skip, 
+            limit=limit, 
+            nome=nome, 
+            email=email, 
+            matricula=matricula,
+            equipe_id=equipe_id,
+            ativo=ativo
+        )
+        logger.info(f"[list_recursos] Sucesso - {len(result)} registros retornados")
+        return result
+    except Exception as e:
+        logger.error(f"[list_recursos] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar recursos: {str(e)}")
 
 
 @router.get("/{recurso_id}", response_model=RecursoResponseSchema)

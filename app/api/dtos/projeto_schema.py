@@ -3,7 +3,10 @@ from datetime import date, datetime
 from pydantic import BaseModel
 
 
-class ProjetoCreateSchema(BaseModel):  # <-- precisa herdar de BaseModel
+class ProjetoCreateSchema(BaseModel):  
+    """Schema para criação de projeto.
+    Campos de data aceitam formatos YYYY-MM-DD ou DD/MM/YYYY quando usados como filtro.
+    """
     nome: str
     codigo_empresa: Optional[str] = None
     descricao: Optional[str] = None
@@ -24,6 +27,9 @@ class StatusProjetoSchema(BaseModel):
         from_attributes = True
 
 class ProjetoResponseSchema(BaseModel):
+    """Schema para resposta com dados de projeto.
+    Campos de data aceitam formatos YYYY-MM-DD ou DD/MM/YYYY quando usados como filtro.
+    """
     id: int
     nome: str
     codigo_empresa: Optional[str] = None

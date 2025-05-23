@@ -50,6 +50,12 @@ class ApontamentoHoraService:
         apontamento_dict["fonte_apontamento"] = FonteApontamento.MANUAL
         apontamento_dict["id_usuario_admin_criador"] = admin_id
         
+        # Remover timezone de todos os campos datetime (se houver)
+        for campo in ["data_hora_inicio_trabalho", "data_criacao", "data_atualizacao", "data_sincronizacao_jira"]:
+            valor = apontamento_dict.get(campo)
+            if isinstance(valor, datetime) and valor.tzinfo is not None:
+                apontamento_dict[campo] = valor.replace(tzinfo=None)
+        
         # Criar o apontamento
         apontamento = await self.repository.create_manual(apontamento_dict, admin_id)
         return ApontamentoResponseSchema.from_orm(apontamento)
@@ -113,6 +119,8 @@ class ApontamentoHoraService:
         Returns:
             List[ApontamentoAggregationSchema]: Lista de agregações
         """
+        import logging
+        logger = logging.getLogger("app.services.apontamento_hora_service")
         agregacoes = await self.repository.find_with_filters_and_aggregate(
             recurso_id=filtros.recurso_id,
             projeto_id=filtros.projeto_id,
@@ -126,7 +134,13 @@ class ApontamentoHoraService:
             agrupar_por_data=agrupar_por_data,
             agrupar_por_mes=agrupar_por_mes
         )
-        return [ApontamentoAggregationSchema(**agg) for agg in agregacoes]
+        try:
+            # O repositório retorna um dicionário com 'items', precisamos retornar uma lista de dicts
+            items = agregacoes.get('items', []) if isinstance(agregacoes, dict) else agregacoes
+            return [ApontamentoAggregationSchema(**agg) for agg in items]
+        except Exception as e:
+            logger.error(f"[get_agregacoes] Erro ao converter agregações: {str(e)} | agregacoes={agregacoes}", exc_info=True)
+            raise
     
     async def update_manual(self, id: int, apontamento: ApontamentoUpdateSchema) -> ApontamentoResponseSchema:
         """
@@ -150,8 +164,15 @@ class ApontamentoHoraService:
         if apontamento_atual.fonte_apontamento != FonteApontamento.MANUAL:
             raise ValueError(f"Apenas apontamentos do tipo MANUAL podem ser editados. Este apontamento é do tipo {apontamento_atual.fonte_apontamento}")
             
+        # Remover timezone de todos os campos datetime (se houver)
+        apontamento_dict = apontamento.dict(exclude_unset=True)
+        from datetime import datetime
+        for campo in ["data_hora_inicio_trabalho", "data_criacao", "data_atualizacao", "data_sincronizacao_jira"]:
+            valor = apontamento_dict.get(campo)
+            if isinstance(valor, datetime) and valor.tzinfo is not None:
+                apontamento_dict[campo] = valor.replace(tzinfo=None)
         # Atualizar o apontamento
-        apontamento_atualizado = await self.repository.update_manual(id, apontamento.dict(exclude_unset=True))
+        apontamento_atualizado = await self.repository.update_manual(id, apontamento_dict)
         return ApontamentoResponseSchema.from_orm(apontamento_atualizado)
     
     async def delete_manual(self, id: int) -> None:
