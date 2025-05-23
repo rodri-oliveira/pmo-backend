@@ -24,9 +24,10 @@ api_router.include_router(status_projeto_routes.router, prefix="/status-projetos
 api_router.include_router(projeto_routes.router, prefix="/projetos", tags=["Projetos"])
 api_router.include_router(planejamento_horas.router, prefix="/planejamento-horas", tags=["Planejamento de Horas"])
 api_router.include_router(apontamentos.router, prefix="/apontamentos", tags=["Apontamentos"])
-# O router de relatórios já tem o prefixo "/relatorios" definido internamente
+# Os routers de relatórios já têm os caminhos completos definidos internamente
 api_router.include_router(relatorios.router, tags=["Relatórios"])
-api_router.include_router(relatorios_dinamico.router, tags=["Relatórios"])
+# Incluir o router de relatórios dinâmicos com prioridade
+api_router.include_router(relatorios_dinamico.router, tags=["Relatórios Dinâmicos"])
 # Remover o prefixo para o router de alocações, já que ele já define internamente
 api_router.include_router(alocacao_routes.router, tags=["Alocações"]) # Incluir a rota de alocações
 api_router.include_router(auth.router, prefix="", tags=["Autenticação"])
