@@ -4,12 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_async_db
 from app.services.relatorio_dinamico_service import RelatorioDinamicoService
 
-router = APIRouter()
+router = APIRouter(prefix="/relatorios", tags=["Relatórios"])
 
 from fastapi import HTTPException
 import logging
 
-@router.get("/relatorios/dinamico", tags=["Relatórios"], summary="Relatório Dinâmico de Horas")
+@router.get("/dinamico", summary="Relatório Dinâmico de Horas")
 async def relatorio_dinamico(
     recurso_id: Optional[int] = Query(None, description="ID do recurso para filtrar"),
     equipe_id: Optional[int] = Query(None, description="ID da equipe para filtrar"),
@@ -41,7 +41,7 @@ async def relatorio_dinamico(
         logging.exception("Erro inesperado ao gerar relatório dinâmico")
         raise HTTPException(status_code=500, detail=f"Erro interno ao gerar relatório dinâmico: {str(e)}")
 
-@router.get("/relatorios/horas-disponiveis", tags=["Relatórios"], summary="Horas Disponíveis do Recurso")
+@router.get("/horas-disponiveis", summary="Horas Disponíveis do Recurso")
 async def horas_disponiveis(
     recurso_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
