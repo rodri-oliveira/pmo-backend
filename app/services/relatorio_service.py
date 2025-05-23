@@ -136,24 +136,28 @@ class RelatorioService:
             query = query.filter(Apontamento.projeto_id == projeto_id)
             
         if equipe_id:
-            query = query.filter(Recurso.equipe_id == equipe_id)
+            query = query.filter(Recurso.equipe_principal_id == equipe_id)
             
         if secao_id:
             query = query.filter(Recurso.secao_id == secao_id)
         
-        result = await self.db.execute(query)
-        rows = result.fetchall()
-        
-        return [
-            {
-                "recurso_id": row.recurso_id,
-                "recurso_nome": row.recurso_nome,
-                "equipe_nome": row.equipe_nome,
-                "secao_nome": row.secao_nome,
-                "total_horas": float(row.total_horas) if row.total_horas else 0
-            }
-            for row in rows
-        ]
+        import logging
+        try:
+            result = await self.db.execute(query)
+            rows = result.fetchall()
+            return [
+                {
+                    "recurso_id": row.recurso_id,
+                    "recurso_nome": row.recurso_nome,
+                    "equipe_nome": row.equipe_nome,
+                    "secao_nome": row.secao_nome,
+                    "total_horas": float(row.total_horas) if row.total_horas else 0
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            logging.exception("Erro ao executar query de horas por recurso")
+            raise
     
     async def get_analise_planejado_vs_realizado(
         self,
@@ -306,21 +310,22 @@ class RelatorioService:
             else:
                 # Caso haja horas realizadas sem planejamento
                 # Buscar informações adicionais
-                recurso = await self.db.execute(select(
-                    Recurso.nome,
-                    Equipe.nome.label("equipe_nome"),
-                    Secao.nome.label("secao_nome")
-                ).join(
-                    Equipe, Recurso.equipe_id == Equipe.id, isouter=True
-                ).join(
-                    Secao, Recurso.secao_id == Secao.id, isouter=True
-                ).filter(
-                    Recurso.id == row.recurso_id
-                ))
-                
+                recurso = await self.db.execute(
+                    select(
+                        Recurso.nome,
+                        Equipe.nome.label("equipe_nome"),
+                        Secao.nome.label("secao_nome")
+                    )
+                    .join(Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True)
+                    .join(Secao, Recurso.secao_id == Secao.id, isouter=True)
+                    .filter(Recurso.id == row.recurso_id)
+                )
                 recurso = recurso.fetchone()
                 
-                projeto = await self.db.execute(select(Projeto.nome).filter(Projeto.id == row.projeto_id))
+                projeto = await self.db.execute(
+                    select(Projeto.nome)
+                    .filter(Projeto.id == row.projeto_id)
+                )
                 
                 projeto = projeto.fetchone()
                 

@@ -57,10 +57,15 @@ def root():
 
 # Executar a aplicação com uvicorn
 if __name__ == "__main__":
-    uvicorn.run(
-        "app.main:app", 
-        host="0.0.0.0", 
-        port=8000,
-        reload=True,
-        workers=1  # Usar apenas um worker para evitar problemas com greenlet
-    )
+    try:
+        uvicorn.run(
+            "app.main:app", 
+            host="0.0.0.0", 
+            port=8000,
+            reload=True,
+            workers=1  # Usar apenas um worker para evitar problemas com greenlet
+        )
+    except Exception as e:
+        import traceback
+        logging.error(f"Erro ao iniciar o servidor Uvicorn: {e}\n{traceback.format_exc()}")
+        print(f"Erro ao iniciar o servidor Uvicorn: {e}\n{traceback.format_exc()}")
