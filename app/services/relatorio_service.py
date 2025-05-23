@@ -119,9 +119,9 @@ class RelatorioService:
         ).join(
             Apontamento, Apontamento.recurso_id == Recurso.id
         ).join(
-            Equipe, Recurso.equipe_id == Equipe.id, isouter=True
+            Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True
         ).join(
-            Secao, Recurso.secao_id == Secao.id, isouter=True
+            Secao, Equipe.secao_id == Secao.id, isouter=True
         ).group_by(
             Recurso.id, Recurso.nome, Equipe.nome, Secao.nome
         )
@@ -139,7 +139,7 @@ class RelatorioService:
             query = query.filter(Recurso.equipe_principal_id == equipe_id)
             
         if secao_id:
-            query = query.filter(Recurso.secao_id == secao_id)
+            query = query.filter(Equipe.secao_id == secao_id)
         
         import logging
         try:
@@ -200,9 +200,9 @@ class RelatorioService:
         ).join(
             Projeto, AlocacaoRecursoProjeto.projeto_id == Projeto.id
         ).join(
-            Equipe, Recurso.equipe_id == Equipe.id, isouter=True
+            Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True
         ).join(
-            Secao, Recurso.secao_id == Secao.id, isouter=True
+            Secao, Equipe.secao_id == Secao.id, isouter=True
         ).filter(
             HorasPlanejadas.ano == ano
         )
@@ -317,7 +317,7 @@ class RelatorioService:
                         Secao.nome.label("secao_nome")
                     )
                     .join(Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True)
-                    .join(Secao, Recurso.secao_id == Secao.id, isouter=True)
+                    .join(Secao, Equipe.secao_id == Secao.id, isouter=True)
                     .filter(Recurso.id == row.recurso_id)
                 )
                 recurso = recurso.fetchone()
