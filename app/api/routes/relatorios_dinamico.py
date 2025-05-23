@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_async_db
 from app.services.relatorio_dinamico_service import RelatorioDinamicoService
 
-router = APIRouter(prefix="/relatorios")
+print(">>> relatorios_dinamico.py carregado <<<")
+router = APIRouter(prefix="/relatorios-dinamico")
 
 @router.get("/dinamico", tags=["Relatórios"], summary="Relatório Dinâmico de Horas")
 async def relatorio_dinamico(
