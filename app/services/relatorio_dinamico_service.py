@@ -65,7 +65,7 @@ class RelatorioDinamicoService:
             query = query.group_by(*groupby_cols)
         result = await self.db.execute(query)
         rows = result.fetchall()
-        return [dict(row) for row in rows]
+        return [dict(row._mapping) for row in rows]
 
     async def get_horas_disponiveis(self, recurso_id: Optional[int] = None, ano: Optional[int] = None, mes: Optional[int] = None) -> List[Dict[str, Any]]:
         query = select(HorasDisponiveisRH.recurso_id, HorasDisponiveisRH.ano, HorasDisponiveisRH.mes, HorasDisponiveisRH.horas_disponiveis_mes)
@@ -77,4 +77,4 @@ class RelatorioDinamicoService:
             query = query.where(HorasDisponiveisRH.mes == mes)
         result = await self.db.execute(query)
         rows = result.fetchall()
-        return [dict(row) for row in rows]
+        return [dict(row._mapping) for row in rows]
