@@ -4,10 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_async_db
 from app.services.relatorio_dinamico_service import RelatorioDinamicoService
 
-print(">>> relatorios_dinamico.py carregado <<<")
-router = APIRouter(prefix="/relatorios-dinamico")
+# Router para relatórios dinâmicos
+router = APIRouter()
 
-@router.get("/dinamico", tags=["Relatórios"], summary="Relatório Dinâmico de Horas")
+@router.get("/relatorios/dinamico", tags=["Relatórios"], summary="Relatório Dinâmico de Horas")
 async def relatorio_dinamico(
     recurso_id: Optional[int] = Query(None),
     equipe_id: Optional[int] = Query(None),
@@ -29,7 +29,7 @@ async def relatorio_dinamico(
         agrupar_por=agrupar_por,
     )
 
-@router.get("/horas-disponiveis", tags=["Relatórios"], summary="Horas Disponíveis do Recurso")
+@router.get("/relatorios/horas-disponiveis", tags=["Relatórios"], summary="Horas Disponíveis do Recurso")
 async def horas_disponiveis(
     recurso_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
