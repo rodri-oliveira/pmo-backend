@@ -14,7 +14,7 @@ from app.models.usuario import UsuarioBase, UsuarioInDB, TokenData
 
 # Configuração de segurança
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/backend/v1/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/backend/v1/auth/token", auto_error=False)
 
 # Funções de segurança
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -58,103 +58,58 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db)
 ) -> UsuarioInDB:
     """
-    Obtém o usuário atual a partir do token JWT.
+    AUTENTICAÇÃO DESABILITADA - Retorna um usuário fictício para compatibilidade.
     
     Args:
-        token: Token JWT de autenticação
-        db: Sessão do banco de dados
+        token: Token JWT de autenticação (ignorado)
+        db: Sessão do banco de dados (ignorada)
         
     Returns:
-        Usuário autenticado
-        
-    Raises:
-        HTTPException: Se o token for inválido ou expirado
+        Usuário fictício para compatibilidade
     """
-    logging.info(f"get_current_user foi chamado com token: {token[:10] if token else 'None'}...")
+    logging.info("Autenticação desabilitada - retornando usuário fictício")
     
-    if not token:
-        logging.error("Token não fornecido")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token não fornecido",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Credenciais inválidas",
-        headers={"WWW-Authenticate": "Bearer"},
+    # Retorna um usuário fictício para compatibilidade
+    return UsuarioInDB(
+        id=1,
+        nome="Usuário Autenticado",
+        email="usuario@weg.net",
+        senha_hash="",
+        ativo=True,
+        is_admin=True,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
     )
-    
-    try:
-        logging.info("Tentando decodificar o token JWT")
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        logging.info(f"Payload decodificado: {payload}")
-        username: str = payload.get("sub")
-        
-        if username is None:
-            logging.error("Token JWT não contém 'sub' (username)")
-            raise credentials_exception
-            
-        token_data = TokenData(username=username)
-        logging.info(f"Token decodificado com sucesso para o usuário: {username}")
-        
-    except JWTError as e:
-        logging.error(f"Erro ao decodificar o token JWT: {str(e)}")
-        raise credentials_exception
-        
-    logging.info(f"Buscando usuário {username} no banco de dados")
-    from app.repositories.usuario_repository import UsuarioRepository
-    usuario_repo = UsuarioRepository(db)
-    usuario = await usuario_repo.get_by_username(username)
-    
-    if usuario is None:
-        logging.error(f"Usuário {username} não encontrado no banco de dados")
-        raise credentials_exception
-        
-    logging.info(f"Usuário {username} encontrado com sucesso")
-    
-    # Atualizar último acesso
-    try:
-        logging.info(f"Atualizando último acesso do usuário {username}")
-        await usuario_repo.update_last_access(usuario.id)
-    except Exception as e:
-        logging.warning(f"Erro ao atualizar último acesso: {str(e)}")
-    
-    return usuario
 
 async def get_current_admin_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
-) -> dict:
+) -> UsuarioInDB:
     """
-    Verifica se o usuário atual é administrador.
+    AUTENTICAÇÃO DESABILITADA - Retorna um usuário admin fictício para compatibilidade.
     
     Args:
-        token: Token JWT
-        db: Sessão do banco de dados
+        token: Token JWT (ignorado)
+        db: Sessão do banco de dados (ignorada)
         
     Returns:
-        dict: Dados do usuário administrador
-        
-    Raises:
-        HTTPException: Se o usuário não for administrador
+        Usuário admin fictício para compatibilidade
     """
-    try:
-        # Obter usuário autenticado
-        current_user = await get_current_user(token, db)
-        
-        # Verificar se é administrador
-        if not current_user.get("is_admin", False):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Permissões de administrador necessárias",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        return current_user
-    except HTTPException as e:
-        raise
+    logging.info("Autenticação de admin desabilitada - retornando usuário admin fictício")
+    
+    # Retorna um usuário admin fictício para compatibilidade
+    return UsuarioInDB(
+        id=1,
+        nome="Admin",
+        username="admin",
+        perfil="admin",
+        hashed_password="fakehashedpassword",
+        email="admin@admin.com",
+        is_active=True,
+        is_superuser=True,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
+    )
 
 # Função adicional para autenticação com WEG SSO (mock)
 async def authenticate_with_weg_sso(token: str) -> Optional[UsuarioBase]:

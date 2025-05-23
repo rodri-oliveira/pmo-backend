@@ -1,6 +1,7 @@
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.planejamento_horas_repository import PlanejamentoHorasRepository
+import logging
 from app.repositories.alocacao_repository import AlocacaoRepository
 from app.repositories.horas_disponiveis_repository import HorasDisponiveisRepository
 
@@ -93,30 +94,37 @@ class PlanejamentoHorasService:
     async def list_by_alocacao(self, alocacao_id: int) -> List[Dict[str, Any]]:
         """
         Lista todos os planejamentos de uma alocação.
-        
-        Args:
-            alocacao_id: ID da alocação
-            
-        Returns:
-            List[Dict[str, Any]]: Lista de planejamentos
         """
-        # Verificar se a alocação existe
-        alocacao = await self.alocacao_repository.get(alocacao_id)
-        if not alocacao:
-            raise ValueError(f"Alocação com ID {alocacao_id} não encontrada")
-        
-        planejamentos = await self.repository.list_by_alocacao(alocacao_id)
-        
-        # Formatar resultado
-        return [{
-            "id": p.id,
-            "alocacao_id": p.alocacao_id,
-            "projeto_id": alocacao.projeto_id,
-            "recurso_id": alocacao.recurso_id,
-            "ano": p.ano,
-            "mes": p.mes,
-            "horas_planejadas": float(p.horas_planejadas)
-        } for p in planejamentos]
+        logger = logging.getLogger("app.services.planejamento_horas_service")
+        logger.info(f"[list_by_alocacao] Início: alocacao_id={alocacao_id}")
+        try:
+            alocacao = await self.alocacao_repository.get(alocacao_id)
+            logger.debug(f"[list_by_alocacao] Alocação encontrada: {alocacao}")
+            if not alocacao:
+                logger.warning(f"[list_by_alocacao] Alocação com ID {alocacao_id} não encontrada")
+                raise ValueError(f"Alocação com ID {alocacao_id} não encontrada")
+            planejamentos = await self.repository.list_by_alocacao(alocacao_id)
+            logger.info(f"[list_by_alocacao] {len(planejamentos)} planejamentos encontrados para alocacao_id={alocacao_id}")
+            result = [
+                {
+                    "id": p.id,
+                    "alocacao_id": p.alocacao_id,
+                    "projeto_id": alocacao.projeto_id,
+                    "recurso_id": alocacao.recurso_id,
+                    "ano": p.ano,
+                    "mes": p.mes,
+                    "horas_planejadas": float(p.horas_planejadas)
+                }
+                for p in planejamentos
+            ]
+            logger.debug(f"[list_by_alocacao] Resultado formatado: {result}")
+            return result
+        except ValueError as e:
+            logger.warning(f"[list_by_alocacao] Valor inválido: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"[list_by_alocacao] Erro inesperado: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar planejamentos por alocação: {str(e)}")
     
     async def list_by_recurso_periodo(self, recurso_id: int, ano: int, mes_inicio: int = 1, mes_fim: int = 12) -> List[Dict[str, Any]]:
         """
@@ -148,43 +156,3 @@ class PlanejamentoHorasService:
             raise ValueError(f"Planejamento com ID {planejamento_id} não encontrado")
         
         await self.repository.delete(planejamento_id) 
-    
-    async def list_planejamentos_com_filtros_e_paginacao(
-        self, 
-        skip: int, 
-        limit: int, 
-        ano: Optional[int],
-        mes: Optional[int],
-        recurso_id: Optional[int],
-        projeto_id: Optional[int]
-    ) -> Tuple[List[Any], int]: # Retorna List[PlanejamentoHorasSQL] e total
-        """
-        Lista planejamentos de horas com base em filtros e paginação.
-
-        Args:
-            skip: Número de registros a pular.
-            limit: Número máximo de registros a retornar.
-            ano: Filtro opcional por ano.
-            mes: Filtro opcional por mês.
-            recurso_id: Filtro opcional por ID do recurso (requer join com Alocacao).
-            projeto_id: Filtro opcional por ID do projeto (requer join com Alocacao).
-
-        Returns:
-            Tuple[List[Any], int]: Uma tupla contendo a lista de planejamentos (modelos ORM)
-                                     e o número total de registros que correspondem aos filtros.
-        """
-        filters = {
-            "ano": ano,
-            "mes": mes,
-            "recurso_id": recurso_id,
-            "projeto_id": projeto_id
-        }
-        # Remove chaves com valor None para não passá-las ao repositório
-        active_filters = {k: v for k, v in filters.items() if v is not None}
-
-        planejamentos, total_count = await self.repository.list_with_filters_and_pagination(
-            skip=skip,
-            limit=limit,
-            filters=active_filters
-        )
-        return planejamentos, total_count
