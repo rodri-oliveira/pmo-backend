@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any
 from sqlalchemy import func, extract, text, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -95,58 +95,3 @@ class PlanejamentoHorasRepository(BaseRepository[HorasPlanejadas]):
         total_horas = result.scalars().first()
         
         return float(total_horas) if total_horas is not None else None
-
-    async def list_with_filters_and_pagination(
-        self,
-        skip: int,
-        limit: int,
-        filters: Dict[str, Any]
-    ) -> Tuple[List[HorasPlanejadas], int]:
-        """
-        Lista planejamentos com filtros e paginação.
-
-        Args:
-            skip: Número de registros a pular.
-            limit: Número máximo de registros a retornar.
-            filters: Dicionário de filtros (ano, mes, recurso_id, projeto_id).
-
-        Returns:
-            Tuple[List[HorasPlanejadas], int]: Lista de planejamentos e contagem total.
-        """
-        stmt = select(self.model)
-        count_stmt = select(func.count()).select_from(self.model)
-
-        needs_join = False
-        if filters.get("recurso_id") or filters.get("projeto_id"):
-            needs_join = True
-        
-        if needs_join:
-            stmt = stmt.join(AlocacaoRecursoProjeto, self.model.alocacao_id == AlocacaoRecursoProjeto.id)
-            count_stmt = count_stmt.join(AlocacaoRecursoProjeto, self.model.alocacao_id == AlocacaoRecursoProjeto.id)
-
-        if "ano" in filters:
-            stmt = stmt.filter(self.model.ano == filters["ano"])
-            count_stmt = count_stmt.filter(self.model.ano == filters["ano"])
-        if "mes" in filters:
-            stmt = stmt.filter(self.model.mes == filters["mes"])
-            count_stmt = count_stmt.filter(self.model.mes == filters["mes"])
-        if "recurso_id" in filters:
-            stmt = stmt.filter(AlocacaoRecursoProjeto.recurso_id == filters["recurso_id"])
-            count_stmt = count_stmt.filter(AlocacaoRecursoProjeto.recurso_id == filters["recurso_id"])
-        if "projeto_id" in filters:
-            stmt = stmt.filter(AlocacaoRecursoProjeto.projeto_id == filters["projeto_id"])
-            count_stmt = count_stmt.filter(AlocacaoRecursoProjeto.projeto_id == filters["projeto_id"])
-
-        # Contagem total
-        total_result = await self.db.execute(count_stmt)
-        total_count = total_result.scalar_one_or_none() or 0
-
-        # Busca paginada
-        stmt = stmt.order_by(self.model.ano, self.model.mes, self.model.id).offset(skip).limit(limit)
-        if needs_join: # Garante que os campos da tabela AlocacaoRecursoProjeto não sejam carregados automaticamente como atributos diretos de HorasPlanejadas
-            stmt = stmt.options(joinedload(HorasPlanejadas.alocacao))
-            
-        result = await self.db.execute(stmt)
-        items = result.scalars().all()
-
-        return items, total_count

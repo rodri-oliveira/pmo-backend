@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
+import logging
 from starlette import status
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,47 +21,84 @@ async def get_projeto_service(db: AsyncSession = Depends(get_async_db)) -> Proje
 
 @router.post("/", response_model=ProjetoDTO, status_code=status.HTTP_201_CREATED)
 async def create_projeto(projeto_create: ProjetoCreateSchema, service: ProjetoService = Depends(get_projeto_service)):
+    logger = logging.getLogger("app.api.routes.projeto_routes")
+    logger.info("[create_projeto] Início")
     try:
-        return await service.create_projeto(projeto_create)
+        result = await service.create_projeto(projeto_create)
+        logger.info("[create_projeto] Sucesso")
+        return result
     except HTTPException as e:
+        logger.warning(f"[create_projeto] HTTPException: {str(e.detail)}")
         raise e
     except Exception as e:
-        # Log the exception e
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        logger.error(f"[create_projeto] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao criar projeto: {str(e)}")
 
 @router.get("/{projeto_id}", response_model=ProjetoDTO)
 async def get_projeto(projeto_id: int, service: ProjetoService = Depends(get_projeto_service)):
-    projeto = await service.get_projeto_by_id(projeto_id)
-    if projeto is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto não encontrado")
+    logger = logging.getLogger("app.api.routes.projeto_routes")
+    logger.info(f"[get_projeto] Início - projeto_id: {projeto_id}")
+    try:
+        projeto = await service.get_projeto_by_id(projeto_id)
+        if projeto is None:
+            logger.warning(f"[get_projeto] Projeto não encontrado - projeto_id: {projeto_id}")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto não encontrado")
+        logger.info(f"[get_projeto] Sucesso - projeto_id: {projeto_id}")
+        return projeto
+    except HTTPException as e:
+        logger.warning(f"[get_projeto] HTTPException: {str(e.detail)}")
+        raise e
+    except Exception as e:
+        logger.error(f"[get_projeto] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao buscar projeto: {str(e)}")
     return projeto
 
 @router.get("/", response_model=List[ProjetoDTO])
 async def get_all_projetos(
-    skip: int = 0,
+    skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=1000),
-    apenas_ativos: bool = False,
-    status_projeto: Optional[int] = Query(default=None, description="Filtrar projetos por ID do status"),
+    status_projeto: Optional[int] = None,
     service: ProjetoService = Depends(get_projeto_service)
 ):
-    return await service.get_all_projetos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, status_projeto=status_projeto)
-
-@router.put("/{projeto_id}", response_model=ProjetoDTO)
-async def update_projeto(projeto_id: int, projeto_update_dto: ProjetoUpdateDTO, service: ProjetoService = Depends(get_projeto_service)):
+    logger = logging.getLogger("app.api.routes.projeto_routes")
+    logger.info(f"[get_all_projetos] Início - skip={skip}, limit={limit}, status_projeto={status_projeto}")
     try:
-        projeto = await service.update_projeto(projeto_id, projeto_update_dto)
-        if projeto is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto não encontrado para atualização")
-        return projeto
+        result = await service.get_all_projetos(skip=skip, limit=limit, status_projeto=status_projeto)
+        logger.info(f"[get_all_projetos] Sucesso - {len(result)} registros retornados")
+        return result
     except HTTPException as e:
+        logger.warning(f"[get_all_projetos] HTTPException: {str(e.detail)}")
         raise e
     except Exception as e:
-        # Log the exception e
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        logger.error(f"[get_all_projetos] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar projetos: {str(e)}")
+
+@router.put("/{projeto_id}", response_model=ProjetoDTO)
+async def update_projeto(projeto_id: int, projeto_update: ProjetoUpdateDTO, service: ProjetoService = Depends(get_projeto_service)):
+    logger = logging.getLogger("app.api.routes.projeto_routes")
+    logger.info(f"[update_projeto] Início - projeto_id: {projeto_id}")
+    try:
+        result = await service.update_projeto(projeto_id, projeto_update)
+        logger.info(f"[update_projeto] Sucesso - projeto_id: {projeto_id}")
+        return result
+    except HTTPException as e:
+        logger.warning(f"[update_projeto] HTTPException: {str(e.detail)}")
+        raise e
+    except Exception as e:
+        logger.error(f"[update_projeto] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao atualizar projeto: {str(e)}")
 
 @router.delete("/{projeto_id}", response_model=ProjetoDTO)
 async def delete_projeto(projeto_id: int, service: ProjetoService = Depends(get_projeto_service)):
-    projeto = await service.delete_projeto(projeto_id)
-    if projeto is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto não encontrado para exclusão")
-    return projeto
+    logger = logging.getLogger("app.api.routes.projeto_routes")
+    logger.info(f"[delete_projeto] Início - projeto_id: {projeto_id}")
+    try:
+        result = await service.delete_projeto(projeto_id)
+        logger.info(f"[delete_projeto] Sucesso - projeto_id: {projeto_id}")
+        return result
+    except HTTPException as e:
+        logger.warning(f"[delete_projeto] HTTPException: {str(e.detail)}")
+        raise e
+    except Exception as e:
+        logger.error(f"[delete_projeto] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao excluir projeto: {str(e)}")
