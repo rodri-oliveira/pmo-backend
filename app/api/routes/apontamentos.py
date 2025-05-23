@@ -38,12 +38,20 @@ async def create_apontamento(
     Raises:
         HTTPException: Se houver erro na criação
     """
+    import logging
+    logger = logging.getLogger("app.api.routes.apontamentos")
+    logger.info(f"[create_apontamento] Início - recurso_id={apontamento.recurso_id}, projeto_id={apontamento.projeto_id}, data_apontamento={apontamento.data_apontamento}, horas_apontadas={apontamento.horas_apontadas}, user_id={current_user.id}")
     service = ApontamentoHoraService(db)
     try:
-        # Passa o ID do admin atual para registrar quem criou o apontamento
-        return await service.create_manual(apontamento, current_user["id"])
+        result = await service.create_manual(apontamento, current_user.id)
+        logger.info(f"[create_apontamento] Sucesso - apontamento criado com id={getattr(result, 'id', None)}")
+        return result
     except ValueError as e:
+        logger.warning(f"[create_apontamento] ValueError: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[create_apontamento] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao criar apontamento: {str(e)}")
 
 
 @router.get("/", response_model=List[ApontamentoResponseSchema])
@@ -63,36 +71,28 @@ async def list_apontamentos(
 ):
     """
     Lista apontamentos com opção de filtros avançados.
-    
-    Args:
-        skip: Registros para pular (paginação)
-        limit: Limite de registros (paginação)
-        recurso_id: Filtro por ID do recurso
-        projeto_id: Filtro por ID do projeto
-        equipe_id: Filtro por ID da equipe do recurso
-        secao_id: Filtro por ID da seção do recurso
-        data_inicio: Filtro por data inicial
-        data_fim: Filtro por data final
-        fonte_apontamento: Filtro por fonte (MANUAL/JIRA)
-        jira_issue_key: Filtro por chave de issue do Jira
-        db: Sessão do banco de dados
-        current_user: Usuário administrador autenticado
-    
-    Returns:
-        List[ApontamentoResponseSchema]: Lista de apontamentos
     """
-    service = ApontamentoHoraService(db)
-    filtros = ApontamentoFilterSchema(
-        recurso_id=recurso_id,
-        projeto_id=projeto_id,
-        equipe_id=equipe_id,
-        secao_id=secao_id,
-        data_inicio=data_inicio,
-        data_fim=data_fim,
-        fonte_apontamento=fonte_apontamento,
-        jira_issue_key=jira_issue_key
-    )
-    return await service.list_with_filters(filtros, skip=skip, limit=limit)
+    import logging
+    logger = logging.getLogger("app.api.routes.apontamentos")
+    logger.info(f"[list_apontamentos] Início - filtros: skip={skip}, limit={limit}, recurso_id={recurso_id}, projeto_id={projeto_id}, equipe_id={equipe_id}, secao_id={secao_id}, data_inicio={data_inicio}, data_fim={data_fim}, fonte_apontamento={fonte_apontamento}, jira_issue_key={jira_issue_key}, user_id={getattr(current_user, 'id', None)}")
+    try:
+        service = ApontamentoHoraService(db)
+        filtros = ApontamentoFilterSchema(
+            recurso_id=recurso_id,
+            projeto_id=projeto_id,
+            equipe_id=equipe_id,
+            secao_id=secao_id,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            fonte_apontamento=fonte_apontamento,
+            jira_issue_key=jira_issue_key
+        )
+        result = await service.list_with_filters(filtros, skip=skip, limit=limit)
+        logger.info(f"[list_apontamentos] Sucesso - {len(result)} registros retornados")
+        return result
+    except Exception as e:
+        logger.error(f"[list_apontamentos] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar apontamentos: {str(e)}")
 
 
 @router.get("/agregacoes", response_model=List[ApontamentoAggregationSchema])
@@ -101,8 +101,8 @@ async def get_apontamentos_agregacoes(
     projeto_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     secao_id: Optional[int] = None,
-    data_inicio: Optional[date] = None,
-    data_fim: Optional[date] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
     agrupar_por_recurso: bool = False,
     agrupar_por_projeto: bool = False,
     agrupar_por_data: bool = False,
@@ -112,40 +112,61 @@ async def get_apontamentos_agregacoes(
 ):
     """
     Obtém agregações (soma de horas) dos apontamentos com opção de filtros.
-    
-    Args:
-        recurso_id: Filtro por ID do recurso
-        projeto_id: Filtro por ID do projeto
-        equipe_id: Filtro por ID da equipe do recurso
-        secao_id: Filtro por ID da seção do recurso
-        data_inicio: Filtro por data inicial
-        data_fim: Filtro por data final
-        agrupar_por_recurso: Se deve agrupar por recurso
-        agrupar_por_projeto: Se deve agrupar por projeto
-        agrupar_por_data: Se deve agrupar por data
-        agrupar_por_mes: Se deve agrupar por mês
-        db: Sessão do banco de dados
-        current_user: Usuário administrador autenticado
-    
-    Returns:
-        List[ApontamentoAggregationSchema]: Lista de agregações
     """
-    service = ApontamentoHoraService(db)
-    filtros = ApontamentoFilterSchema(
-        recurso_id=recurso_id,
-        projeto_id=projeto_id,
-        equipe_id=equipe_id,
-        secao_id=secao_id,
-        data_inicio=data_inicio,
-        data_fim=data_fim
-    )
-    return await service.get_agregacoes(
-        filtros, 
-        agrupar_por_recurso, 
-        agrupar_por_projeto, 
-        agrupar_por_data, 
-        agrupar_por_mes
-    )
+    import logging
+    logger = logging.getLogger("app.api.routes.apontamentos")
+    logger.info(f"[get_apontamentos_agregacoes] Início - filtros: recurso_id={recurso_id}, projeto_id={projeto_id}, equipe_id={equipe_id}, secao_id={secao_id}, data_inicio={data_inicio}, data_fim={data_fim}, agrupar_por_recurso={agrupar_por_recurso}, agrupar_por_projeto={agrupar_por_projeto}, agrupar_por_data={agrupar_por_data}, agrupar_por_mes={agrupar_por_mes}, user_id={getattr(current_user, 'id', None)}")
+    try:
+        from datetime import datetime, date
+        def parse_date_field(v, nome):
+            if v is None:
+                return v
+            if isinstance(v, date) and not isinstance(v, datetime):
+                return v
+            if isinstance(v, datetime):
+                return v.date()
+            if isinstance(v, str):
+                try:
+                    return datetime.fromisoformat(v.replace('Z', '+00:00')).date()
+                except Exception:
+                    pass
+                try:
+                    return datetime.strptime(v, "%d/%m/%Y").date()
+                except Exception:
+                    pass
+            return v
+        try:
+            data_inicio_conv = parse_date_field(data_inicio)
+            data_fim_conv = parse_date_field(data_fim)
+            logging.info(f"[get_apontamentos_agregacoes] data_inicio={data_inicio} (convertido={data_inicio_conv}) tipo={type(data_inicio_conv)}")
+            logging.info(f"[get_apontamentos_agregacoes] data_fim={data_fim} (convertido={data_fim_conv}) tipo={type(data_fim_conv)}")
+        except Exception as e:
+            logging.error(f"Erro ao converter datas: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Erro ao converter datas: {str(e)}")
+        service = ApontamentoHoraService(db)
+        filtros = ApontamentoFilterSchema(
+            recurso_id=recurso_id,
+            projeto_id=projeto_id,
+            equipe_id=equipe_id,
+            secao_id=secao_id,
+            data_inicio=data_inicio_conv,
+            data_fim=data_fim_conv
+        )
+        result = await service.get_agregacoes(
+            filtros, 
+            agrupar_por_recurso, 
+            agrupar_por_projeto, 
+            agrupar_por_data, 
+            agrupar_por_mes
+        )
+        if not result:
+            logger.info("[get_apontamentos_agregacoes] Nenhum apontamento encontrado para os filtros informados.")
+            return []
+        logger.info(f"[get_apontamentos_agregacoes] Sucesso - {len(result)} agregações retornadas")
+        return result
+    except Exception as e:
+        logger.error(f"[get_apontamentos_agregacoes] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao obter agregações: {str(e)}")
 
 
 @router.get("/{apontamento_id}", response_model=ApontamentoResponseSchema)
@@ -200,24 +221,35 @@ async def update_apontamento(
             - 403: Se o apontamento for do tipo JIRA (não editável)
             - 400: Para outros erros de validação
     """
+    import logging
+    logger = logging.getLogger("app.api.routes.apontamentos")
     service = ApontamentoHoraService(db)
-    
+    logger.info(f"[update_apontamento] Início - apontamento_id={apontamento_id}, payload={apontamento_update}")
     # Verificar se o apontamento existe
     apontamento = await service.get(apontamento_id)
     if not apontamento:
+        logger.warning(f"[update_apontamento] Apontamento {apontamento_id} não encontrado")
         raise HTTPException(status_code=404, detail=f"Apontamento {apontamento_id} não encontrado")
-    
     # Verificar se é um apontamento manual (apenas estes podem ser editados)
-    if apontamento.fonte != FonteApontamento.MANUAL:
+    if apontamento.fonte_apontamento != FonteApontamento.MANUAL:
+        logger.warning(f"[update_apontamento] Apontamento {apontamento_id} não é MANUAL (fonte={apontamento.fonte_apontamento})")
         raise HTTPException(
-            status_code=403, 
-            detail=f"Apenas apontamentos manuais podem ser editados. Este apontamento é do tipo {apontamento.fonte}"
+            status_code=403,
+            detail=f"Apenas apontamentos manuais podem ser editados. Este apontamento é do tipo {apontamento.fonte_apontamento}"
         )
-    
     try:
-        return await service.update_manual(apontamento_id, apontamento_update)
+        result = await service.update_manual(apontamento_id, apontamento_update)
+        if result is None:
+            logger.warning(f"[update_apontamento] update_manual retornou None para apontamento_id={apontamento_id}")
+            raise HTTPException(status_code=404, detail=f"Apontamento {apontamento_id} não encontrado ou não é MANUAL")
+        logger.info(f"[update_apontamento] Sucesso - apontamento atualizado id={apontamento_id}")
+        return result
     except ValueError as e:
+        logger.warning(f"[update_apontamento] ValueError: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[update_apontamento] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao atualizar apontamento: {str(e)}")
 
 
 @router.delete("/{apontamento_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -248,10 +280,10 @@ async def delete_apontamento(
         raise HTTPException(status_code=404, detail=f"Apontamento {apontamento_id} não encontrado")
     
     # Verificar se é um apontamento manual (apenas estes podem ser removidos)
-    if apontamento.fonte != FonteApontamento.MANUAL:
+    if apontamento.fonte_apontamento != FonteApontamento.MANUAL:
         raise HTTPException(
             status_code=403, 
-            detail=f"Apenas apontamentos manuais podem ser removidos. Este apontamento é do tipo {apontamento.fonte}"
+            detail=f"Apenas apontamentos manuais podem ser removidos. Este apontamento é do tipo {apontamento.fonte_apontamento}"
         )
     
     try:

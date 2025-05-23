@@ -19,8 +19,8 @@ async def relatorio_horas_apontadas(
     projeto_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     secao_id: Optional[int] = None,
-    data_inicio: Optional[date] = None,
-    data_fim: Optional[date] = None,
+    data_inicio: Optional[str] = None,  # <-- Trocar aqui
+    data_fim: Optional[str] = None,     # <-- Trocar aqui
     fonte_apontamento: Optional[FonteApontamento] = None,
     agrupar_por_recurso: bool = False,
     agrupar_por_projeto: bool = False,
@@ -50,15 +50,49 @@ async def relatorio_horas_apontadas(
     Returns:
         List[Dict[str, Any]]: Relatório de horas apontadas
     """
+    from datetime import datetime
+    from datetime import datetime
     repository = ApontamentoRepository(db)
-    
+
+    def parse_date(value):
+        if value is None:
+            return None
+        try:
+            # Tenta formato ISO
+            return datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError:
+            try:
+                # Tenta formato brasileiro
+                return datetime.strptime(value, "%d/%m/%Y").date()
+            except ValueError:
+                raise HTTPException(status_code=422, detail=f"Formato de data inválido: {value}. Use YYYY-MM-DD ou DD/MM/YYYY.")
+
+    data_inicio_date = parse_date(data_inicio)
+    data_fim_date = parse_date(data_fim)
+
+    def parse_date(value):
+        if value is None:
+            return None
+        try:
+            # Tenta formato ISO
+            return datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError:
+            try:
+                # Tenta formato brasileiro
+                return datetime.strptime(value, "%d/%m/%Y").date()
+            except ValueError:
+                raise HTTPException(status_code=422, detail=f"Formato de data inválido: {value}. Use YYYY-MM-DD ou DD/MM/YYYY.")
+
+    data_inicio_date = parse_date(data_inicio)
+    data_fim_date = parse_date(data_fim)
+
     return await repository.find_with_filters_and_aggregate(
         recurso_id=recurso_id,
         projeto_id=projeto_id,
         equipe_id=equipe_id,
         secao_id=secao_id,
-        data_inicio=data_inicio,
-        data_fim=data_fim,
+        data_inicio=data_inicio_date,
+        data_fim=data_fim_date,
         fonte_apontamento=fonte_apontamento,
         agrupar_por_recurso=agrupar_por_recurso,
         agrupar_por_projeto=agrupar_por_projeto,
@@ -145,8 +179,8 @@ async def relatorio_comparativo(
 
 @router.get("/horas-por-projeto")
 async def get_horas_por_projeto(
-    data_inicio: Optional[date] = None,
-    data_fim: Optional[date] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
     secao_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     db: AsyncSession = Depends(get_async_db),
@@ -164,17 +198,38 @@ async def get_horas_por_projeto(
     """
     relatorio_service = RelatorioService(db)
     
+    # Conversão dos formatos de data
+    from datetime import datetime, date
+    def parse_date_field(v):
+        if v is None:
+            return v
+        if isinstance(v, date) and not isinstance(v, datetime):
+            return v
+        if isinstance(v, datetime):
+            return v.date()
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00')).date()
+            except Exception:
+                pass
+            try:
+                return datetime.strptime(v, "%d/%m/%Y").date()
+            except Exception:
+                pass
+        return v
+    data_inicio_conv = parse_date_field(data_inicio)
+    data_fim_conv = parse_date_field(data_fim)
     return await relatorio_service.get_horas_por_projeto(
-        data_inicio=data_inicio,
-        data_fim=data_fim,
+        data_inicio=data_inicio_conv,
+        data_fim=data_fim_conv,
         secao_id=secao_id,
         equipe_id=equipe_id
     )
 
 @router.get("/horas-por-recurso")
 async def get_horas_por_recurso(
-    data_inicio: Optional[date] = None,
-    data_fim: Optional[date] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
     projeto_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     secao_id: Optional[int] = None,
@@ -184,8 +239,8 @@ async def get_horas_por_recurso(
     """
     Obter relatório de horas apontadas por recurso.
     
-    - **data_inicio**: Data inicial do período de análise
-    - **data_fim**: Data final do período de análise
+    - **data_inicio**: Data inicial do período de análise (formatos aceitos: YYYY-MM-DD, DD/MM/YYYY)
+    - **data_fim**: Data final do período de análise (formatos aceitos: YYYY-MM-DD, DD/MM/YYYY)
     - **projeto_id**: Filtrar por projeto específico
     - **equipe_id**: Filtrar por equipe específica
     - **secao_id**: Filtrar por seção específica
@@ -194,9 +249,30 @@ async def get_horas_por_recurso(
     """
     relatorio_service = RelatorioService(db)
     
+    # Conversão dos formatos de data
+    from datetime import datetime, date
+    def parse_date_field(v):
+        if v is None:
+            return v
+        if isinstance(v, date) and not isinstance(v, datetime):
+            return v
+        if isinstance(v, datetime):
+            return v.date()
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00')).date()
+            except Exception:
+                pass
+            try:
+                return datetime.strptime(v, "%d/%m/%Y").date()
+            except Exception:
+                pass
+        return v
+    data_inicio_conv = parse_date_field(data_inicio)
+    data_fim_conv = parse_date_field(data_fim)
     return await relatorio_service.get_horas_por_recurso(
-        data_inicio=data_inicio,
-        data_fim=data_fim,
+        data_inicio=data_inicio_conv,
+        data_fim=data_fim_conv,
         projeto_id=projeto_id,
         equipe_id=equipe_id,
         secao_id=secao_id

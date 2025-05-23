@@ -2,7 +2,7 @@ from datetime import datetime, date
 from decimal import Decimal
 from enum import Enum
 from typing import Optional
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, validator
 
 from .base_schema import BaseSchema, BaseResponseSchema
 
@@ -67,7 +67,9 @@ class ApontamentoResponseSchema(BaseResponseSchema):
 
 
 class ApontamentoFilterSchema(BaseSchema):
-    """Schema para filtros de busca de apontamentos."""
+    """Schema para filtros de busca de apontamentos.
+    Os campos data_inicio e data_fim aceitam formatos YYYY-MM-DD ou DD/MM/YYYY.
+    """
     recurso_id: Optional[int] = None
     projeto_id: Optional[int] = None
     equipe_id: Optional[int] = None
@@ -76,6 +78,28 @@ class ApontamentoFilterSchema(BaseSchema):
     data_fim: Optional[date] = None
     fonte_apontamento: Optional[FonteApontamento] = None
     jira_issue_key: Optional[str] = None
+
+    @validator('data_inicio', 'data_fim', pre=True)
+    def parse_date_fields(cls, v):
+        from datetime import datetime, date
+        if v is None:
+            return v
+        if isinstance(v, date) and not isinstance(v, datetime):
+            return v
+        if isinstance(v, datetime):
+            return v.date()
+        if isinstance(v, str):
+            # Tenta ISO primeiro
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00')).date()
+            except Exception:
+                pass
+            # Tenta formato brasileiro DD/MM/YYYY
+            try:
+                return datetime.strptime(v, "%d/%m/%Y").date()
+            except Exception:
+                pass
+        return v
 
 
 class ApontamentoAggregationSchema(BaseResponseSchema):

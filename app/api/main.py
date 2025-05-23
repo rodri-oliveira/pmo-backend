@@ -9,6 +9,7 @@ from app.api.routes import projeto_routes
 from app.api.routes import planejamento_horas
 from app.api.routes import apontamentos
 from app.api.routes import relatorios
+from app.api.routes import relatorios_dinamico
 from app.api.routes import alocacao_routes # Adicionar importação para alocacao_routes
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +26,7 @@ api_router.include_router(planejamento_horas.router, prefix="/planejamento-horas
 api_router.include_router(apontamentos.router, prefix="/apontamentos", tags=["Apontamentos"])
 # O router de relatórios já tem o prefixo "/relatorios" definido internamente
 api_router.include_router(relatorios.router, tags=["Relatórios"])
+api_router.include_router(relatorios_dinamico.router, tags=["Relatórios"])
 # Remover o prefixo para o router de alocações, já que ele já define internamente
 api_router.include_router(alocacao_routes.router, tags=["Alocações"]) # Incluir a rota de alocações
 api_router.include_router(auth.router, prefix="", tags=["Autenticação"])
