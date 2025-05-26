@@ -10,6 +10,25 @@ class RecursoService:
         self.recurso_repository = recurso_repository
         self.equipe_repository = equipe_repository
 
+    async def autocomplete_recursos(
+        self,
+        search: str,
+        skip: int = 0,
+        limit: int = 20,
+        apenas_ativos: bool = False,
+        equipe_id: Optional[int] = None
+    ):
+        """
+        Busca recursos por nome, email ou matrícula (case-insensitive, partial match), com paginação e filtros opcionais.
+        """
+        return await self.recurso_repository.autocomplete(
+            search=search,
+            skip=skip,
+            limit=limit,
+            apenas_ativos=apenas_ativos,
+            equipe_id=equipe_id
+        )
+
     async def get_recurso_by_id(self, recurso_id: int) -> Optional[RecursoDTO]:
         recurso = await self.recurso_repository.get_by_id(recurso_id)
         if recurso:

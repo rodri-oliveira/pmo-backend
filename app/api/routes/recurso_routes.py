@@ -18,6 +18,38 @@ async def get_recurso_service(db: AsyncSession = Depends(get_async_db)) -> Recur
     equipe_repository = SQLAlchemyEquipeRepository(db_session=db) # RecursoService needs this
     return RecursoService(recurso_repository=recurso_repository, equipe_repository=equipe_repository)
 
+@router.get("/autocomplete", response_model=dict)
+async def autocomplete_recursos(
+    search: str = Query(..., min_length=1, description="Termo a ser buscado (nome, email ou matrícula)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    apenas_ativos: bool = Query(False),
+    equipe_id: Optional[int] = Query(None),
+    service: RecursoService = Depends(get_recurso_service)
+):
+    """
+    Autocomplete de recursos por nome, email ou matrícula.
+    """
+    recursos = await service.autocomplete_recursos(
+        search=search,
+        skip=skip,
+        limit=limit,
+        apenas_ativos=apenas_ativos,
+        equipe_id=equipe_id
+    )
+    # Retornar apenas campos essenciais
+    items = [
+        {"id": r.id, "nome": r.nome}
+        for r in recursos
+    ]
+    return {"items": items}
+
+# Dependency for RecursoService
+async def get_recurso_service(db: AsyncSession = Depends(get_async_db)) -> RecursoService:
+    recurso_repository = SQLAlchemyRecursoRepository(db_session=db)
+    equipe_repository = SQLAlchemyEquipeRepository(db_session=db) # RecursoService needs this
+    return RecursoService(recurso_repository=recurso_repository, equipe_repository=equipe_repository)
+
 @router.post("/", response_model=RecursoDTO, status_code=status.HTTP_201_CREATED)
 async def create_recurso(recurso_create_dto: RecursoCreateDTO, service: RecursoService = Depends(get_recurso_service)):
     try:

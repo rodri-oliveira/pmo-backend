@@ -228,8 +228,8 @@ async def get_horas_por_projeto(
             except Exception:
                 pass
         return v
-    data_inicio_conv = parse_date_field(data_inicio)
-    data_fim_conv = parse_date_field(data_fim)
+    data_inicio_conv = parse_date_flex(data_inicio)
+    data_fim_conv = parse_date_flex(data_fim)
     result = await relatorio_service.get_horas_por_projeto(
         data_inicio=data_inicio_conv,
         data_fim=data_fim_conv,
@@ -280,8 +280,8 @@ async def get_horas_por_recurso(
             except Exception:
                 pass
         return v
-    data_inicio_conv = parse_date_field(data_inicio)
-    data_fim_conv = parse_date_field(data_fim)
+    data_inicio_conv = parse_date_flex(data_inicio)
+    data_fim_conv = parse_date_flex(data_fim)
     result = await relatorio_service.get_horas_por_recurso(
         data_inicio=data_inicio_conv,
         data_fim=data_fim_conv,
