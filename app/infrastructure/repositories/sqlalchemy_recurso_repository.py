@@ -17,6 +17,32 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
     def __init__(self, db_session: AsyncSession):
         self.db_session = db_session
 
+    async def autocomplete(
+        self,
+        search: str,
+        skip: int = 0,
+        limit: int = 20,
+        apenas_ativos: bool = False,
+        equipe_id: Optional[int] = None
+    ):
+        from sqlalchemy import or_
+        query = select(RecursoSQL)
+        search_filter = or_(
+            RecursoSQL.nome.ilike(f"%{search}%"),
+            RecursoSQL.email.ilike(f"%{search}%"),
+            RecursoSQL.matricula.ilike(f"%{search}%")
+        )
+        query = query.filter(search_filter)
+        if apenas_ativos:
+            query = query.filter(RecursoSQL.ativo == True)
+        if equipe_id is not None:
+            query = query.filter(RecursoSQL.equipe_principal_id == equipe_id)
+        query = query.order_by(RecursoSQL.nome.asc())
+        query = query.offset(skip).limit(limit)
+        result = await self.db_session.execute(query)
+        recursos_sql = result.scalars().all()
+        return [DomainRecurso.model_validate(recurso) for recurso in recursos_sql]
+
     async def get_by_id(self, recurso_id: int) -> Optional[DomainRecurso]:
         result = await self.db_session.execute(select(RecursoSQL).filter(RecursoSQL.id == recurso_id))
         recurso_sql = result.scalars().first()

@@ -8,6 +8,7 @@ router = APIRouter(prefix="/relatorios", tags=["Relatórios"])
 
 from fastapi import HTTPException
 import logging
+from app.utils.date_utils import parse_date_flex
 
 @router.get("/dinamico", summary="Relatório Dinâmico de Horas")
 async def relatorio_dinamico(
@@ -25,13 +26,15 @@ async def relatorio_dinamico(
 ):
     try:
         service = RelatorioDinamicoService(db)
+        data_inicio_conv = parse_date_flex(data_inicio)
+        data_fim_conv = parse_date_flex(data_fim)
         result = await service.get_relatorio(
             recurso_id=recurso_id,
             equipe_id=equipe_id,
             secao_id=secao_id,
             projeto_id=projeto_id,
-            data_inicio=data_inicio,
-            data_fim=data_fim,
+            data_inicio=data_inicio_conv,
+            data_fim=data_fim_conv,
             agrupar_por=agrupar_por,
         )
         if not result or all((v is None for v in result[0].values())):

@@ -10,6 +10,47 @@ from app.services.recurso_service import RecursoService
 
 router = APIRouter(prefix="/recursos", tags=["Recursos"])
 
+from app.db.orm_models import Recurso
+from app.repositories.recurso_repository import RecursoRepository
+from app.utils.search_utils import apply_search_filter
+from sqlalchemy.orm import Session
+
+@router.get("/autocomplete", response_model=dict)
+def autocomplete_recursos(
+    search: str = Query(..., min_length=1, description="Termo a ser buscado (nome, email ou matrícula)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    apenas_ativos: bool = Query(False),
+    equipe_id: int = Query(None),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_admin_user)
+):
+    """
+    Endpoint para autocomplete de recursos por nome, email ou matrícula.
+    """
+    query = db.query(Recurso)
+    fields = [Recurso.nome, Recurso.email, Recurso.matricula]
+    query = apply_search_filter(query, Recurso, search, fields)
+    if apenas_ativos:
+        query = query.filter(Recurso.ativo == True)
+    if equipe_id:
+        query = query.filter(Recurso.equipe_principal_id == equipe_id)
+    recursos = query.order_by(Recurso.nome.asc()).offset(skip).limit(limit).all()
+    # Retornar apenas campos essenciais
+    items = [
+        {
+            "id": r.id,
+            "nome": r.nome,
+            "email": r.email,
+            "matricula": r.matricula,
+            "cargo": r.cargo,
+            "ativo": r.ativo
+        }
+        for r in recursos
+    ]
+    return {"items": items}
+
+
 @router.post("/", response_model=RecursoResponseSchema, status_code=status.HTTP_201_CREATED)
 def create_recurso(
     recurso: RecursoCreateSchema,
