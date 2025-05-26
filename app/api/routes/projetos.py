@@ -9,6 +9,34 @@ from app.services.projeto_service import ProjetoService
 
 router = APIRouter(prefix="/projetos", tags=["Projetos"])
 
+@router.get("/autocomplete", response_model=dict)
+def autocomplete_projetos(
+    search: str = Query(..., min_length=1, description="Termo a ser buscado (nome ou código da empresa)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    apenas_ativos: bool = Query(False),
+    status_projeto: int = Query(None),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_admin_user)
+):
+    """
+    Endpoint para autocomplete de projetos por nome ou código da empresa.
+    """
+    query = db.query(Projeto)
+    from sqlalchemy import or_
+    query = query.filter(or_(Projeto.nome.ilike(f"%{search}%"), Projeto.codigo_empresa.ilike(f"%{search}%")))
+    if apenas_ativos:
+        query = query.filter(Projeto.ativo == True)
+    if status_projeto:
+        query = query.filter(Projeto.status_projeto_id == status_projeto)
+    projetos = query.order_by(Projeto.nome.asc()).offset(skip).limit(limit).all()
+    items = [
+        {"id": p.id, "nome": p.nome}
+        for p in projetos
+    ]
+    return {"items": items}
+
+
 @router.post("/", response_model=ProjetoResponseSchema, status_code=status.HTTP_201_CREATED)
 def create_projeto(
     projeto: ProjetoCreateSchema,
