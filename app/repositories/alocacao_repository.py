@@ -24,7 +24,11 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
     
     async def list_by_recurso(self, recurso_id: int) -> List[AlocacaoRecursoProjeto]:
         """Lista alocações de um recurso."""
-        query = select(AlocacaoRecursoProjeto).filter(
+        query = select(AlocacaoRecursoProjeto).options(
+            joinedload(AlocacaoRecursoProjeto.equipe),
+            joinedload(AlocacaoRecursoProjeto.recurso),
+            joinedload(AlocacaoRecursoProjeto.projeto)
+        ).filter(
             AlocacaoRecursoProjeto.recurso_id == recurso_id
         )
         result = await self.db.execute(query)
@@ -32,7 +36,11 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
     
     async def list_by_projeto(self, projeto_id: int) -> List[AlocacaoRecursoProjeto]:
         """Lista alocações de um projeto."""
-        query = select(AlocacaoRecursoProjeto).filter(
+        query = select(AlocacaoRecursoProjeto).options(
+            joinedload(AlocacaoRecursoProjeto.equipe),
+            joinedload(AlocacaoRecursoProjeto.recurso),
+            joinedload(AlocacaoRecursoProjeto.projeto)
+        ).filter(
             AlocacaoRecursoProjeto.projeto_id == projeto_id
         )
         result = await self.db.execute(query)
@@ -43,7 +51,11 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
         Lista alocações em um período.
         Inclui alocações que: (começaram antes e terminaram depois) OU (começaram durante) OU (terminaram durante).
         """
-        query = select(AlocacaoRecursoProjeto)
+        query = select(AlocacaoRecursoProjeto).options(
+            joinedload(AlocacaoRecursoProjeto.equipe),
+            joinedload(AlocacaoRecursoProjeto.recurso),
+            joinedload(AlocacaoRecursoProjeto.projeto)
+        )
         
         if data_inicio is not None and data_fim is not None:
             query = query.filter(
@@ -88,8 +100,11 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
     
     async def list_active_with_details(self) -> List[AlocacaoRecursoProjeto]:
         """Lista alocações ativas com detalhes de recursos e projetos."""
-        # Simplificando a consulta para evitar problemas com joinedload
-        query = select(AlocacaoRecursoProjeto).filter(
+        query = select(AlocacaoRecursoProjeto).options(
+            joinedload(AlocacaoRecursoProjeto.equipe),
+            joinedload(AlocacaoRecursoProjeto.recurso),
+            joinedload(AlocacaoRecursoProjeto.projeto)
+        ).filter(
             or_(
                 AlocacaoRecursoProjeto.data_fim_alocacao == None,
                 AlocacaoRecursoProjeto.data_fim_alocacao >= date.today()

@@ -25,8 +25,17 @@ class AlocacaoUpdate(BaseModel):
     data_fim_alocacao: Optional[date] = Field(None, description="Data de fim da alocação")
 
 class AlocacaoResponse(AlocacaoBase):
-    """Esquema para resposta de alocação."""
+    """
+    Esquema para resposta de alocação.
+    Relacionamentos relevantes:
+      - recurso_id → Recurso.id
+      - projeto_id → Projeto.id
+      - equipe_id → Equipe.id (snapshot da equipe do recurso no momento da alocação)
+      - Equipe pertence a uma Secao
+    """
     id: int
+    equipe_id: Optional[int] = None
+    equipe_nome: Optional[str] = None
     data_criacao: datetime
     data_atualizacao: datetime
     

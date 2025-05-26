@@ -95,11 +95,33 @@ class AlocacaoService:
         if alocacao_existente:
             raise ValueError(f"Já existe uma alocação para este recurso neste projeto com a mesma data de início")
         
+        # Preencher equipe_id automaticamente (snapshot do momento)
+        alocacao_data = dict(alocacao_data)
+        # Use apenas o campo direto, nunca relacionamento
+        equipe_id = getattr(recurso, "equipe_principal_id", None)
+        alocacao_data["equipe_id"] = equipe_id
         # Criar a alocação
         alocacao = await self.repository.create(alocacao_data)
-        
+
+        # Buscar a alocacao novamente, agora com os relacionamentos carregados
+        from sqlalchemy.future import select
+        from sqlalchemy.orm import joinedload
+        from app.db.orm_models import AlocacaoRecursoProjeto, Equipe
+
+        query = (
+            select(AlocacaoRecursoProjeto)
+            .options(
+                joinedload(AlocacaoRecursoProjeto.equipe).joinedload(Equipe.secao),
+                joinedload(AlocacaoRecursoProjeto.recurso),
+                joinedload(AlocacaoRecursoProjeto.projeto)
+            )
+            .filter(AlocacaoRecursoProjeto.id == alocacao.id)
+        )
+        result = await self.db.execute(query)
+        alocacao_completa = result.scalars().first()
+
         # Formatar a resposta
-        return self._format_response(alocacao)
+        return self._format_response(alocacao_completa)
     
     async def get(self, alocacao_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -111,10 +133,24 @@ class AlocacaoService:
         Returns:
             Dict: Dados da alocação, ou None se não encontrada
         """
-        alocacao = await self.repository.get(alocacao_id)
+        from sqlalchemy.future import select
+        from sqlalchemy.orm import joinedload
+        from app.db.orm_models import AlocacaoRecursoProjeto, Equipe
+
+        query = (
+            select(AlocacaoRecursoProjeto)
+            .options(
+                joinedload(AlocacaoRecursoProjeto.equipe).joinedload(Equipe.secao),
+                joinedload(AlocacaoRecursoProjeto.recurso),
+                joinedload(AlocacaoRecursoProjeto.projeto)
+            )
+            .filter(AlocacaoRecursoProjeto.id == alocacao_id)
+        )
+        result = await self.db.execute(query)
+        alocacao = result.scalars().first()
         if not alocacao:
             return None
-        
+
         return self._format_response(alocacao)
     
     async def list_all(self) -> List[Dict[str, Any]]:
@@ -208,23 +244,39 @@ class AlocacaoService:
             alocacao_existente = await self.repository.get_by_recurso_projeto_data(
                 recurso_id, projeto_id, data_inicio
             )
-            
             if alocacao_existente and alocacao_existente.id != alocacao_id:
                 raise ValueError(f"Já existe uma alocação para este recurso neste projeto com a mesma data de início")
-        
+
         # Atualizar a alocação
         alocacao_atualizada = await self.repository.update(alocacao_id, alocacao_data)
-        
+
+        # Buscar novamente com relacionamentos carregados
+        from sqlalchemy.future import select
+        from sqlalchemy.orm import joinedload
+        from app.db.orm_models import AlocacaoRecursoProjeto, Equipe
+
+        query = (
+            select(AlocacaoRecursoProjeto)
+            .options(
+                joinedload(AlocacaoRecursoProjeto.equipe).joinedload(Equipe.secao),
+                joinedload(AlocacaoRecursoProjeto.recurso),
+                joinedload(AlocacaoRecursoProjeto.projeto)
+            )
+            .filter(AlocacaoRecursoProjeto.id == alocacao_id)
+        )
+        result = await self.db.execute(query)
+        alocacao_completa = result.scalars().first()
+
         # Formatar a resposta
-        return self._format_response(alocacao_atualizada)
-    
+        return self._format_response(alocacao_completa)
+
     async def delete(self, alocacao_id: int) -> None:
         """
         Remove uma alocação.
         
         Args:
             alocacao_id: ID da alocação a ser removida
-            
+        
         Raises:
             ValueError: Se a alocação não existir
         """
@@ -239,25 +291,19 @@ class AlocacaoService:
     def _format_response(self, alocacao: AlocacaoRecursoProjeto) -> Dict[str, Any]:
         """
         Formata uma alocação para resposta da API.
-        
-        Args:
-            alocacao: Objeto de alocação
-            
-        Returns:
-            Dict: Dados formatados da alocação
+        Inclui equipe_id e equipe_nome (se possível).
         """
         result = {
             "id": alocacao.id,
             "recurso_id": alocacao.recurso_id,
             "projeto_id": alocacao.projeto_id,
+            "equipe_id": getattr(alocacao, "equipe_id", None),
+            "equipe_nome": getattr(alocacao.equipe, "nome", None) if hasattr(alocacao, "equipe") and alocacao.equipe else None,
             "data_inicio_alocacao": alocacao.data_inicio_alocacao,
             "data_fim_alocacao": alocacao.data_fim_alocacao,
             "data_criacao": alocacao.data_criacao,
             "data_atualizacao": alocacao.data_atualizacao,
-            "recurso_nome": None,
-            "projeto_nome": None
+            "recurso_nome": getattr(alocacao.recurso, "nome", None) if hasattr(alocacao, "recurso") and alocacao.recurso else None,
+            "projeto_nome": getattr(alocacao.projeto, "nome", None) if hasattr(alocacao, "projeto") and alocacao.projeto else None
         }
-        
-        # Não tentamos acessar os relacionamentos diretamente
-        # pois podem não estar carregados
         return result
