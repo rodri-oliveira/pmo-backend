@@ -31,7 +31,7 @@ def create_recurso(
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao criar recurso: {str(e)}")
 
 
-@router.get("/", response_model=List[RecursoResponseSchema])
+@router.get("/", response_model=dict)
 def list_recursos(
     skip: int = 0,
     limit: int = 100,
@@ -57,7 +57,7 @@ def list_recursos(
             ativo=ativo
         )
         logger.info(f"[list_recursos] Sucesso - {len(result)} registros retornados")
-        return result
+        return {"items": result}
     except Exception as e:
         logger.error(f"[list_recursos] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar recursos: {str(e)}")

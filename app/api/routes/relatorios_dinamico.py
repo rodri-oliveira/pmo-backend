@@ -36,7 +36,7 @@ async def relatorio_dinamico(
         )
         if not result or all((v is None for v in result[0].values())):
             return {"message": "Nenhum dado encontrado para os filtros informados."}
-        return result
+        return {"items": result}
     except Exception as e:
         logging.exception("Erro inesperado ao gerar relatório dinâmico")
         raise HTTPException(status_code=500, detail=f"Erro interno ao gerar relatório dinâmico: {str(e)}")
@@ -57,7 +57,7 @@ async def horas_disponiveis(
         )
         if not result:
             return {"message": "Nenhum dado encontrado para os filtros informados."}
-        return result
+        return {"items": result}
     except Exception as e:
         logging.exception("Erro inesperado ao buscar horas disponíveis")
         raise HTTPException(status_code=500, detail=f"Erro interno ao buscar horas disponíveis: {str(e)}")

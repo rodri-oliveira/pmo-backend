@@ -59,7 +59,7 @@ async def create_or_update_planejamento(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.get("/alocacao/{alocacao_id}", response_model=List[PlanejamentoHorasResponse])
+@router.get("/alocacao/{alocacao_id}", response_model=dict)
 async def list_planejamento_by_alocacao(
     alocacao_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_async_db),
@@ -82,7 +82,7 @@ async def list_planejamento_by_alocacao(
         service = PlanejamentoHorasService(db)
         result = await service.list_by_alocacao(alocacao_id)
         logger.info(f"[list_planejamento_by_alocacao] Sucesso: {len(result)} registros retornados para alocacao_id={alocacao_id}")
-        return result
+        return {"items": result}
     except ValueError as e:
         logger.warning(f"[list_planejamento_by_alocacao] Valor inválido: {str(e)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -90,7 +90,7 @@ async def list_planejamento_by_alocacao(
         logger.error(f"[list_planejamento_by_alocacao] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar planejamentos por alocação: {str(e)}")
 
-@router.get("/recurso/{recurso_id}", response_model=List[PlanejamentoHorasResponse])
+@router.get("/recurso/{recurso_id}", response_model=dict)
 async def list_planejamento_by_recurso(
     recurso_id: int = Path(..., gt=0),
     ano: int = Query(..., gt=0),
@@ -108,15 +108,7 @@ async def list_planejamento_by_recurso(
         service = PlanejamentoHorasService(db)
         result = await service.list_by_recurso_periodo(recurso_id, ano, mes_inicio, mes_fim)
         logger.info(f"[list_planejamento_by_recurso] Sucesso: {len(result)} registros retornados para recurso_id={recurso_id}")
-        if not result:
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "message": "Nenhum planejamento encontrado para o recurso informado no período solicitado.",
-                    "result": []
-                }
-            )
-        return {"result": result}
+        return {"items": result}
     except ValueError as e:
         logger.warning(f"[list_planejamento_by_recurso] Valor inválido: {str(e)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

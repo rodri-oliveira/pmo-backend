@@ -8,7 +8,48 @@ from app.db.orm_models import AlocacaoRecursoProjeto
 
 class AlocacaoService:
     """Serviço para gerenciamento de alocações de recursos em projetos."""
-    
+
+    async def list(
+        self,
+        recurso_id: Optional[int] = None,
+        projeto_id: Optional[int] = None,
+        data_inicio: Optional[str] = None,
+        data_fim: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Lista alocações com filtros opcionais por recurso, projeto e período.
+        """
+        # Conversão de datas se necessário
+        from datetime import datetime
+        data_inicio_dt = None
+        data_fim_dt = None
+        if data_inicio:
+            try:
+                data_inicio_dt = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+            except ValueError:
+                try:
+                    data_inicio_dt = datetime.strptime(data_inicio, "%d/%m/%Y").date()
+                except ValueError:
+                    raise ValueError("Formato de data_inicio inválido. Use YYYY-MM-DD ou DD/MM/YYYY.")
+        if data_fim:
+            try:
+                data_fim_dt = datetime.strptime(data_fim, "%Y-%m-%d").date()
+            except ValueError:
+                try:
+                    data_fim_dt = datetime.strptime(data_fim, "%d/%m/%Y").date()
+                except ValueError:
+                    raise ValueError("Formato de data_fim inválido. Use YYYY-MM-DD ou DD/MM/YYYY.")
+
+        # Prioridade: recurso_id > projeto_id > periodo > all
+        if recurso_id is not None:
+            return await self.list_by_recurso(recurso_id)
+        elif projeto_id is not None:
+            return await self.list_by_projeto(projeto_id)
+        elif data_inicio_dt or data_fim_dt:
+            return await self.list_by_periodo(data_inicio_dt, data_fim_dt)
+        else:
+            return await self.list_all()
+
     def __init__(self, db: AsyncSession):
         """
         Inicializa o serviço com uma sessão do banco de dados.

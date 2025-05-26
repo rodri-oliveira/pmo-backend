@@ -49,7 +49,7 @@ async def get_status_projeto(status_id: int, service: StatusProjetoService = Dep
         logger.error(f"[get_status_projeto] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-@router.get("/", response_model=List[StatusProjetoDTO])
+@router.get("/", response_model=dict)
 async def get_all_status_projeto(
     skip: int = 0,
     limit: int = Query(default=100, ge=1, le=1000),
@@ -60,7 +60,7 @@ async def get_all_status_projeto(
     try:
         status_projeto_list = await service.get_all_status_projeto(skip=skip, limit=limit)
         logger.info("[get_all_status_projeto] Sucesso")
-        return status_projeto_list
+        return {"items": status_projeto_list}
     except HTTPException as e:
         logger.warning(f"[get_all_status_projeto] HTTPException: {str(e.detail)}")
         raise e

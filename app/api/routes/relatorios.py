@@ -101,7 +101,7 @@ async def relatorio_horas_apontadas(
     )
 
 
-@router.get("/comparativo-planejado-realizado")
+@router.get("/comparativo-planejado-realizado", response_model=dict)
 async def relatorio_comparativo(
     ano: int = Query(..., description="Ano do relatório"),
     mes: Optional[int] = Query(None, description="Mês do relatório (opcional)"),
@@ -124,7 +124,7 @@ async def relatorio_comparativo(
         current_user: Usuário administrador autenticado
     
     Returns:
-        List[Dict[str, Any]]: Relatório comparativo
+        Dict[str, Any]: Relatório comparativo
     """
     # Aqui usaríamos uma query SQL mais complexa que junta dados de apontamento e planejamento
     # Simplificando para este exemplo
@@ -146,36 +146,47 @@ async def relatorio_comparativo(
     LEFT JOIN 
         horas_planejadas_alocacao hp ON hp.alocacao_id = arp.id 
             AND hp.ano = :ano 
-            AND (:mes IS NULL OR hp.mes = :mes)
+            AND (CAST(:mes AS INTEGER) IS NULL OR hp.mes = CAST(:mes AS INTEGER))
     LEFT JOIN 
         apontamento a ON a.recurso_id = r.id 
             AND a.projeto_id = p.id 
             AND EXTRACT(YEAR FROM a.data_apontamento) = :ano 
-            AND (:mes IS NULL OR EXTRACT(MONTH FROM a.data_apontamento) = :mes)
+            AND (CAST(:mes AS INTEGER) IS NULL OR EXTRACT(MONTH FROM a.data_apontamento) = CAST(:mes AS INTEGER))
     WHERE 
-        (:recurso_id IS NULL OR r.id = :recurso_id)
-        AND (:projeto_id IS NULL OR p.id = :projeto_id)
-        AND (:equipe_id IS NULL OR r.equipe_principal_id = :equipe_id)
+        (CAST(:recurso_id AS INTEGER) IS NULL OR r.id = CAST(:recurso_id AS INTEGER))
+        AND (CAST(:projeto_id AS INTEGER) IS NULL OR p.id = CAST(:projeto_id AS INTEGER))
+        AND (CAST(:equipe_id AS INTEGER) IS NULL OR r.equipe_principal_id = CAST(:equipe_id AS INTEGER))
     GROUP BY 
         r.id, r.nome, p.id, p.nome
     ORDER BY 
         r.nome, p.nome
     """
     
-    # Aqui executaríamos a query SQL e retornaríamos os resultados
-    # Retorno simulado para este exemplo
-    return [
+    # Executar a query SQL real e retornar os resultados do banco
+    params = {
+        "ano": ano,
+        "mes": mes,
+        "recurso_id": recurso_id,
+        "projeto_id": projeto_id,
+        "equipe_id": equipe_id,
+    }
+    from sqlalchemy import text
+    result = await db.execute(text(sql), params)
+    rows = result.fetchall()
+    items = [
         {
-            "recurso_id": 1,
-            "recurso_nome": "João Silva",
-            "projeto_id": 1,
-            "projeto_nome": "Projeto A",
-            "horas_planejadas": 160.0,
-            "horas_apontadas": 152.5,
-            "diferenca": 7.5
-        },
-        # ... mais resultados
-    ] 
+            "recurso_id": row.recurso_id,
+            "recurso_nome": row.recurso_nome,
+            "projeto_id": row.projeto_id,
+            "projeto_nome": row.projeto_nome,
+            "horas_planejadas": float(row.horas_planejadas) if row.horas_planejadas is not None else 0,
+            "horas_apontadas": float(row.horas_apontadas) if row.horas_apontadas is not None else 0,
+            "diferenca": float(row.diferenca) if row.diferenca is not None else 0
+        }
+        for row in rows
+    ]
+    return {"items": items}
+
 
 @router.get("/horas-por-projeto")
 async def get_horas_por_projeto(
@@ -219,12 +230,13 @@ async def get_horas_por_projeto(
         return v
     data_inicio_conv = parse_date_field(data_inicio)
     data_fim_conv = parse_date_field(data_fim)
-    return await relatorio_service.get_horas_por_projeto(
+    result = await relatorio_service.get_horas_por_projeto(
         data_inicio=data_inicio_conv,
         data_fim=data_fim_conv,
         secao_id=secao_id,
         equipe_id=equipe_id
     )
+    return {"items": result}
 
 @router.get("/horas-por-recurso")
 async def get_horas_por_recurso(
@@ -270,13 +282,14 @@ async def get_horas_por_recurso(
         return v
     data_inicio_conv = parse_date_field(data_inicio)
     data_fim_conv = parse_date_field(data_fim)
-    return await relatorio_service.get_horas_por_recurso(
+    result = await relatorio_service.get_horas_por_recurso(
         data_inicio=data_inicio_conv,
         data_fim=data_fim_conv,
         projeto_id=projeto_id,
         equipe_id=equipe_id,
         secao_id=secao_id
     )
+    return {"items": result}
 
 @router.get("/planejado-vs-realizado")
 async def get_planejado_vs_realizado(
@@ -307,7 +320,7 @@ async def get_planejado_vs_realizado(
     
     relatorio_service = RelatorioService(db)
     
-    return await relatorio_service.get_analise_planejado_vs_realizado(
+    result = await relatorio_service.get_analise_planejado_vs_realizado(
         ano=ano,
         mes=mes,
         projeto_id=projeto_id,
@@ -315,6 +328,7 @@ async def get_planejado_vs_realizado(
         equipe_id=equipe_id,
         secao_id=secao_id
     )
+    return {"items": result}
 
 @router.get("/disponibilidade-recursos")
 async def get_disponibilidade_recursos_endpoint(
@@ -351,7 +365,7 @@ async def get_disponibilidade_recursos_endpoint(
             # raise HTTPException(status_code=404, detail="Recurso não encontrado ou sem dados de disponibilidade para o período.")
             pass # Retorna lista vazia por padrão se filtros não encontrarem dados
             
-        return dados_disponibilidade
+        return {"items": dados_disponibilidade}
     except Exception as e:
         # Logar a exceção e retornar um erro genérico pode ser uma boa prática
         # import logging

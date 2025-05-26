@@ -35,7 +35,7 @@ async def get_equipe(equipe_id: int, service: EquipeService = Depends(get_equipe
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Equipe não encontrada")
     return equipe
 
-@router.get("/", response_model=List[EquipeDTO])
+@router.get("/", response_model=dict)
 async def get_all_equipes(
     skip: int = 0,
     limit: int = Query(default=100, ge=1, le=1000),
@@ -44,8 +44,10 @@ async def get_all_equipes(
     service: EquipeService = Depends(get_equipe_service)
 ):
     if secao_id is not None:
-        return await service.get_equipes_by_secao_id(secao_id=secao_id, skip=skip, limit=limit, apenas_ativos=apenas_ativos)
-    return await service.get_all_equipes(skip=skip, limit=limit, apenas_ativos=apenas_ativos)
+        equipes = await service.get_equipes_by_secao_id(secao_id=secao_id, skip=skip, limit=limit, apenas_ativos=apenas_ativos)
+    else:
+        equipes = await service.get_all_equipes(skip=skip, limit=limit, apenas_ativos=apenas_ativos)
+    return {"items": equipes}
 
 
 @router.put("/{equipe_id}", response_model=EquipeDTO)

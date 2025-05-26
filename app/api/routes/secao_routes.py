@@ -37,14 +37,15 @@ async def get_secao(secao_id: int, service: SecaoService = Depends(get_secao_ser
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seção não encontrada")
     return secao
 
-@router.get("/", response_model=List[SecaoDTO])
+@router.get("/", response_model=dict)
 async def get_all_secoes(
     skip: int = 0,
     limit: int = Query(default=100, ge=1, le=1000),
     apenas_ativos: bool = False,
     service: SecaoService = Depends(get_secao_service)
 ):
-    return await service.get_all_secoes(skip=skip, limit=limit, apenas_ativos=apenas_ativos)
+    secoes = await service.get_all_secoes(skip=skip, limit=limit, apenas_ativos=apenas_ativos)
+    return {"items": secoes}
 
 @router.put("/{secao_id}", response_model=SecaoDTO)
 async def update_secao(secao_id: int, secao_update_dto: SecaoUpdateDTO, service: SecaoService = Depends(get_secao_service)):
