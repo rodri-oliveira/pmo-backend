@@ -12,6 +12,32 @@ from app.db.session import get_async_db
 
 router = APIRouter()
 
+from sqlalchemy.future import select
+from sqlalchemy import or_
+from app.db.orm_models import Equipe
+from app.core.security import get_current_admin_user
+
+@router.get("/autocomplete", response_model=dict)
+async def autocomplete_equipes(
+    search: str = Query(..., min_length=1, description="Termo a ser buscado (nome da equipe)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    apenas_ativos: bool = Query(False),
+    secao_id: int = Query(None),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_admin_user)
+):
+    query = select(Equipe).where(Equipe.nome.ilike(f"%{search}%"))
+    if apenas_ativos:
+        query = query.where(Equipe.ativo == True)
+    if secao_id:
+        query = query.where(Equipe.secao_id == secao_id)
+    query = query.order_by(Equipe.nome.asc()).offset(skip).limit(limit)
+    result = await db.execute(query)
+    equipes = result.scalars().all()
+    items = [{"id": e.id, "nome": e.nome} for e in equipes]
+    return {"items": items}
+
 # Dependency for EquipeService
 async def get_equipe_service(db: AsyncSession = Depends(get_async_db)) -> EquipeService:
     equipe_repository = SQLAlchemyEquipeRepository(db_session=db)
