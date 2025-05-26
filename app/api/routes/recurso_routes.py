@@ -35,7 +35,7 @@ async def get_recurso(recurso_id: int, service: RecursoService = Depends(get_rec
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurso não encontrado")
     return recurso
 
-@router.get("/", response_model=List[RecursoDTO])
+@router.get("/", response_model=dict)
 async def get_all_recursos(
     skip: int = 0,
     limit: int = Query(default=100, ge=1, le=1000),
@@ -44,7 +44,8 @@ async def get_all_recursos(
     service: RecursoService = Depends(get_recurso_service)
 ):
     try:
-        return await service.get_all_recursos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, equipe_id=equipe_id)
+        recursos = await service.get_all_recursos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, equipe_id=equipe_id)
+        return {"items": recursos}
     except HTTPException as e:
         raise e
     except Exception as e:

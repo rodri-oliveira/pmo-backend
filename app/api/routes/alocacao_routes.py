@@ -73,7 +73,7 @@ async def create_alocacao_duplicated_path(
     # Reutilizar a mesma lógica do endpoint principal
     return await create_alocacao(alocacao, db)
 
-@router.get("/", response_model=List[AlocacaoResponse])
+@router.get("/", response_model=dict)
 async def list_alocacoes(
     recurso_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do recurso"),
     projeto_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do projeto"),
@@ -91,8 +91,11 @@ async def list_alocacoes(
             data_inicio=data_inicio,
             data_fim=data_fim
         )
-        logger.info(f"[list_alocacoes] Sucesso - {len(result)} registros retornados")
-        return result
+        logger.info(f"[list_alocacoes] Sucesso - {len(result)} alocações encontradas")
+        return {"items": result}
+    except ValueError as e:
+        logger.warning(f"[list_alocacoes] ValueError: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.error(f"[list_alocacoes] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar alocações: {str(e)}")
@@ -159,7 +162,7 @@ async def list_alocacoes(
     else:
         return await service.list_all()
 
-@router.get("/alocacoes/", response_model=List[AlocacaoResponse], include_in_schema=False)
+@router.get("/alocacoes/", response_model=dict, include_in_schema=False)
 async def list_alocacoes_duplicated_path(
     recurso_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do recurso"),
     projeto_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do projeto"),

@@ -23,7 +23,7 @@ def create_projeto(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/", response_model=List[ProjetoResponseSchema])
+@router.get("/", response_model=dict)
 def list_projetos(
     skip: int = 0,
     limit: int = 100,
@@ -35,7 +35,7 @@ def list_projetos(
     current_user: dict = Depends(get_current_admin_user)
 ):
     service = ProjetoService(db)
-    return service.list(
+    projetos = service.list(
         skip=skip, 
         limit=limit, 
         nome=nome, 
@@ -43,6 +43,7 @@ def list_projetos(
         status_projeto=status_projeto, 
         ativo=ativo
     )
+    return {"items": projetos}
 
 @router.get("/{projeto_id}", response_model=ProjetoResponseSchema)
 def get_projeto(

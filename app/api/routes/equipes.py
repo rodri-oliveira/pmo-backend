@@ -37,7 +37,7 @@ def create_equipe(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/", response_model=List[EquipeResponseSchema])
+@router.get("/", response_model=dict)
 def list_equipes(
     skip: int = 0,
     limit: int = 100,
@@ -60,10 +60,11 @@ def list_equipes(
         current_user: Usuário administrador autenticado
     
     Returns:
-        List[EquipeResponseSchema]: Lista de equipes
+        dict: { "items": [...] }
     """
     service = EquipeService(db)
-    return service.list(skip=skip, limit=limit, nome=nome, secao_id=secao_id, ativo=ativo)
+    equipes = service.list(skip=skip, limit=limit, nome=nome, secao_id=secao_id, ativo=ativo)
+    return {"items": equipes}
 
 
 @router.get("/{equipe_id}", response_model=EquipeResponseSchema)

@@ -53,7 +53,7 @@ async def get_projeto(projeto_id: int, service: ProjetoService = Depends(get_pro
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao buscar projeto: {str(e)}")
     return projeto
 
-@router.get("/", response_model=List[ProjetoDTO])
+@router.get("/", response_model=dict)
 async def get_all_projetos(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=1000),
@@ -65,7 +65,7 @@ async def get_all_projetos(
     try:
         result = await service.get_all_projetos(skip=skip, limit=limit, status_projeto=status_projeto)
         logger.info(f"[get_all_projetos] Sucesso - {len(result)} registros retornados")
-        return result
+        return {"items": result}
     except HTTPException as e:
         logger.warning(f"[get_all_projetos] HTTPException: {str(e.detail)}")
         raise e
