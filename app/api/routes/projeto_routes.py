@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 import logging
 from starlette import status
 from typing import List, Optional
+from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dtos.projeto_schema import ProjetoCreateSchema
 from app.application.dtos.projeto_dtos import ProjetoDTO, ProjetoCreateDTO, ProjetoUpdateDTO
@@ -9,9 +10,42 @@ from app.application.services.projeto_service import ProjetoService
 from app.application.services.status_projeto_service import StatusProjetoService 
 from app.infrastructure.repositories.sqlalchemy_projeto_repository import SQLAlchemyProjetoRepository
 from app.infrastructure.repositories.sqlalchemy_status_projeto_repository import SQLAlchemyStatusProjetoRepository 
-from app.db.session import get_async_db
+from app.db.session import get_db, get_async_db
+from app.db.orm_models import Projeto
+from app.core.security import get_current_admin_user
 
 router = APIRouter()
+
+from sqlalchemy.future import select
+from sqlalchemy import or_
+
+@router.get("/autocomplete", response_model=dict)
+async def autocomplete_projetos(
+    search: str = Query(..., min_length=1, description="Termo a ser buscado (nome ou código da empresa)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    apenas_ativos: bool = Query(False),
+    status_projeto: int = Query(None),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_admin_user)
+):
+    query = select(Projeto).where(
+        or_(
+            Projeto.nome.ilike(f"%{search}%"),
+            Projeto.codigo_empresa.ilike(f"%{search}%")
+        )
+    )
+    if apenas_ativos:
+        query = query.where(Projeto.ativo == True)
+    if status_projeto:
+        query = query.where(Projeto.status_projeto_id == status_projeto)
+    query = query.order_by(Projeto.nome.asc()).offset(skip).limit(limit)
+    result = await db.execute(query)
+    projetos = result.scalars().all()
+    items = [{"id": p.id, "nome": p.nome} for p in projetos]
+    return {"items": items}
+
+
 
 # Dependency for ProjetoService
 async def get_projeto_service(db: AsyncSession = Depends(get_async_db)) -> ProjetoService:
