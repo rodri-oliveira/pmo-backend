@@ -115,6 +115,7 @@ class AlocacaoRecursoProjeto(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     recurso_id = Column(Integer, ForeignKey("recurso.id", ondelete="CASCADE", onupdate="CASCADE"), nullable=False, index=True)
     projeto_id = Column(Integer, ForeignKey("projeto.id", ondelete="CASCADE", onupdate="CASCADE"), nullable=False, index=True)
+    equipe_id = Column(Integer, ForeignKey("equipe.id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True, index=True)
     data_inicio_alocacao = Column(Date, nullable=False)
     data_fim_alocacao = Column(Date, nullable=True)
     data_criacao = Column(DateTime, nullable=False, default=func.now())
@@ -123,6 +124,7 @@ class AlocacaoRecursoProjeto(Base):
     # Relacionamentos
     recurso = relationship("Recurso", back_populates="alocacoes")
     projeto = relationship("Projeto", back_populates="alocacoes")
+    equipe = relationship("Equipe")
     horas_planejadas = relationship("HorasPlanejadas", back_populates="alocacao")
     
     # Restrições

@@ -73,7 +73,9 @@ async def create_alocacao_duplicated_path(
     # Reutilizar a mesma lógica do endpoint principal
     return await create_alocacao(alocacao, db)
 
-@router.get("/", response_model=dict)
+from typing import List
+...
+@router.get("/", response_model=List[AlocacaoResponse])
 async def list_alocacoes(
     recurso_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do recurso"),
     projeto_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do projeto"),
@@ -92,7 +94,7 @@ async def list_alocacoes(
             data_fim=data_fim
         )
         logger.info(f"[list_alocacoes] Sucesso - {len(result)} alocações encontradas")
-        return {"items": result}
+        return result
     except ValueError as e:
         logger.warning(f"[list_alocacoes] ValueError: {str(e)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
