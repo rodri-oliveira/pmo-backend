@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query, Path
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 
 from app.core.security import get_current_admin_user
 from app.db.session import get_db
@@ -12,34 +13,45 @@ from app.integrations.jira_client import JiraClient
 
 router = APIRouter(prefix="/sincronizacoes-jira", tags=["Integração Jira"])
 
+class SincronizacaoJiraOut(BaseModel):
+    id: int
+    data: str
+    status: str
+    tipo_evento: str
+    detalhes: str
 
-@router.get("/")
+from fastapi.responses import JSONResponse
+
+@router.get("/", response_model=Dict[str, Any])
 def listar_sincronizacoes(
-    dias: Optional[int] = Query(7, description="Número de dias para listar sincronizações"),
+    skip: int = Query(0, description="Número de registros a pular para paginação"),
+    limit: int = Query(50, description="Número máximo de registros a retornar"),
     status: Optional[str] = Query(None, description="Filtrar por status (RECEBIDO, SUCESSO, ERRO)"),
     tipo_evento: Optional[str] = Query(None, description="Filtrar por tipo de evento (worklog_created, worklog_updated, worklog_deleted)"),
     db: Session = Depends(get_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
     """
-    Lista o histórico de sincronizações com o Jira.
+    Lista o histórico de sincronizações com o Jira (paginado).
     
-    - **dias**: Número de dias para olhar para trás
+    - **skip**: Quantidade de registros a pular
+    - **limit**: Quantidade máxima de registros
     - **status**: Filtrar por status específico
     - **tipo_evento**: Filtrar por tipo de evento específico
     
-    Retorna uma lista de sincronizações.
+    Retorna um objeto com items, total, skip e limit.
     """
     sincronizacao_service = SincronizacaoJiraService(db)
-    
-    return sincronizacao_service.listar_sincronizacoes(
-        dias=dias,
+    result = sincronizacao_service.listar_sincronizacoes(
+        skip=skip,
+        limit=limit,
         status=status,
         tipo_evento=tipo_evento
     )
+    return JSONResponse(content=result)
 
 
-@router.get("/{id}")
+@router.get("/{id}", response_model=SincronizacaoJiraOut)
 def obter_sincronizacao(
     id: int = Path(..., description="ID da sincronização"),
     db: Session = Depends(get_db),

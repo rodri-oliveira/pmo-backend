@@ -20,6 +20,25 @@ class SincronizacaoJiraService:
         self.projeto_repository = ProjetoRepository(db)
         self.sincronizacao_repository = SincronizacaoJiraRepository(db)
     
+    def listar_sincronizacoes(self, skip: int = 0, limit: int = 50, status: Optional[str] = None, tipo_evento: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Lista sincronizações Jira com paginação e filtros.
+        Args:
+            skip: Quantidade de registros a pular
+            limit: Quantidade máxima de registros
+            status: Filtro por status
+            tipo_evento: Filtro por tipo de evento
+        Returns:
+            Dict contendo items, total, skip e limit
+        """
+        items, total = self.sincronizacao_repository.list_with_pagination(skip=skip, limit=limit, status=status, tipo_evento=tipo_evento)
+        return {
+            "items": items,
+            "total": total,
+            "skip": skip,
+            "limit": limit
+        }
+    
     def sincronizar_apontamentos(self, usuario_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Sincroniza apontamentos com o Jira.

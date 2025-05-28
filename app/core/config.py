@@ -28,13 +28,15 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
     
     # Configurações do Jira
-    JIRA_BASE_URL: str = "https://your-domain.atlassian.net"
-    JIRA_USERNAME: str = "your-jira-email@example.com"
-    JIRA_API_TOKEN: str = "your-jira-api-token"
+    JIRA_BASE_URL: str = "https://your-domain.atlassian.net"  # URL base do Jira Cloud (ex: https://suaempresa.atlassian.net)
+    JIRA_USERNAME: str = "your-jira-email@example.com"  # E-mail do usuário com permissão de API
+    JIRA_API_TOKEN: str = "your-jira-api-token"  # Token de API gerado no Jira
+    # A URL da API pode ser montada dinamicamente como f"{JIRA_BASE_URL}/rest/api/3"
     
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "forbid"  # Não permite variáveis extras para segurança
 
 settings = Settings()
 
