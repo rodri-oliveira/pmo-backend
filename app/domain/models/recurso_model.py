@@ -5,7 +5,7 @@ from datetime import datetime, date
 class Recurso(BaseModel):
     id: int
     nome: str
-    email: str
+    email: Optional[str] = None
     matricula: Optional[str]
     cargo: Optional[str]
     jira_user_id: Optional[str]
