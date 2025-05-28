@@ -16,13 +16,22 @@ class JiraClient:
         """
         Inicializa o cliente Jira com as configurações padrão.
         """
-        self.base_url = settings.JIRA_API_URL
+        self.base_url = settings.JIRA_BASE_URL.rstrip('/')
+        self.api_url = f"{self.base_url}/rest/api/3"
         self.username = settings.JIRA_USERNAME
         self.api_token = settings.JIRA_API_TOKEN
         self.headers = {
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
+    
+    def get_issues(self, jql: str, fields: str = "summary") -> dict:
+        endpoint = f"/search?jql={jql}&fields={fields}"
+        return self._make_request("GET", endpoint)
+
+    def get_worklogs(self, issue_id_or_key: str) -> dict:
+        endpoint = f"/issue/{issue_id_or_key}/worklog"
+        return self._make_request("GET", endpoint)
     
     def _make_request(self, method: str, endpoint: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """

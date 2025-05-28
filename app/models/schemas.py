@@ -182,6 +182,18 @@ class Apontamento(ApontamentoBase):
     data_criacao: datetime
     data_atualizacao: datetime
 
+# Schemas para SincronizacaoJira
+class SincronizacaoJiraBase(BaseSchema):
+    data_inicio: datetime
+    data_fim: Optional[datetime] = None
+    status: str
+    mensagem: Optional[str] = None
+    quantidade_apontamentos_processados: Optional[int] = None
+    usuario_id: Optional[int] = None
+
+class SincronizacaoJiraOut(SincronizacaoJiraBase):
+    id: int
+
 # Esquemas para agregações
 class ApontamentoAgregado(BaseSchema):
     total_horas: Decimal

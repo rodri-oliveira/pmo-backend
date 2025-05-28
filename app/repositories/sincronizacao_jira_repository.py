@@ -56,6 +56,26 @@ class SincronizacaoJiraRepository(BaseRepository[SincronizacaoJira]):
             
         return self.update(id, update_data)
     
+    def list_with_pagination(self, skip: int = 0, limit: int = 50, status: Optional[str] = None, tipo_evento: Optional[str] = None) -> (List[SincronizacaoJira], int):
+        """
+        Lista sincronizações com paginação e filtros opcionais.
+        Args:
+            skip: Quantidade de registros a pular
+            limit: Quantidade máxima de registros
+            status: Filtro por status
+            tipo_evento: Filtro por tipo de evento
+        Returns:
+            (Lista de registros, total de registros)
+        """
+        query = self.db.query(self.model)
+        if status:
+            query = query.filter(self.model.status == status)
+        if tipo_evento:
+            query = query.filter(self.model.tipo_evento == tipo_evento)
+        total = query.count()
+        items = query.order_by(self.model.data_hora.desc()).offset(skip).limit(limit).all()
+        return items, total
+
     def get_recent_syncs(self, limit: int = 50) -> List[SincronizacaoJira]:
         """
         Obtém as sincronizações mais recentes.
