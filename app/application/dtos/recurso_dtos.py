@@ -4,7 +4,7 @@ from datetime import datetime, date
 
 class RecursoBaseDTO(BaseModel):
     nome: str
-    email: EmailStr
+    email: Optional[str] = None
     matricula: Optional[str] = None
     cargo: Optional[str] = None
     jira_user_id: Optional[str] = None
@@ -16,7 +16,7 @@ class RecursoCreateDTO(RecursoBaseDTO):
 
 class RecursoUpdateDTO(BaseModel):
     nome: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     matricula: Optional[str] = None
     cargo: Optional[str] = None
     jira_user_id: Optional[str] = None

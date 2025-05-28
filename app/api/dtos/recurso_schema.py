@@ -8,7 +8,7 @@ from .base_schema import BaseSchema, BaseResponseSchema
 class RecursoCreateSchema(BaseSchema):
     """Schema para criação de recurso."""
     nome: str = Field(..., min_length=1, max_length=150)
-    email: EmailStr = Field(...)
+    email: Optional[str] = None
     equipe_principal_id: Optional[int] = None
     matricula: Optional[str] = Field(None, max_length=50)
     cargo: Optional[str] = Field(None, max_length=100)
@@ -20,7 +20,7 @@ class RecursoCreateSchema(BaseSchema):
 class RecursoUpdateSchema(BaseSchema):
     """Schema para atualização de recurso."""
     nome: Optional[str] = Field(None, min_length=1, max_length=150)
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     equipe_principal_id: Optional[int] = None
     matricula: Optional[str] = Field(None, max_length=50)
     cargo: Optional[str] = Field(None, max_length=100)
@@ -32,7 +32,7 @@ class RecursoUpdateSchema(BaseSchema):
 class RecursoResponseSchema(BaseResponseSchema):
     """Schema para resposta com dados de recurso."""
     nome: str
-    email: str
+    email: Optional[str] = None
     equipe_principal_id: Optional[int] = None
     matricula: Optional[str] = None
     cargo: Optional[str] = None

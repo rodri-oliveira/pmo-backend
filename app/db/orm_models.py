@@ -111,20 +111,32 @@ class Projeto(Base):
 
 class AlocacaoRecursoProjeto(Base):
     __tablename__ = "alocacao_recurso_projeto"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     recurso_id = Column(Integer, ForeignKey("recurso.id", ondelete="CASCADE", onupdate="CASCADE"), nullable=False, index=True)
     projeto_id = Column(Integer, ForeignKey("projeto.id", ondelete="CASCADE", onupdate="CASCADE"), nullable=False, index=True)
     equipe_id = Column(Integer, ForeignKey("equipe.id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True, index=True)
+    status_alocacao_id = Column(Integer, ForeignKey("status_projeto.id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True, index=True)
+    observacao = Column(Text, nullable=True)
     data_inicio_alocacao = Column(Date, nullable=False)
     data_fim_alocacao = Column(Date, nullable=True)
     data_criacao = Column(DateTime, nullable=False, default=func.now())
     data_atualizacao = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
-    
+
     # Relacionamentos
     recurso = relationship("Recurso", back_populates="alocacoes")
     projeto = relationship("Projeto", back_populates="alocacoes")
     equipe = relationship("Equipe")
+    status_alocacao = relationship("StatusProjeto")
+    horas_planejadas = relationship("HorasPlanejadas", back_populates="alocacao")
+
+    # Restrições
+    __table_args__ = (
+        UniqueConstraint('recurso_id', 'projeto_id', 'data_inicio_alocacao', name='uq_alocacao_recurso_projeto_data'),
+        CheckConstraint('data_fim_alocacao IS NULL OR data_fim_alocacao >= data_inicio_alocacao', name='chk_alocacao_datas'),
+    )
+    equipe = relationship("Equipe")
+    status_alocacao = relationship("StatusProjeto")
     horas_planejadas = relationship("HorasPlanejadas", back_populates="alocacao")
     
     # Restrições
