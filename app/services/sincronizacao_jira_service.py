@@ -82,6 +82,77 @@ class SincronizacaoJiraService:
         """
         return await self.sincronizacao_repository.get(id)
     
+    async def registrar_inicio_sincronizacao(self, usuario_id: Optional[int] = None, tipo_evento: str = "sincronizacao_manual", mensagem: str = "Sincronização iniciada") -> Any:
+        """
+        Registra o início de uma sincronização com o Jira.
+        
+        Args:
+            usuario_id: ID do usuário que iniciou a sincronização (opcional)
+            tipo_evento: Tipo de evento de sincronização
+            mensagem: Mensagem descritiva da sincronização
+            
+        Returns:
+            Objeto de sincronização criado
+        """
+        import logging
+        logger = logging.getLogger("sincronizacoes_jira.registrar_inicio_sincronizacao")
+        
+        # Como data_fim não pode ser NULL no banco de dados, usamos a mesma data de início
+        data_atual = datetime.now()
+        
+        # Criar dados para o registro de sincronização
+        dados_sincronizacao = {
+            "data_inicio": data_atual,
+            "data_fim": data_atual,  # Usamos a mesma data de início e atualizamos depois
+            "status": "PROCESSANDO",
+            "mensagem": mensagem,
+            "quantidade_apontamentos_processados": 0,
+            "tipo_evento": tipo_evento
+        }
+        
+        # Adicionar usuario_id apenas se for fornecido e não for None
+        if usuario_id is not None:
+            dados_sincronizacao["usuario_id"] = usuario_id
+        
+        logger.info(f"[SINCRONIZACAO_INICIO] Registrando início da sincronização: {mensagem}")
+        sincronizacao = await self.sincronizacao_repository.create(dados_sincronizacao)
+        
+        # Salvar o ID da sincronização no serviço para uso posterior
+        self.sincronizacao_id = sincronizacao.id
+        
+        return sincronizacao
+    
+    async def registrar_fim_sincronizacao(self, status: str = "SUCESSO", mensagem: str = "Sincronização concluída", quantidade_apontamentos_processados: int = 0) -> Any:
+        """
+        Registra o fim de uma sincronização com o Jira.
+        
+        Args:
+            status: Status final da sincronização (SUCESSO, ERRO)
+            mensagem: Mensagem descritiva do resultado
+            quantidade_apontamentos_processados: Quantidade de apontamentos processados
+            
+        Returns:
+            Objeto de sincronização atualizado
+        """
+        import logging
+        logger = logging.getLogger("sincronizacoes_jira.registrar_fim_sincronizacao")
+        
+        if not hasattr(self, 'sincronizacao_id'):
+            logger.error("[SINCRONIZACAO_FIM] Tentativa de registrar fim de sincronização sem ID definido")
+            raise ValueError("ID de sincronização não definido. Chame registrar_inicio_sincronizacao primeiro.")
+        
+        logger.info(f"[SINCRONIZACAO_FIM] Registrando fim da sincronização {self.sincronizacao_id}: {status} - {mensagem}")
+        
+        # Atualizar registro de sincronização
+        sincronizacao_atualizada = await self.sincronizacao_repository.update(self.sincronizacao_id, {
+            "data_fim": datetime.now(),
+            "status": status,
+            "mensagem": mensagem,
+            "quantidade_apontamentos_processados": quantidade_apontamentos_processados
+        })
+        
+        return sincronizacao_atualizada
+        
     async def listar_sincronizacoes(self, skip: int = 0, limit: int = 50, status: Optional[str] = None, tipo_evento: Optional[str] = None) -> Dict[str, Any]:
         """
         Lista sincronizações Jira com paginação e filtros.

@@ -195,3 +195,134 @@ class ApontamentoHoraService:
             
         # Remover o apontamento
         await self.repository.delete(id)
+        
+    async def processar_worklog_jira(self, worklog: dict) -> None:
+        """
+        Processa um worklog do Jira e salva como apontamento.
+        
+        Args:
+            worklog: Dados do worklog do Jira
+            
+        Returns:
+            None
+        """
+        import logging
+        from datetime import datetime
+        from dateutil import parser
+        from app.db.orm_models import FonteApontamento
+        
+        logger = logging.getLogger("app.services.apontamento_hora_service.processar_worklog_jira")
+        
+        try:
+            # Extrair dados do worklog
+            worklog_id = worklog.get("id")
+            issue_key = worklog.get("issueKey")
+            
+            if not worklog_id or not issue_key:
+                logger.warning(f"[PROCESSAR_WORKLOG] Worklog sem ID ou issue_key: {worklog}")
+                return
+                
+            # Verificar se já existe um apontamento com este worklog_id
+            apontamento_existente = await self.repository.get_by_jira_worklog_id(worklog_id)
+            if apontamento_existente:
+                logger.info(f"[PROCESSAR_WORKLOG] Worklog {worklog_id} já existe como apontamento {apontamento_existente.id}")
+                return
+                
+            # Extrair dados do autor
+            author = worklog.get("author", {})
+            author_account_id = author.get("accountId")
+            
+            # Buscar recurso pelo jira_user_id
+            recurso = None
+            if author_account_id:
+                recurso = await self.recurso_repository.get_by_jira_user_id(author_account_id)
+                
+            if not recurso:
+                logger.warning(f"[PROCESSAR_WORKLOG] Recurso não encontrado para o author {author_account_id}")
+                return
+                
+            # Extrair dados do projeto
+            projeto = None
+            if issue_key:
+                # Extrair o código do projeto da issue (ex: PROJ-123 -> PROJ)
+                projeto_key = issue_key.split('-')[0] if '-' in issue_key else None
+                if projeto_key:
+                    projeto = await self.projeto_repository.get_by_jira_project_key(projeto_key)
+                    
+            if not projeto:
+                logger.warning(f"[PROCESSAR_WORKLOG] Projeto não encontrado para a issue {issue_key}")
+                return
+                
+            # Processar data e tempo
+            started = worklog.get("started")
+            time_spent_seconds = worklog.get("timeSpentSeconds", 0)
+            
+            if not started or not time_spent_seconds:
+                logger.warning(f"[PROCESSAR_WORKLOG] Worklog sem data ou tempo: {worklog}")
+                return
+                
+            # Converter para datetime
+            try:
+                data_hora = parser.parse(started)
+                data_apontamento = data_hora.date()
+            except Exception as e:
+                logger.error(f"[PROCESSAR_WORKLOG] Erro ao processar data do worklog: {str(e)}")
+                return
+                
+            # Converter segundos para horas (decimal)
+            from decimal import Decimal
+            horas_apontadas = Decimal(time_spent_seconds) / Decimal(3600)
+            
+            # Preparar dados do apontamento
+            now = datetime.now()
+            
+            # Processar o comentário - pode ser string ou objeto ADF
+            comment = worklog.get("comment", "")
+            descricao = ""
+            
+            # Verificar se o comentário é um dicionário (formato ADF)
+            if isinstance(comment, dict) and "content" in comment:
+                # Extrair texto do formato ADF
+                try:
+                    # Percorrer a estrutura ADF para extrair o texto
+                    text_parts = []
+                    for content_item in comment.get("content", []):
+                        if content_item.get("type") == "paragraph" and "content" in content_item:
+                            for text_item in content_item.get("content", []):
+                                if text_item.get("type") == "text":
+                                    text_parts.append(text_item.get("text", ""))
+                    descricao = " ".join(text_parts)
+                    logger.info(f"[PROCESSAR_WORKLOG] Extraído texto do formato ADF: {descricao}")
+                except Exception as e:
+                    logger.warning(f"[PROCESSAR_WORKLOG] Erro ao extrair texto do formato ADF: {str(e)}")
+                    # Em caso de erro, converter o objeto para string JSON
+                    import json
+                    try:
+                        descricao = json.dumps(comment)
+                    except:
+                        descricao = str(comment)
+            else:
+                # Se for uma string simples, usar diretamente
+                descricao = str(comment) if comment else ""
+            
+            apontamento_data = {
+                "recurso_id": recurso.id,
+                "projeto_id": projeto.id,
+                "jira_issue_key": issue_key,
+                "jira_worklog_id": worklog_id,
+                "data_hora_inicio_trabalho": data_hora,
+                "data_apontamento": data_apontamento,
+                "horas_apontadas": horas_apontadas,
+                "descricao": descricao,
+                "fonte_apontamento": FonteApontamento.JIRA,
+                "data_criacao": now,
+                "data_atualizacao": now,
+                "data_sincronizacao_jira": now
+            }
+            
+            # Criar o apontamento
+            await self.repository.sync_jira_apontamento(worklog_id, apontamento_data)
+            logger.info(f"[PROCESSAR_WORKLOG] Worklog {worklog_id} processado com sucesso")
+            
+        except Exception as e:
+            logger.error(f"[PROCESSAR_WORKLOG] Erro ao processar worklog: {str(e)}", exc_info=True)
