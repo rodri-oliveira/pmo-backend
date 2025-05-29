@@ -162,11 +162,10 @@ class JiraClient:
         """
         url = f"{self.base_url}{endpoint}"
         
-        # Usar exatamente o mesmo header de autorização que está funcionando
-        # Este header foi testado e funciona corretamente
+        # Usar o token Base64 fixo que funciona no Postman
         auth_header = "Basic cm9saXZlaXJhQHdlZy5uZXQ6QVRBVFQzeEZmR0YwZG0xUzdSSHNReGFSTDZkNmZiaEZUMFNxSjZLbE9ScWRXQzg1M1Jlb3hFMUpnM0dSeXRUVTN4dG5McjdGVWg3WWFKZ2M1RDZwd3J5bjhQc3lHVDNrSklyRUlyVHpmNF9lMGJYLUdJdmxOOFIxanhyMV9GVGhLY1h3V1N0dU9VbE5ucEY2eFlhclhfWFpRb3RhTzlXeFhVaXlIWkdHTDFaMEx5cmJ4VzVyNVYwPUYxMDA3MDNF"
         
-        # Cabeçalhos com o header de autorização que funciona
+        # Cabeçalhos com o header de autorização que funciona no Postman
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
@@ -175,18 +174,16 @@ class JiraClient:
         
         # Log da requisição
         logger.info(f"[JIRA_REQUEST] {method} {url}")
-        logger.info(f"[JIRA_REQUEST_AUTH_HEADER] Usando header de autorização fixo que funciona")
+        logger.info(f"[JIRA_REQUEST_AUTH_HEADER] Usando token Base64 fixo que funciona no Postman")
         
         # Log detalhado para depuração
-        logger.info(f"[JIRA_REQUEST_DETAILED] Fazendo requisição {method} para {url}")
-        
-        # Nota: Este é um ajuste temporário até resolver o problema com a geração do header de autorização
-        
-        logger.info(f"[JIRA_REQUEST] {method} {url}")
+        logger.info(f"[JIRA_REQUEST_DETAILED] Fazendo requisição {method} para {url} com headers: {headers}")
         
         try:
             # Log da tentativa de requisição
             logger.info(f"[JIRA_REQUEST_ATTEMPT] Iniciando requisição {method} para {url}")
+            print(f"\n[JIRA_REQUEST_ATTEMPT] Iniciando requisição {method} para {url}")
+            print(f"[JIRA_REQUEST_HEADERS] {headers}")
             
             if method == "GET":
                 response = requests.get(url, headers=headers)
@@ -198,6 +195,12 @@ class JiraClient:
                 response = requests.delete(url, headers=headers)
             else:
                 raise ValueError(f"Método HTTP não suportado: {method}")
+                
+            # Log da resposta para debug
+            logger.info(f"[JIRA_RESPONSE] Status code: {response.status_code}")
+            logger.info(f"[JIRA_RESPONSE] Headers: {response.headers}")
+            print(f"[JIRA_RESPONSE] Status code: {response.status_code}")
+            print(f"[JIRA_RESPONSE] Content: {response.text[:200]}..." if len(response.text) > 200 else f"[JIRA_RESPONSE] Content: {response.text}")
 
             logger.info(f"[JIRA_RESPONSE] Status: {response.status_code}")
             
@@ -206,49 +209,56 @@ class JiraClient:
                 try:
                     response_json = response.json()
                     logger.info(f"[JIRA_RESPONSE_FULL] Resposta completa para projetos: {response_json}")
+                    print(f"[JIRA_RESPONSE_FULL] Resposta para projetos recebida")
                     
                     # Verificar se há mensagens de erro específicas na resposta
                     if "errorMessages" in response_json:
                         logger.error(f"[JIRA_ERROR_MESSAGES] {response_json['errorMessages']}")
+                        print(f"[JIRA_ERROR_MESSAGES] {response_json['errorMessages']}")
                     if "errors" in response_json:
                         logger.error(f"[JIRA_ERRORS] {response_json['errors']}")
+                        print(f"[JIRA_ERRORS] {response_json['errors']}")
                         
                     # Verificar se a estrutura da resposta é a esperada
                     if "values" in response_json:
                         logger.info(f"[JIRA_VALUES] Quantidade de valores: {len(response_json['values'])}")
+                        print(f"[JIRA_VALUES] Encontrados {len(response_json['values'])} projetos")
+                        if len(response_json['values']) > 0:
+                            print(f"[JIRA_FIRST_PROJECT] Primeiro projeto: {response_json['values'][0]['key']} - {response_json['values'][0]['name']}")
                     else:
                         logger.warning(f"[JIRA_WARNING] Campo 'values' não encontrado na resposta")
-                        
-                    # Verificar o total de projetos
-                    if "total" in response_json:
-                        logger.info(f"[JIRA_TOTAL] Total de projetos: {response_json['total']}")
+                        print(f"[JIRA_WARNING] Campo 'values' não encontrado na resposta")
                 except Exception as e:
-                    logger.error(f"[JIRA_RESPONSE_PARSE_ERROR] Erro ao processar resposta JSON: {str(e)}")
-                    logger.error(f"[JIRA_RESPONSE_TEXT] Texto da resposta: {response.text[:1000]}")
-            
+                    logger.error(f"[JIRA_RESPONSE_PARSE_ERROR] Erro ao processar resposta de projetos: {str(e)}")
+                    print(f"[JIRA_RESPONSE_PARSE_ERROR] Erro ao processar resposta de projetos: {str(e)}")
             if response.status_code >= 400:
-                logger.error(f"[JIRA_ERROR] {response.status_code}: {response.text}")
+                error_msg = f"Erro na requisição {method} {url}: {response.status_code} - {response.text}"
+                logger.error(error_msg)
+                print(f"[JIRA_ERROR] {error_msg}")
+                raise Exception(error_msg)
             
-            response.raise_for_status()  # Lança exceção para códigos de erro HTTP
-            return response.json()
+            # Tentar converter para JSON
+            try:
+                json_response = response.json()
+                print(f"[JIRA_JSON_RESPONSE] Resposta JSON válida recebida")
+                return json_response
+            except ValueError as e:
+                # Se não for JSON válido, retornar texto
+                logger.warning(f"Resposta não é JSON válido: {str(e)}")
+                print(f"[JIRA_WARNING] Resposta não é JSON válido: {str(e)}")
+                return {"text": response.text}
         except requests.exceptions.RequestException as e:
             logger.error(f"[JIRA_ERROR] Erro na requisição para {url}: {str(e)}")
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"[JIRA_ERROR] Status: {e.response.status_code}, Resposta: {e.response.text}")
             raise Exception(f"Erro na requisição para {url}: {str(e)}")
         except Exception as e:
-            logger.error(f"[JIRA_ERROR] Erro inesperado: {str(e)}")
-            raise
-            
-            # Tentar extrair detalhes do erro
-            error_details = str(e)
-            if hasattr(e, 'response') and e.response is not None:
-                try:
-                    error_data = e.response.json()
-                    error_details = json.dumps(error_data)
-                except:
-                    error_details = e.response.text
-                    
+            error_msg = f"Erro ao fazer requisição {method} {url}: {str(e)}"
+            logger.error(error_msg)
+            print(f"[JIRA_EXCEPTION] {error_msg}")
+            raise Exception(error_msg)
+    
+
     def get_worklogs_updated_since(self, since_date: datetime) -> List[Dict[str, Any]]:
         """
         Obtém todos os worklogs atualizados desde uma determinada data.
@@ -308,6 +318,50 @@ class JiraClient:
             logger.error(f"[JIRA_WORKLOGS] Erro ao buscar worklogs atualizados: {str(e)}")
             return []
     
+    def search_issues(self, jql: str, fields: List[str] = None, max_results: int = 50) -> List[Dict[str, Any]]:
+        """
+        Busca issues usando JQL.
+        
+        Args:
+            jql: Consulta JQL
+            fields: Campos a retornar
+            max_results: Máximo de resultados
+            
+        Returns:
+            Lista de issues
+        """
+        import logging
+        logger = logging.getLogger("jira_client.search_issues")
+        
+        if fields is None:
+            fields = ["key", "summary"]
+        
+        # Preparar os campos para a consulta
+        fields_param = ",".join(fields)
+        
+        # Codificar a consulta JQL para URL
+        import urllib.parse
+        encoded_jql = urllib.parse.quote(jql)
+        
+        # Endpoint para busca de issues
+        endpoint = f"/rest/api/3/search?jql={encoded_jql}&fields={fields_param}&maxResults={max_results}"
+        
+        try:
+            logger.info(f"[JIRA_SEARCH] Buscando issues com JQL: {jql}")
+            response = self._make_request("GET", endpoint)
+            
+            if "issues" not in response:
+                logger.warning(f"[JIRA_SEARCH] Resposta não contém campo 'issues': {response}")
+                return []
+            
+            issues = response.get("issues", [])
+            logger.info(f"[JIRA_SEARCH] Encontradas {len(issues)} issues")
+            return issues
+            
+        except Exception as e:
+            logger.error(f"[JIRA_SEARCH] Erro ao buscar issues: {str(e)}")
+            return []
+    
     def get_worklog_by_id(self, worklog_id: str) -> Dict[str, Any]:
         """
         Obtém detalhes de um worklog específico.
@@ -323,35 +377,45 @@ class JiraClient:
         
         logger.info(f"[JIRA_WORKLOG] Buscando detalhes do worklog {worklog_id}")
         
-        # Primeiro, precisamos encontrar a issue associada ao worklog
-        # Infelizmente, a API do Jira não permite buscar um worklog diretamente pelo ID
-        # sem conhecer a issue associada
-        
-        # Vamos usar o endpoint de busca de worklogs
-        endpoint = f"/rest/api/3/worklog/{worklog_id}"
+        # A API do Jira não permite buscar um worklog diretamente pelo ID sem conhecer a issue associada
+        # Vamos usar o endpoint de updated worklogs para obter os IDs das issues associadas
         
         try:
-            # Fazer a requisição para obter os detalhes do worklog
-            logger.info(f"[JIRA_WORKLOG] Chamando endpoint: {endpoint}")
-            worklog = self._make_request("GET", endpoint)
+            # Buscar issues recentes com worklogs
+            jql = "worklogDate >= -30d ORDER BY updated DESC"
+            issues = self.search_issues(jql, ["key", "summary"], 100)
             
-            # Verificar se obtivemos os dados do worklog
-            if not worklog or not worklog.get("id"):
-                logger.warning(f"[JIRA_WORKLOG] Resposta não contém dados válidos do worklog: {worklog}")
+            if not issues:
+                logger.warning(f"[JIRA_WORKLOG] Nenhuma issue com worklog encontrada nos últimos 30 dias")
                 return {}
+                
+            logger.info(f"[JIRA_WORKLOG] Buscando worklog {worklog_id} em {len(issues)} issues recentes")
             
-            # Adicionar informações da issue ao worklog
-            issue_id = worklog.get("issueId")
-            if issue_id:
+            # Para cada issue, buscar seus worklogs
+            for issue in issues:
+                issue_key = issue.get("key")
+                if not issue_key:
+                    continue
+                    
                 try:
-                    # Obter detalhes da issue
-                    issue = self.get_issue(issue_id)
-                    worklog["issueKey"] = issue.get("key")
+                    # Obter worklogs da issue
+                    issue_worklogs = self.get_worklogs(issue_key)
+                    
+                    # Verificar se o worklog que buscamos está nesta issue
+                    for worklog in issue_worklogs:
+                        if str(worklog.get("id")) == str(worklog_id):
+                            # Adicionar informações da issue ao worklog
+                            worklog["issueKey"] = issue_key
+                            worklog["issueSummary"] = issue.get("fields", {}).get("summary")
+                            
+                            logger.info(f"[JIRA_WORKLOG] Worklog {worklog_id} encontrado na issue {issue_key}")
+                            return worklog
                 except Exception as e:
-                    logger.error(f"[JIRA_WORKLOG] Erro ao obter detalhes da issue {issue_id}: {str(e)}")
+                    logger.warning(f"[JIRA_WORKLOG] Erro ao buscar worklogs da issue {issue_key}: {str(e)}")
+                    continue
             
-            logger.info(f"[JIRA_WORKLOG] Detalhes do worklog {worklog_id} obtidos com sucesso")
-            return worklog
+            logger.warning(f"[JIRA_WORKLOG] Worklog {worklog_id} não encontrado em nenhuma issue recente")
+            return {}
             
         except Exception as e:
             logger.error(f"[JIRA_WORKLOG] Erro ao buscar detalhes do worklog {worklog_id}: {str(e)}")
@@ -370,6 +434,79 @@ class JiraClient:
         endpoint = f"/rest/api/3/issue/{issue_key}"
         return self._make_request("GET", endpoint)
     
+    def get_recent_worklogs(self, days: int = 30) -> List[Dict[str, Any]]:
+        """
+        Obtém worklogs registrados nos últimos dias.
+        
+        Args:
+            days: Número de dias para olhar para trás
+            
+        Returns:
+            Lista de worklogs recentes
+        """
+        import logging
+        logger = logging.getLogger("jira_client.get_recent_worklogs")
+        
+        logger.info(f"[JIRA_RECENT_WORKLOGS] Buscando worklogs dos últimos {days} dias")
+        
+        try:
+            # Calcular a data de início para a busca
+            from datetime import datetime, timedelta
+            start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            
+            # JQL para buscar issues com worklogs no período
+            jql = f"worklogDate >= {start_date} ORDER BY updated DESC"
+            
+            # Buscar issues com worklogs no período
+            issues = self.search_issues(jql, ["key", "summary"], 100)
+            
+            if not issues:
+                logger.warning(f"[JIRA_RECENT_WORKLOGS] Nenhuma issue com worklog encontrada nos últimos {days} dias")
+                return []
+                
+            logger.info(f"[JIRA_RECENT_WORKLOGS] Encontradas {len(issues)} issues com worklogs")
+            
+            # Buscar worklogs para cada issue
+            all_worklogs = []
+            
+            for issue in issues:
+                issue_key = issue.get("key")
+                if not issue_key:
+                    continue
+                
+                # Buscar worklogs da issue
+                try:
+                    issue_worklogs = self.get_worklogs(issue_key)
+                    logger.info(f"[JIRA_RECENT_WORKLOGS] Encontrados {len(issue_worklogs)} worklogs na issue {issue_key}")
+                    
+                    # Adicionar informações da issue aos worklogs
+                    for worklog in issue_worklogs:
+                        # Filtrar apenas worklogs do período especificado
+                        started = worklog.get("started")
+                        if started:
+                            try:
+                                # Converter a data do worklog para comparar com o período
+                                from dateutil import parser
+                                worklog_date = parser.parse(started)
+                                cutoff_date = datetime.now() - timedelta(days=days)
+                                
+                                if worklog_date < cutoff_date:
+                                    continue  # Ignorar worklogs antigos
+                            except Exception as e:
+                                logger.warning(f"[JIRA_RECENT_WORKLOGS] Erro ao processar data do worklog: {str(e)}")
+                        
+                        worklog["issueKey"] = issue_key
+                        worklog["issueSummary"] = issue.get("fields", {}).get("summary", "")
+                        all_worklogs.append(worklog)
+                except Exception as e:
+                    logger.error(f"[JIRA_RECENT_WORKLOGS] Erro ao buscar worklogs da issue {issue_key}: {str(e)}")
+            
+            logger.info(f"[JIRA_RECENT_WORKLOGS] Total de {len(all_worklogs)} worklogs encontrados")
+            return all_worklogs
+        except Exception as e:
+            logger.error(f"[JIRA_RECENT_WORKLOGS] Erro ao buscar worklogs recentes: {str(e)}")
+            return []
+
     def get_worklogs(self, issue_key: str) -> List[Dict[str, Any]]:
         """
         Obtém todos os worklogs de uma issue.
@@ -509,22 +646,86 @@ class JiraClient:
             
         return self._make_request("GET", endpoint)
     
-    def get_worklog_by_id(self, worklog_id: str) -> Dict[str, Any]:
+    def get_worklog_by_id(self, issue_id: str, worklog_id: str) -> Dict[str, Any]:
         """
-        Obtém detalhes de um worklog específico.
+        Obtém detalhes de um worklog específico de uma issue.
         
         Args:
+            issue_id: ID ou chave da issue
             worklog_id: ID do worklog
             
         Returns:
             Dados do worklog
         """
-        endpoint = f"/rest/api/3/worklog/{worklog_id}"
-        return self._make_request("GET", endpoint)
+        import logging
+        logger = logging.getLogger("jira_client.get_worklog_by_id")
+        
+        try:
+            # Na API do Jira, worklogs são acessados através da issue
+            endpoint = f"/rest/api/3/issue/{issue_id}/worklog/{worklog_id}"
+            logger.info(f"[GET_WORKLOG] Buscando worklog {worklog_id} da issue {issue_id}")
+            
+            return self._make_request("GET", endpoint)
+        except Exception as e:
+            logger.error(f"[GET_WORKLOG] Erro ao buscar worklog {worklog_id} da issue {issue_id}: {str(e)}")
+            # Se falhar, tentar buscar todos os worklogs da issue e filtrar
+            try:
+                logger.info(f"[GET_WORKLOG] Tentando buscar todos os worklogs da issue {issue_id}")
+                worklogs = self.get_issue_worklogs(issue_id)
+                
+                # Filtrar pelo ID do worklog
+                for worklog in worklogs:
+                    if str(worklog.get("id")) == str(worklog_id):
+                        logger.info(f"[GET_WORKLOG] Worklog {worklog_id} encontrado na lista de worklogs da issue {issue_id}")
+                        return worklog
+                
+                logger.warning(f"[GET_WORKLOG] Worklog {worklog_id} não encontrado na issue {issue_id}")
+                return {}
+            except Exception as inner_e:
+                logger.error(f"[GET_WORKLOG] Erro ao buscar worklogs da issue {issue_id}: {str(inner_e)}")
+                return {}
+    
+    def get_issue_worklogs(self, issue_id: str) -> List[Dict[str, Any]]:
+        """
+        Obtém todos os worklogs de uma issue específica.
+        
+        Args:
+            issue_id: ID ou chave da issue
+            
+        Returns:
+            Lista de worklogs da issue
+        """
+        import logging
+        logger = logging.getLogger("jira_client.get_issue_worklogs")
+        
+        try:
+            endpoint = f"/rest/api/3/issue/{issue_id}/worklog"
+            logger.info(f"[GET_ISSUE_WORKLOGS] Buscando worklogs da issue {issue_id}")
+            
+            response = self._make_request("GET", endpoint)
+            worklogs = response.get("worklogs", [])
+            
+            # Adicionar a chave da issue a cada worklog para facilitar o processamento
+            for worklog in worklogs:
+                worklog["issueId"] = issue_id
+                # Se tivermos a chave da issue, adicionar também
+                try:
+                    issue = self.get_issue(issue_id)
+                    if issue and "key" in issue:
+                        worklog["issueKey"] = issue["key"]
+                except Exception:
+                    # Se não conseguir obter a chave, continuar sem ela
+                    pass
+            
+            logger.info(f"[GET_ISSUE_WORKLOGS] Encontrados {len(worklogs)} worklogs para a issue {issue_id}")
+            return worklogs
+        except Exception as e:
+            logger.error(f"[GET_ISSUE_WORKLOGS] Erro ao buscar worklogs da issue {issue_id}: {str(e)}")
+            return []
     
     def get_user(self, account_id: str) -> Dict[str, Any]:
         """
-        Obtém detalhes de um usuário.
+        Obtém detalhes de um usuário pelo account_id.
         
         Args:
             account_id: ID da conta do usuário
@@ -535,7 +736,7 @@ class JiraClient:
         endpoint = f"/rest/api/3/user?accountId={account_id}"
         return self._make_request("GET", endpoint)
     
-    def get_recent_worklogs(self, days: int = 7) -> List[Dict[str, Any]]:
+    def get_recent_worklogs(self, days: int = 30) -> List[Dict[str, Any]]:
         """
         Obtém worklogs registrados nos últimos dias.
         
@@ -545,22 +746,68 @@ class JiraClient:
         Returns:
             Lista de worklogs recentes
         """
-        since = datetime.now() - timedelta(days=days)
+        import logging
+        logger = logging.getLogger("jira_client.get_recent_worklogs")
         
-        # Obter IDs de worklogs atualizados
-        updated = self.get_updated_worklogs(since)
+        logger.info(f"[JIRA_RECENT_WORKLOGS] Buscando worklogs dos últimos {days} dias")
         
-        # Buscar cada worklog individualmente
-        worklogs = []
-        for value in updated.get("values", []):
-            worklog_id = value.get("worklogId")
-            try:
-                worklog = self.get_worklog_by_id(worklog_id)
-                worklogs.append(worklog)
-            except Exception as e:
-                logger.warning(f"Erro ao obter worklog {worklog_id}: {str(e)}")
+        try:
+            # Calcular a data de início para a busca
+            from datetime import datetime, timedelta
+            start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            
+            # JQL para buscar issues com worklogs no período
+            jql = f"worklogDate >= {start_date} ORDER BY updated DESC"
+            
+            # Buscar issues com worklogs no período
+            issues = self.search_issues(jql, ["key", "summary"], 100)
+            
+            if not issues:
+                logger.warning(f"[JIRA_RECENT_WORKLOGS] Nenhuma issue com worklog encontrada nos últimos {days} dias")
+                return []
                 
-        return worklogs
+            logger.info(f"[JIRA_RECENT_WORKLOGS] Encontradas {len(issues)} issues com worklogs")
+            
+            # Buscar worklogs para cada issue
+            all_worklogs = []
+            
+            for issue in issues:
+                issue_key = issue.get("key")
+                if not issue_key:
+                    continue
+                
+                # Buscar worklogs da issue
+                try:
+                    issue_worklogs = self.get_worklogs(issue_key)
+                    logger.info(f"[JIRA_RECENT_WORKLOGS] Encontrados {len(issue_worklogs)} worklogs na issue {issue_key}")
+                    
+                    # Adicionar informações da issue aos worklogs
+                    for worklog in issue_worklogs:
+                        # Filtrar apenas worklogs do período especificado
+                        started = worklog.get("started")
+                        if started:
+                            try:
+                                # Converter a data do worklog para comparar com o período
+                                from dateutil import parser
+                                worklog_date = parser.parse(started)
+                                cutoff_date = datetime.now() - timedelta(days=days)
+                                
+                                if worklog_date < cutoff_date:
+                                    continue  # Ignorar worklogs antigos
+                            except Exception as e:
+                                logger.warning(f"[JIRA_RECENT_WORKLOGS] Erro ao processar data do worklog: {str(e)}")
+                        
+                        worklog["issueKey"] = issue_key
+                        worklog["issueSummary"] = issue.get("fields", {}).get("summary", "")
+                        all_worklogs.append(worklog)
+                except Exception as e:
+                    logger.error(f"[JIRA_RECENT_WORKLOGS] Erro ao buscar worklogs da issue {issue_key}: {str(e)}")
+            
+            logger.info(f"[JIRA_RECENT_WORKLOGS] Total de {len(all_worklogs)} worklogs encontrados")
+            return all_worklogs
+        except Exception as e:
+            logger.error(f"[JIRA_RECENT_WORKLOGS] Erro ao buscar worklogs recentes: {str(e)}")
+            return []
     
     def sync_worklogs_since(self, since: Optional[datetime] = None) -> Dict[str, Any]:
         """
