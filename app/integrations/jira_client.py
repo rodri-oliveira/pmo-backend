@@ -24,6 +24,79 @@ class JiraClient:
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
+        logger.info(f"[JIRA_CLIENT] Inicializado com base_url={self.base_url}, username={self.username}")
+
+    def fetch_all_projects_issues_worklogs(self) -> dict:
+        """
+        Busca todos os projetos, issues e worklogs do Jira, com paginação.
+        Retorna um resumo da sincronização.
+        """
+        logger.info(f"[JIRA_FETCH] Iniciando busca de todos os projetos, issues e worklogs")
+        
+        # 1. Buscar todos os projetos com paginação
+        all_projects = []
+        start_at = 0
+        max_results = 50
+        
+        logger.info(f"[JIRA_FETCH] Buscando projetos com paginação (max_results={max_results})")
+        try:
+            while True:
+                # Usar o mesmo endpoint que foi usado no Postman
+                endpoint = f"/rest/api/3/project/search?startAt={start_at}&maxResults={max_results}"
+                logger.info(f"[JIRA_ENDPOINT] Endpoint completo: {self.base_url}{endpoint}")
+                logger.info(f"[JIRA_FETCH] Chamando endpoint: {endpoint}")
+                resp = self._make_request("GET", endpoint)
+                values = resp.get("values", [])
+                logger.info(f"[JIRA_FETCH] Recebidos {len(values)} projetos")
+                all_projects.extend(values)
+                if resp.get("isLast", False) or len(values) < max_results:
+                    break
+                start_at += max_results
+            logger.info(f"[JIRA_FETCH] Total de projetos encontrados: {len(all_projects)}")
+        except Exception as e:
+            logger.error(f"[JIRA_FETCH] Erro ao buscar projetos: {str(e)}")
+            raise
+        # 2. Para cada projeto, buscar todos os issues (paginação)
+        all_issues = []
+        for proj in all_projects:
+            project_key = proj.get("key")
+            if not project_key:
+                continue
+            issues_start = 0
+            while True:
+                jql = f"project={project_key}"
+                endpoint = f"/rest/api/3/search?jql={jql}&fields=worklog&startAt={issues_start}&maxResults={max_results}"
+                issues_resp = self._make_request("GET", endpoint)
+                issues = issues_resp.get("issues", [])
+                all_issues.extend(issues)
+                if len(issues) < max_results:
+                    break
+                issues_start += max_results
+        # 3. Para cada issue, buscar todos os worklogs (paginação)
+        all_worklogs = []
+        for issue in all_issues:
+            issue_key = issue.get("key")
+            if not issue_key:
+                continue
+            worklog_start = 0
+            while True:
+                endpoint = f"/rest/api/3/issue/{issue_key}/worklog?startAt={worklog_start}&maxResults={max_results}"
+                worklog_resp = self._make_request("GET", endpoint)
+                worklogs = worklog_resp.get("worklogs", [])
+                all_worklogs.extend(worklogs)
+                if len(worklogs) < max_results:
+                    break
+                worklog_start += max_results
+        return {
+            "total_projects": len(all_projects),
+            "total_issues": len(all_issues),
+            "total_worklogs": len(all_worklogs),
+            "projects": all_projects,
+            "issues": all_issues,
+            "worklogs": all_worklogs
+        }
+
+    
     
     def get_issues(self, jql: str, fields: str = "summary") -> dict:
         endpoint = f"/search?jql={jql}&fields={fields}"
@@ -35,39 +108,55 @@ class JiraClient:
     
     def _make_request(self, method: str, endpoint: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Realiza uma requisição HTTP para a API do Jira.
-        
+        Realiza uma requisição para a API do Jira.
+
         Args:
-            method: Método HTTP (GET, POST, PUT, DELETE)
-            endpoint: Endpoint da API
-            data: Dados para enviar (para POST/PUT)
-            
+            method (str): Método HTTP (GET, POST, PUT, DELETE)
+            endpoint (str): Endpoint da API (ex: /rest/api/3/issue)
+            data (Optional[Dict[str, Any]], optional): Dados para enviar no corpo da requisição. Defaults to None.
+
         Returns:
-            Resposta da API
-            
+            Dict[str, Any]: Resposta da API em formato JSON
+
         Raises:
-            Exception: Se a requisição falhar
+            Exception: Erro na requisição
         """
         url = f"{self.base_url}{endpoint}"
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        auth = (self.username, self.api_token)
+
+        logger.info(f"[JIRA_REQUEST] {method} {url}")
         
         try:
-            response = requests.request(
-                method=method,
-                url=url,
-                auth=(self.username, self.api_token),
-                headers=self.headers,
-                json=data
-            )
+            if method == "GET":
+                response = requests.get(url, headers=headers, auth=auth)
+            elif method == "POST":
+                response = requests.post(url, headers=headers, auth=auth, json=data)
+            elif method == "PUT":
+                response = requests.put(url, headers=headers, auth=auth, json=data)
+            elif method == "DELETE":
+                response = requests.delete(url, headers=headers, auth=auth)
+            else:
+                raise ValueError(f"Método HTTP não suportado: {method}")
+
+            logger.info(f"[JIRA_RESPONSE] Status: {response.status_code}")
             
-            response.raise_for_status()
+            if response.status_code >= 400:
+                logger.error(f"[JIRA_ERROR] {response.status_code}: {response.text}")
             
-            if response.status_code == 204:  # No Content
-                return {}
-                
+            response.raise_for_status()  # Lança exceção para códigos de erro HTTP
             return response.json()
-            
         except requests.exceptions.RequestException as e:
-            logger.error(f"Erro na requisição Jira: {str(e)}")
+            logger.error(f"[JIRA_ERROR] Erro na requisição para {url}: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"[JIRA_ERROR] Status: {e.response.status_code}, Resposta: {e.response.text}")
+            raise Exception(f"Erro na requisição para {url}: {str(e)}")
+        except Exception as e:
+            logger.error(f"[JIRA_ERROR] Erro inesperado: {str(e)}")
+            raise
             
             # Tentar extrair detalhes do erro
             error_details = str(e)

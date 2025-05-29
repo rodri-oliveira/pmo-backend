@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from fastapi import Depends
 
 from app.core.config import settings
@@ -38,3 +39,20 @@ async def get_async_db() -> AsyncSession:
 
 # Para compatibilidade com código existente que pode estar usando get_db
 get_db = get_async_db
+
+# --- Sessão síncrona para endpoints legados ---
+sync_engine = create_engine(
+    settings.DATABASE_URI.replace('+asyncpg', ''),
+    pool_pre_ping=True,
+    pool_recycle=1800,
+    pool_size=10,
+    max_overflow=20
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=sync_engine)
+
+def get_sync_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

@@ -54,7 +54,7 @@ async def create_apontamento(
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao criar apontamento: {str(e)}")
 
 
-@router.get("/", response_model=List[ApontamentoResponseSchema])
+@router.get("/", response_model=dict)
 async def list_apontamentos(
     skip: int = 0,
     limit: int = 100,
@@ -89,7 +89,7 @@ async def list_apontamentos(
         )
         result = await service.list_with_filters(filtros, skip=skip, limit=limit)
         logger.info(f"[list_apontamentos] Sucesso - {len(result)} registros retornados")
-        return result
+        return {"items": result}
     except Exception as e:
         logger.error(f"[list_apontamentos] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar apontamentos: {str(e)}")

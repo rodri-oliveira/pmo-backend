@@ -265,7 +265,7 @@ class SincronizacaoJira(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     data_inicio = Column(DateTime, nullable=False)
-    data_fim = Column(DateTime, nullable=False)
+    data_fim = Column(DateTime, nullable=True)  # Pode ser NULL durante o processamento
     status = Column(String(50), nullable=False)
     mensagem = Column(Text, nullable=True)
     quantidade_apontamentos_processados = Column(Integer, nullable=True)
