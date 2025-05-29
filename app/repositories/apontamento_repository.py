@@ -1,10 +1,13 @@
 from typing import List, Optional, Dict, Any
-from datetime import date
+from datetime import date, datetime
 from sqlalchemy import func, extract, and_, or_, text, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from app.db.orm_models import Apontamento, Recurso, Projeto, Equipe, Secao, FonteApontamento
 from app.repositories.base_repository import BaseRepository
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ApontamentoRepository(BaseRepository[Apontamento]):
     """
@@ -88,37 +91,58 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         Returns:
             Apontamento criado ou atualizado
         """
-        query = select(Apontamento).filter(Apontamento.jira_worklog_id == jira_worklog_id)
-        result = await self.db.execute(query)
-        apontamento = result.scalars().first()
+        logger.info(f"[SYNC_APONTAMENTO] Sincronizando apontamento para worklog_id={jira_worklog_id}")
         
-        # Remover timezone de todos os campos datetime (se houver)
-        for campo in ["data_hora_inicio_trabalho", "data_criacao", "data_atualizacao", "data_sincronizacao_jira"]:
-            valor = data.get(campo)
-            if isinstance(valor, datetime) and valor.tzinfo is not None:
-                data[campo] = valor.replace(tzinfo=None)
-        
-        apontamento_data = {
-            **data,
-            "fonte_apontamento": "JIRA",
-            "jira_worklog_id": jira_worklog_id
-        }
-        
-        if apontamento:
-            # Atualiza o apontamento existente
-            for key, value in apontamento_data.items():
-                setattr(apontamento, key, value)
+        try:
+            # Verificar se o apontamento já existe
+            query = select(Apontamento).where(Apontamento.jira_worklog_id == jira_worklog_id)
+            result = await self.db.execute(query)
+            apontamento = result.scalars().first()
+            
+            # Remover timezone de todos os campos datetime (se houver)
+            for campo in ["data_hora_inicio_trabalho", "data_criacao", "data_atualizacao", "data_sincronizacao_jira"]:
+                valor = data.get(campo)
+                if isinstance(valor, datetime) and valor.tzinfo is not None:
+                    data[campo] = valor.replace(tzinfo=None)
+            
+            # Garantir que fonte_apontamento seja do tipo correto (enum)
+            data["fonte_apontamento"] = FonteApontamento.JIRA
+            
+            # Verificar se temos todos os campos obrigatórios
+            campos_obrigatorios = [
+                "recurso_id", "projeto_id", "data_apontamento", 
+                "horas_apontadas", "data_criacao", "data_atualizacao"
+            ]
+            
+            for campo in campos_obrigatorios:
+                if campo not in data or data[campo] is None:
+                    logger.error(f"[SYNC_APONTAMENTO] Campo obrigatório ausente: {campo}")
+                    raise ValueError(f"Campo obrigatório ausente: {campo}")
+            
+            if apontamento:
+                logger.info(f"[SYNC_APONTAMENTO] Atualizando apontamento existente id={apontamento.id}")
+                # Atualiza o apontamento existente
+                for key, value in data.items():
+                    setattr(apontamento, key, value)
+                    
+                await self.db.commit()
+                await self.db.refresh(apontamento)
+                logger.info(f"[SYNC_APONTAMENTO] Apontamento atualizado com sucesso id={apontamento.id}")
+                return apontamento
+            else:
+                logger.info(f"[SYNC_APONTAMENTO] Criando novo apontamento para worklog_id={jira_worklog_id}")
+                # Cria um novo apontamento
+                apontamento = self.model(**data)
+                self.db.add(apontamento)
+                await self.db.commit()
+                await self.db.refresh(apontamento)
+                logger.info(f"[SYNC_APONTAMENTO] Apontamento criado com sucesso id={apontamento.id}")
+                return apontamento
                 
-            await self.db.commit()
-            await self.db.refresh(apontamento)
-            return apontamento
-        else:
-            # Cria um novo apontamento
-            apontamento = self.model(**apontamento_data)
-            self.db.add(apontamento)
-            await self.db.commit()
-            await self.db.refresh(apontamento)
-            return apontamento
+        except Exception as e:
+            logger.error(f"[SYNC_APONTAMENTO] Erro ao sincronizar apontamento: {str(e)}")
+            await self.db.rollback()
+            raise
     
     async def delete_from_jira(self, jira_worklog_id: str) -> bool:
         """
