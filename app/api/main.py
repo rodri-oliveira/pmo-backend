@@ -12,6 +12,8 @@ from app.api.routes import relatorios
 from app.api.routes import relatorios_dinamico
 from app.api.routes import alocacao_routes # Adicionar importação para alocacao_routes
 import logging
+from app.api.routes import sincronizacoes_jira # Inclusão do router de integrações Jira
+import logging
 logging.basicConfig(level=logging.INFO)
 logging.info("api_router está sendo configurado!")
 
@@ -31,3 +33,5 @@ api_router.include_router(relatorios_dinamico.router)
 # Remover o prefixo para o router de alocações, já que ele já define internamente
 api_router.include_router(alocacao_routes.router, tags=["Alocações"]) # Incluir a rota de alocações
 api_router.include_router(auth.router, prefix="", tags=["Autenticação"])
+logging.info("[ROUTER] Registrando router de sincronizacoes_jira em /backend/v1/sincronizacoes-jira")
+api_router.include_router(sincronizacoes_jira.router, prefix="/sincronizacoes-jira", tags=["Integração Jira"])

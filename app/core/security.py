@@ -59,15 +59,16 @@ async def get_current_user(
 ) -> UsuarioInDB:
     """
     AUTENTICAÇÃO DESABILITADA - Retorna um usuário fictício para compatibilidade.
-    
-    Args:
-        token: Token JWT de autenticação (ignorado)
-        db: Sessão do banco de dados (ignorada)
-        
-    Returns:
-        Usuário fictício para compatibilidade
+    (Logs detalhados adicionados para rastreamento de autenticação)
     """
-    logging.info("Autenticação desabilitada - retornando usuário fictício")
+    # Loga a chegada da requisição e o header Authorization (mascarando parte do token)
+    if token:
+        logging.info(f"[AUTH] Token recebido: {token[:8]}...{token[-8:]}")
+    else:
+        logging.warning("[AUTH] Token de autenticação NÃO encontrado na requisição!")
+    
+    # Loga o tipo de chamada (usuário fictício)
+    logging.info("[AUTH] Autenticação desabilitada - retornando usuário fictício")
     
     # Retorna um usuário fictício para compatibilidade
     return UsuarioInDB(
@@ -87,15 +88,16 @@ async def get_current_admin_user(
 ) -> UsuarioInDB:
     """
     AUTENTICAÇÃO DESABILITADA - Retorna um usuário admin fictício para compatibilidade.
-    
-    Args:
-        token: Token JWT (ignorado)
-        db: Sessão do banco de dados (ignorada)
-        
-    Returns:
-        Usuário admin fictício para compatibilidade
+    (Logs detalhados adicionados para rastreamento de autenticação admin)
     """
-    logging.info("Autenticação de admin desabilitada - retornando usuário admin fictício")
+    # Loga a chegada da requisição e o header Authorization (mascarando parte do token)
+    if token:
+        logging.info(f"[AUTH-ADMIN] Token recebido: {token[:8]}...{token[-8:]}")
+    else:
+        logging.warning("[AUTH-ADMIN] Token de autenticação NÃO encontrado na requisição!")
+    
+    # Loga o tipo de chamada (usuário admin fictício)
+    logging.info("[AUTH-ADMIN] Autenticação de admin desabilitada - retornando usuário admin fictício")
     
     # Retorna um usuário admin fictício para compatibilidade
     return UsuarioInDB(
