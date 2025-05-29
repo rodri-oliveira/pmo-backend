@@ -1,6 +1,6 @@
 from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, or_, func, select
 
 from app.db.orm_models import Recurso, Equipe, Secao
 from app.repositories.base_repository import BaseRepository
@@ -10,16 +10,16 @@ class RecursoRepository(BaseRepository[Recurso]):
     Repositório para operações com recursos.
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """
-        Inicializa o repositório com uma sessão do banco de dados.
+        Inicializa o repositório com uma sessão do banco de dados assíncrona.
         
         Args:
-            db: Sessão do banco de dados
+            db: Sessão do banco de dados assíncrona
         """
         super().__init__(db, Recurso)
     
-    def get_by_jira_account_id(self, account_id: str) -> Optional[Recurso]:
+    async def get_by_jira_account_id(self, account_id: str) -> Optional[Recurso]:
         """
         Busca um recurso pelo ID da conta no Jira.
         
@@ -29,11 +29,39 @@ class RecursoRepository(BaseRepository[Recurso]):
         Returns:
             Recurso encontrado ou None
         """
-        return self.db.query(self.model).filter(
-            self.model.jira_account_id == account_id
-        ).first()
+        query = select(self.model).where(self.model.jira_account_id == account_id)
+        result = await self.db.execute(query)
+        return result.scalars().first()
     
-    def get_by_equipe(self, equipe_id: int) -> List[Recurso]:
+    async def get_by_jira_user_id(self, jira_user_id: str) -> Optional[Recurso]:
+        """
+        Busca um recurso pelo ID do usuário no Jira.
+        
+        Args:
+            jira_user_id: ID do usuário no Jira
+            
+        Returns:
+            Recurso encontrado ou None
+        """
+        query = select(self.model).where(self.model.jira_user_id == jira_user_id)
+        result = await self.db.execute(query)
+        return result.scalars().first()
+        
+    async def get_by_email(self, email: str) -> Optional[Recurso]:
+        """
+        Busca um recurso pelo email.
+        
+        Args:
+            email: Email do recurso
+            
+        Returns:
+            Recurso encontrado ou None
+        """
+        query = select(self.model).where(self.model.email == email)
+        result = await self.db.execute(query)
+        return result.scalars().first()
+    
+    async def get_by_equipe(self, equipe_id: int) -> List[Recurso]:
         """
         Busca recursos por equipe.
         
@@ -43,11 +71,11 @@ class RecursoRepository(BaseRepository[Recurso]):
         Returns:
             Lista de recursos da equipe
         """
-        return self.db.query(self.model).filter(
-            self.model.equipe_id == equipe_id
-        ).all()
+        query = select(self.model).where(self.model.equipe_principal_id == equipe_id)
+        result = await self.db.execute(query)
+        return result.scalars().all()
     
-    def get_by_secao(self, secao_id: int) -> List[Recurso]:
+    async def get_by_secao(self, secao_id: int) -> List[Recurso]:
         """
         Busca recursos por seção.
         

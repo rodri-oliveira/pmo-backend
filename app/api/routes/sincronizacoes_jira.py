@@ -27,6 +27,129 @@ class SincronizacaoJiraOut(BaseModel):
 
 from fastapi.responses import JSONResponse
 
+@router.get("/config", response_model=Dict[str, Any])
+async def verificar_config_jira(
+    current_user: UsuarioInDB = Depends(get_current_admin_user)
+):
+    """
+    Verifica as configurações do Jira sem fazer requisições para a API.
+    
+    - **Protegido**: requer autenticação de admin.
+    - **Retorno**: configurações do Jira.
+    """
+    from app.core.config import settings
+    
+    # Verificar se as configurações do Jira estão definidas
+    jira_config = {
+        "base_url": settings.JIRA_BASE_URL,
+        "username": settings.JIRA_USERNAME,
+        "api_token_length": len(settings.JIRA_API_TOKEN) if settings.JIRA_API_TOKEN else 0,
+        "api_token_preview": f"***{settings.JIRA_API_TOKEN[-5:]}" if settings.JIRA_API_TOKEN and len(settings.JIRA_API_TOKEN) > 5 else "***"
+    }
+    
+    return {
+        "status": "success",
+        "config": jira_config
+    }
+
+@router.get("/testar-curl", response_model=Dict[str, Any])
+async def testar_curl_jira(
+    current_user: UsuarioInDB = Depends(get_current_admin_user)
+):
+    """
+    Testa a conexão com o Jira usando as credenciais exatas do curl.
+    
+    - **Protegido**: requer autenticação de admin.
+    - **Retorno**: resultado do teste de conexão.
+    """
+    import requests
+    import json
+    import logging
+    
+    logger = logging.getLogger("sincronizacoes_jira.testar_curl")
+    
+    try:
+        # URL e headers exatamente como no curl
+        url = 'https://jiracloudweg.atlassian.net/rest/api/3/project/search'
+        headers = {
+            'Authorization': 'Basic cm9saXZlaXJhQHdlZy5uZXQ6QVRBVFQzeEZmR0YwZG0xUzdSSHNReGFSTDZkNmZiaEZUMFNxSjZLbE9ScWRXQzg1M1Jlb3hFMUpnM0dSeXRUVTN4dG5McjdGVWg3WWFKZ2M1RDZwd3J5bjhQc3lHVDNrSklyRUlyVHpmNF9lMGJYLUdJdmxOOFIxanhyMV9GVGhLY1h3V1N0dU9VbE5ucEY2eFlhclhfWFpRb3RhTzlXeFhVaXlIWkdHTDFaMEx5cmJ4VzVyNVYwPUYxMDA3MDNF',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+        
+        logger.info(f"[JIRA_CURL_TEST] Fazendo requisição para {url} com header de autorização do curl")
+        
+        # Fazer a requisição usando requests
+        response = requests.get(url, headers=headers)
+        
+        # Verificar se a resposta foi bem-sucedida
+        if response.status_code == 200:
+            # Tentar converter a resposta para JSON
+            try:
+                jira_data = response.json()
+                total_projetos = jira_data.get('total', 0)
+                
+                return {
+                    "status": "success",
+                    "mensagem": f"Conexão bem-sucedida! Total de projetos: {total_projetos}",
+                    "detalhes": {
+                        "total_projetos": total_projetos,
+                        "primeiro_projeto": jira_data.get('values', [])[0] if jira_data.get('values') else None
+                    }
+                }
+            except json.JSONDecodeError as e:
+                logger.error(f"[JIRA_CURL_TEST] Erro ao decodificar JSON: {str(e)}")
+                return {
+                    "status": "error",
+                    "mensagem": f"Erro ao decodificar resposta JSON: {str(e)}",
+                    "detalhes": {
+                        "response_text": response.text[:500]  # Limitar para não sobrecarregar a resposta
+                    }
+                }
+        else:
+            logger.error(f"[JIRA_CURL_TEST] Erro na requisição: {response.status_code} - {response.text}")
+            return {
+                "status": "error",
+                "mensagem": f"Erro na requisição: {response.status_code}",
+                "detalhes": {
+                    "status_code": response.status_code,
+                    "response_text": response.text[:500]  # Limitar para não sobrecarregar a resposta
+                }
+            }
+    except Exception as e:
+        logger.error(f"[JIRA_CURL_TEST] Erro ao testar conexão: {str(e)}")
+        return {
+            "status": "error",
+            "mensagem": f"Erro ao testar conexão: {str(e)}",
+            "detalhes": {}
+        }
+
+@router.get("/testar-conexao", response_model=Dict[str, Any])
+async def testar_conexao_jira(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UsuarioInDB = Depends(get_current_admin_user)
+):
+    """
+    Testa a conexão com o Jira.
+    
+    - **Protegido**: requer autenticação de admin.
+    - **Retorno**: resultado do teste de conexão.
+    """
+    from app.services.sincronizacao_jira_service import SincronizacaoJiraService
+    
+    service = SincronizacaoJiraService(db)
+    
+    try:
+        resultado = await service.testar_conexao_jira()
+        return resultado
+    except Exception as e:
+        logger.error(f"[JIRA_TESTE_CONEXAO_ERRO] {str(e)}")
+        return {
+            "status": "error",
+            "mensagem": f"Erro ao testar conexão com o Jira: {str(e)}",
+            "detalhes": {}
+        }
+
 @router.get("/", response_model=Dict[str, Any])
 async def listar_sincronizacoes(
     skip: int = Query(0, description="Número de registros a pular para paginação"),
@@ -165,6 +288,8 @@ def iniciar_sincronizacao_manual(
     }
 
 # NOVO ENDPOINT COMPATÍVEL COM O FRONTEND
+
+import logging
 
 import logging
 

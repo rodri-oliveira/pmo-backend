@@ -1,6 +1,6 @@
-from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from typing import List, Optional, Dict, Any, Tuple
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, or_, select
 
 from app.db.orm_models import Projeto, StatusProjeto
 from app.repositories.base_repository import BaseRepository
@@ -10,8 +10,42 @@ class ProjetoRepository(BaseRepository[Projeto]):
     Repositório para operações com projetos.
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db, Projeto)
+        
+    async def get_by_jira_project_key(self, jira_project_key: str) -> Optional[Projeto]:
+        """
+        Busca um projeto pelo jira_project_key.
+        
+        Args:
+            jira_project_key: Chave do projeto no Jira
+            
+        Returns:
+            Projeto encontrado ou None
+        """
+        query = select(self.model).where(self.model.jira_project_key == jira_project_key)
+        result = await self.db.execute(query)
+        return result.scalars().first()
+        
+    async def get_status_default(self) -> Optional[StatusProjeto]:
+        """
+        Obtém o status padrão para projetos (geralmente "Em andamento" ou similar).
+        
+        Returns:
+            StatusProjeto padrão ou None se não encontrado
+        """
+        # Buscar primeiro o status "Em andamento" ou similar
+        for nome_status in ["Em andamento", "Ativo", "Novo"]:
+            query = select(StatusProjeto).where(StatusProjeto.nome.ilike(f"%{nome_status}%"))
+            result = await self.db.execute(query)
+            status = result.scalars().first()
+            if status:
+                return status
+                
+        # Se não encontrou nenhum dos status padrão, retornar o primeiro status
+        query = select(StatusProjeto)
+        result = await self.db.execute(query)
+        return result.scalars().first()
 
     def get_active_projects(self) -> List[Dict[str, Any]]:
         results = self.db.query(

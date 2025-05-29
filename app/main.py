@@ -13,8 +13,32 @@ from app.api.routes import health
 # Importar configuração do banco de dados
 from app.db.session import async_engine, Base
 import logging
-logging.basicConfig(level=logging.INFO)
-logging.info("FastAPI principal está iniciando!")
+import os
+from datetime import datetime
+
+# Configurar logging
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"app_{datetime.now().strftime('%Y%m%d')}.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+
+# Configurar logs específicos
+logger = logging.getLogger("app")
+logger.setLevel(logging.DEBUG)
+
+# Configurar logs para integração com Jira
+jira_logger = logging.getLogger("app.integrations.jira_client")
+jira_logger.setLevel(logging.DEBUG)
+
+logger.info("FastAPI principal está iniciando!")
 
 # Configuração para SQLAlchemy assíncrono
 from sqlalchemy.ext.asyncio import async_scoped_session, AsyncSession
