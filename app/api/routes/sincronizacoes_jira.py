@@ -201,7 +201,7 @@ async def obter_sincronizacao(
     return sincronizacao
 
 
-def executar_sincronizacao_background(db: Session, dias: int, usuario_id: int):
+async def executar_sincronizacao_background(db: Session, dias: int, usuario_id: int):
     """
     Executa a sincronização em segundo plano.
     
@@ -210,106 +210,204 @@ def executar_sincronizacao_background(db: Session, dias: int, usuario_id: int):
         dias: Número de dias para sincronizar
         usuario_id: ID do usuário que solicitou a sincronização
     """
-    # Criar nova sessão para a tarefa em background
-    with db.session.registry().main_engine.connect() as conn:
-        with Session(bind=conn) as session:
-            try:
-                sincronizacao_service = SincronizacaoJiraService(session)
-                jira_client = JiraClient()
-                log_service = LogService(session)
-                
-                # Registrar início da sincronização
-                log_service.registrar_acao(
-                    acao="INICIAR_SINCRONIZACAO",
-                    entidade="sincronizacao_jira",
-                    usuario_id=usuario_id,
-                    detalhes=f"Sincronização manual iniciada para os últimos {dias} dias"
-                )
-                
-                # Determinar data de início da sincronização
-                since = datetime.now() - timedelta(days=dias)
-                
-                # Executar sincronização
-                result = jira_client.sync_worklogs_since(since)
-                
-                # Registrar resultados
-                log_service.registrar_acao(
-                    acao="CONCLUIR_SINCRONIZACAO",
-                    entidade="sincronizacao_jira",
-                    usuario_id=usuario_id,
-                    detalhes=f"Sincronização concluída: {result['processed']} de {result['total']} worklogs processados, {result['errors']} erros"
-                )
-                
-            except Exception as e:
-                # Registrar erro
-                log_service.registrar_acao(
-                    acao="ERRO_SINCRONIZACAO",
-                    entidade="sincronizacao_jira",
-                    usuario_id=usuario_id,
-                    detalhes=f"Erro na sincronização manual: {str(e)}"
-                )
+    import logging
+    import asyncio
+    from datetime import datetime, timedelta
+    from app.services.sincronizacao_jira_service import SincronizacaoJiraService
+    from app.services.apontamento_service import ApontamentoService
+    from app.integrations.jira_client import JiraClient
+    
+    logger = logging.getLogger("sincronizacoes_jira.executar_sincronizacao_background")
+    
+    # Criar uma nova sessão assíncrona para o background task
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.db.session import async_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession
+    
+    async_session = sessionmaker(
+        async_engine, expire_on_commit=False, class_=AsyncSession
+    )
+    
+    async with async_session() as session:
+        try:
+            logger.info(f"[SINCRONIZACAO_BACKGROUND] Iniciando sincronização de {dias} dias")
+            
+            # Serviços
+            sincronizacao_service = SincronizacaoJiraService(session)
+            apontamento_service = ApontamentoService(session)
+            
+            # Cliente Jira
+            jira_client = JiraClient()
+            
+            # Data de início (dias atrás)
+            since_date = datetime.now() - timedelta(days=dias)
+            
+            # Buscar worklogs recentes
+            logger.info(f"[SINCRONIZACAO_BACKGROUND] Buscando worklogs desde {since_date.isoformat()}")
+            worklogs = jira_client.get_recent_worklogs(dias=dias)
+            
+            # Processar worklogs
+            logger.info(f"[SINCRONIZACAO_BACKGROUND] Processando {len(worklogs)} worklogs")
+            
+            # Contador de apontamentos processados
+            contador = 0
+            
+            for worklog in worklogs:
+                try:
+                    # Processar cada worklog
+                    await apontamento_service.processar_worklog_jira(worklog)
+                    contador += 1
+                except Exception as e:
+                    logger.error(f"[SINCRONIZACAO_BACKGROUND] Erro ao processar worklog: {str(e)}")
+            
+            # Atualizar sincronização com sucesso
+            await sincronizacao_service.registrar_fim_sincronizacao(
+                status="SUCESSO",
+                mensagem=f"Sincronização concluída com sucesso. {contador} apontamentos processados.",
+                quantidade_apontamentos_processados=contador
+            )
+            
+            logger.info(f"[SINCRONIZACAO_BACKGROUND] Sincronização concluída com sucesso. {contador} apontamentos processados.")
+            
+        except Exception as e:
+            logger.error(f"[SINCRONIZACAO_BACKGROUND] Erro na sincronização: {str(e)}")
+            
+            # Atualizar sincronização com erro
+            await sincronizacao_service.registrar_fim_sincronizacao(
+                status="ERRO",
+                mensagem=f"Erro na sincronização: {str(e)}"
+            )
 
 
-@router.post("/manual")
-def iniciar_sincronizacao_manual(
+async def executar_sincronizacao_mes_anterior_background(db: Session, usuario_id: int, sincronizacao_id: int):
+    """
+    Executa a sincronização dos worklogs do mês anterior em segundo plano.
+    
+    Args:
+        db: Sessão do banco de dados
+        usuario_id: ID do usuário que solicitou a sincronização
+        sincronizacao_id: ID da sincronização registrada
+    """
+    import logging
+    import asyncio
+    from datetime import datetime
+    from app.services.sincronizacao_jira_service import SincronizacaoJiraService
+    from app.services.apontamento_service import ApontamentoService
+    from app.integrations.jira_client import JiraClient
+    
+    logger = logging.getLogger("sincronizacoes_jira.executar_sincronizacao_mes_anterior_background")
+    
+    # Criar uma nova sessão assíncrona para o background task
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.db.session import async_engine
+    from sqlalchemy.orm import sessionmaker
+    
+    async_session = sessionmaker(
+        async_engine, expire_on_commit=False, class_=AsyncSession
+    )
+    
+    async with async_session() as session:
+        try:
+            logger.info(f"[SINCRONIZACAO_MES_ANTERIOR] Iniciando sincronização dos worklogs do mês anterior")
+            
+            # Serviços
+            sincronizacao_service = SincronizacaoJiraService(session)
+            apontamento_service = ApontamentoService(session)
+            
+            # Atualizar o ID da sincronização no serviço
+            sincronizacao_service.sincronizacao_id = sincronizacao_id
+            
+            # Cliente Jira
+            jira_client = JiraClient()
+            
+            # Buscar worklogs do mês anterior
+            logger.info(f"[SINCRONIZACAO_MES_ANTERIOR] Buscando worklogs do mês anterior")
+            worklogs = jira_client.get_previous_month_worklogs()
+            
+            # Processar worklogs
+            logger.info(f"[SINCRONIZACAO_MES_ANTERIOR] Processando {len(worklogs)} worklogs do mês anterior")
+            
+            # Contador de apontamentos processados
+            contador = 0
+            
+            for worklog in worklogs:
+                try:
+                    # Processar cada worklog
+                    await apontamento_service.processar_worklog_jira(worklog)
+                    contador += 1
+                except Exception as e:
+                    logger.error(f"[SINCRONIZACAO_MES_ANTERIOR] Erro ao processar worklog: {str(e)}")
+            
+            # Atualizar sincronização com sucesso
+            await sincronizacao_service.registrar_fim_sincronizacao(
+                status="SUCESSO",
+                mensagem=f"Sincronização do mês anterior concluída com sucesso. {contador} apontamentos processados.",
+                quantidade_apontamentos_processados=contador
+            )
+            
+            logger.info(f"[SINCRONIZACAO_MES_ANTERIOR] Sincronização concluída com sucesso. {contador} apontamentos processados.")
+            
+        except Exception as e:
+            logger.error(f"[SINCRONIZACAO_MES_ANTERIOR] Erro na sincronização do mês anterior: {str(e)}")
+            
+            # Atualizar sincronização com erro
+            await sincronizacao_service.registrar_fim_sincronizacao(
+                status="ERRO",
+                mensagem=f"Erro na sincronização do mês anterior: {str(e)}"
+            ) 
+
+
+@router.post("/importar-mes-anterior", response_model=Dict[str, Any])
+async def importar_mes_anterior_jira(
     background_tasks: BackgroundTasks,
-    dias: int = Query(7, description="Número de dias para sincronizar"),
     db: AsyncSession = Depends(get_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
     """
-    Inicia uma sincronização manual com o Jira.
+    Inicia a sincronização dos worklogs do mês anterior ao atual.
     
-    - **dias**: Número de dias para olhar para trás
-    
-    Retorna status da solicitação.
+    - **Protegido**: requer autenticação de admin.
+    - **Retorno**: status de processamento da sincronização.
     """
-    log_service = LogService(db)
-    
-    # Registrar solicitação
-    log_service.registrar_acao(
-        acao="SOLICITAR_SINCRONIZACAO",
-        entidade="sincronizacao_jira",
-        usuario=current_user,
-        detalhes=f"Solicitação de sincronização manual para os últimos {dias} dias"
-    )
-    
-    # Iniciar sincronização em segundo plano
-    background_tasks.add_task(
-        executar_sincronizacao_background,
-        db=db,
-        dias=dias,
-        usuario_id=current_user.id
-    )
-    
-    return {
-        "status": "iniciada",
-        "mensagem": f"Sincronização manual iniciada para os últimos {dias} dias. Verifique os logs para acompanhar o progresso."
-    }
+    try:
+        # Registrar o início da sincronização
+        sincronizacao_service = SincronizacaoJiraService(db)
+        sincronizacao = await sincronizacao_service.registrar_inicio_sincronizacao(
+            usuario_id=current_user.id,
+            tipo_evento="importar_mes_anterior",
+            mensagem="Sincronização dos worklogs do mês anterior iniciada"
+        )
+        
+        # Adicionar a tarefa de sincronização em background
+        background_tasks.add_task(
+            executar_sincronizacao_mes_anterior_background,
+            db,
+            current_user.id,
+            sincronizacao.id
+        )
+        
+        # Registrar log de atividade
+        log_service = LogService(db)
+        await log_service.registrar_log(
+            tipo="SINCRONIZACAO_JIRA",
+            descricao=f"Sincronização dos worklogs do mês anterior iniciada pelo usuário {current_user.nome}",
+            usuario_id=current_user.id
+        )
+        
+        return {
+            "status": "success",
+            "mensagem": "Sincronização dos worklogs do mês anterior iniciada com sucesso",
+            "sincronizacao_id": sincronizacao.id
+        }
+    except Exception as e:
+        log.error(f"[IMPORTAR_MES_ANTERIOR_JIRA] Erro ao iniciar sincronização: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao iniciar sincronização: {str(e)}"
+        )
 
-# NOVO ENDPOINT COMPATÍVEL COM O FRONTEND
-
-import logging
-
-import logging
-
-@router.post(
-    "/importar-tudo",
-    summary="Sincronização completa do Jira",
-    description="Inicia a sincronização completa do Jira (todos os projetos, issues e worklogs). Protegido: requer autenticação de admin. Retorna status de processamento.",
-    response_model=dict,
-    responses={
-        200: {
-            "description": "Sincronização completa do Jira iniciada com sucesso.",
-            "content": {
-                "application/json": {
-                    "example": {"status": "processing", "message": "Sincronização completa do Jira iniciada."}
-                }
-            }
-        },
-        500: {"description": "Erro ao agendar sincronização total do Jira."}
-    }
-)
+@router.post("/importar-tudo", response_model=Dict[str, Any])
 async def importar_tudo_jira(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
@@ -340,7 +438,7 @@ async def importar_tudo_jira(
         raise HTTPException(status_code=500, detail=f"Erro ao agendar sincronização total: {str(exc)}")
         raise HTTPException(status_code=500, detail="Erro ao agendar sincronização total do Jira.")
 
-@router.post("/importar")
+@router.post("/importar", response_model=Dict[str, Any])
 async def importar_sincronizacao_jira(
     background_tasks: BackgroundTasks,
     dias: int = Query(7, description="Número de dias para sincronizar"),
@@ -350,20 +448,41 @@ async def importar_sincronizacao_jira(
     """
     Endpoint compatível com o frontend para iniciar sincronização manual do Jira.
     """
-    log_service = LogService(db)
-    log_service.registrar_acao(
-        acao="SOLICITAR_SINCRONIZACAO",
-        entidade="sincronizacao_jira",
-        usuario=current_user,
-        detalhes=f"Solicitação de sincronização manual via /importar para os últimos {dias} dias"
-    )
-    background_tasks.add_task(
-        executar_sincronizacao_background,
-        db=db,
-        dias=dias,
-        usuario_id=current_user.id
-    )
-    return {
-        "status": "iniciada",
-        "mensagem": f"Sincronização manual (via /importar) iniciada para os últimos {dias} dias. Verifique os logs para acompanhar o progresso."
-    }
+    try:
+        # Registrar o início da sincronização
+        sincronizacao_service = SincronizacaoJiraService(db)
+        sincronizacao = await sincronizacao_service.registrar_inicio_sincronizacao(
+            usuario_id=current_user.id,
+            tipo_evento="sincronizacao_manual",
+            mensagem=f"Sincronização manual de {dias} dias iniciada"
+        )
+        
+        # Adicionar a tarefa de sincronização em background
+        background_tasks.add_task(
+            executar_sincronizacao_background,
+            db,
+            dias,
+            current_user.id
+        )
+        
+        # Registrar log de atividade
+        log_service = LogService(db)
+        await log_service.registrar_log(
+            tipo="SINCRONIZACAO_JIRA",
+            descricao=f"Sincronização manual de {dias} dias iniciada pelo usuário {current_user.nome}",
+            usuario_id=current_user.id
+        )
+        
+        return {
+            "status": "success",
+            "mensagem": "Sincronização iniciada com sucesso",
+            "sincronizacao_id": sincronizacao.id
+        }
+    except Exception as e:
+        log.error(f"[IMPORTAR_SINCRONIZACAO_JIRA] Erro ao iniciar sincronização: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao iniciar sincronização: {str(e)}"
+        )
+
+# Endpoint removido para evitar duplicação

@@ -809,6 +809,101 @@ class JiraClient:
             logger.error(f"[JIRA_RECENT_WORKLOGS] Erro ao buscar worklogs recentes: {str(e)}")
             return []
     
+    def get_previous_month_worklogs(self) -> List[Dict[str, Any]]:
+        """
+        Obtém worklogs do mês anterior ao atual.
+        
+        Returns:
+            Lista de worklogs do mês anterior
+        """
+        import logging
+        import calendar
+        from datetime import datetime, timedelta, date
+        
+        logger = logging.getLogger("jira_client.get_previous_month_worklogs")
+        
+        # Obtém o mês e ano atual
+        current_date = datetime.now()
+        current_month = current_date.month
+        current_year = current_date.year
+        
+        # Calcula o mês anterior
+        if current_month == 1:  # Janeiro
+            previous_month = 12  # Dezembro
+            previous_year = current_year - 1
+        else:
+            previous_month = current_month - 1
+            previous_year = current_year
+        
+        # Determina o primeiro e último dia do mês anterior
+        first_day = date(previous_year, previous_month, 1)
+        # Último dia do mês anterior (usando calendar para determinar o número de dias no mês)
+        last_day = date(previous_year, previous_month, calendar.monthrange(previous_year, previous_month)[1])
+        
+        # Formata as datas para o JQL
+        start_date = first_day.strftime("%Y-%m-%d")
+        end_date = last_day.strftime("%Y-%m-%d")
+        
+        logger.info(f"[JIRA_PREVIOUS_MONTH_WORKLOGS] Buscando worklogs do mês anterior: {start_date} até {end_date}")
+        
+        try:
+            # JQL para buscar issues com worklogs no período do mês anterior
+            jql = f"worklogDate >= {start_date} AND worklogDate <= {end_date} ORDER BY updated DESC"
+            
+            # Buscar issues com worklogs no período
+            issues = self.search_issues(jql, ["key", "summary"], 500)  # Aumentado para 500 para cobrir mais issues
+            
+            if not issues:
+                logger.warning(f"[JIRA_PREVIOUS_MONTH_WORKLOGS] Nenhuma issue com worklog encontrada no mês anterior ({start_date} até {end_date})")
+                return []
+                
+            logger.info(f"[JIRA_PREVIOUS_MONTH_WORKLOGS] Encontradas {len(issues)} issues com worklogs no mês anterior")
+            
+            # Buscar worklogs para cada issue
+            all_worklogs = []
+            
+            for issue in issues:
+                issue_key = issue.get("key")
+                if not issue_key:
+                    continue
+                
+                # Buscar worklogs da issue
+                try:
+                    issue_worklogs = self.get_worklogs(issue_key)
+                    logger.info(f"[JIRA_PREVIOUS_MONTH_WORKLOGS] Encontrados {len(issue_worklogs)} worklogs na issue {issue_key}")
+                    
+                    # Adicionar informações da issue aos worklogs e filtrar pelo período
+                    for worklog in issue_worklogs:
+                        # Filtrar apenas worklogs do mês anterior
+                        started = worklog.get("started")
+                        if started:
+                            try:
+                                # Converter a data do worklog para comparar com o período
+                                from dateutil import parser
+                                worklog_date = parser.parse(started).date()
+                                
+                                # Verificar se a data está dentro do mês anterior
+                                if worklog_date < first_day or worklog_date > last_day:
+                                    continue  # Ignorar worklogs fora do período do mês anterior
+                            except Exception as e:
+                                logger.warning(f"[JIRA_PREVIOUS_MONTH_WORKLOGS] Erro ao processar data do worklog: {str(e)}")
+                                continue
+                        else:
+                            # Se não tiver data, ignorar
+                            continue
+                        
+                        worklog["issueKey"] = issue_key
+                        worklog["issueSummary"] = issue.get("fields", {}).get("summary", "")
+                        all_worklogs.append(worklog)
+                except Exception as e:
+                    logger.error(f"[JIRA_PREVIOUS_MONTH_WORKLOGS] Erro ao buscar worklogs da issue {issue_key}: {str(e)}")
+            
+            logger.info(f"[JIRA_PREVIOUS_MONTH_WORKLOGS] Total de {len(all_worklogs)} worklogs encontrados no mês anterior")
+            return all_worklogs
+        except Exception as e:
+            logger.error(f"[JIRA_PREVIOUS_MONTH_WORKLOGS] Erro ao buscar worklogs do mês anterior: {str(e)}")
+            return []
+    
     def sync_worklogs_since(self, since: Optional[datetime] = None) -> Dict[str, Any]:
         """
         Sincroniza worklogs desde uma data específica.
