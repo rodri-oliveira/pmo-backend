@@ -111,6 +111,9 @@ class SincronizacaoJiraService:
         Returns:
             Dict[str, Any]: Resultado da sincronização
         """
+        import logging
+        logger = logging.getLogger("sincronizacoes_jira.sincronizar_apontamentos")
+        
         # Registrar início da sincronização
         # Como data_fim não pode ser NULL no banco de dados, usamos a mesma data de início
         data_atual = datetime.now()
@@ -131,25 +134,26 @@ class SincronizacaoJiraService:
         sincronizacao = await self.sincronizacao_repository.create(dados_sincronizacao)
         
         try:
-            # Obter a última sincronização bem-sucedida
-            ultima_sincronizacao = await self.sincronizacao_repository.get_last_successful()
-            
-            # Determinar a data desde a qual buscar atualizações
-            since = ultima_sincronizacao.data_fim if ultima_sincronizacao else datetime.now() - timedelta(days=30)
-            
-            # Buscar worklogs atualizados
-            worklogs = self.jira_client.get_worklogs_updated_since(since)
+            # Buscar worklogs recentes (dos últimos 30 dias)
+            logger.info("[SINCRONIZAR_APONTAMENTOS] Buscando worklogs recentes dos últimos 30 dias")
+            worklogs = self.jira_client.get_recent_worklogs(days=30)
+            logger.info(f"[SINCRONIZAR_APONTAMENTOS] Encontrados {len(worklogs)} worklogs recentes")
             
             # Processar os worklogs
             count = 0
             for worklog in worklogs:
-                # Extrair dados do worklog
-                worklog_data = await self._extrair_dados_worklog(worklog)
-                
-                if worklog_data:
-                    # Sincronizar no banco
-                    await self.apontamento_repository.sync_jira_apontamento(worklog_data["jira_worklog_id"], worklog_data)
-                    count += 1
+                try:
+                    # Extrair dados do worklog
+                    worklog_data = await self._extrair_dados_worklog(worklog)
+                    
+                    if worklog_data:
+                        # Sincronizar no banco
+                        await self.apontamento_repository.sync_jira_apontamento(worklog_data["jira_worklog_id"], worklog_data)
+                        count += 1
+                        logger.info(f"[SINCRONIZAR_APONTAMENTOS] Worklog {worklog_data['jira_worklog_id']} sincronizado com sucesso")
+                except Exception as e:
+                    logger.error(f"[SINCRONIZAR_APONTAMENTOS] Erro ao processar worklog: {str(e)}")
+                    # Continuar com o próximo worklog
             
             # Atualizar registro de sincronização
             await self.sincronizacao_repository.update(sincronizacao.id, {
@@ -175,6 +179,247 @@ class SincronizacaoJiraService:
             })
             
             raise ValueError(f"Erro na sincronização com o Jira: {str(e)}")
+            
+    async def _sincronizar_projeto(self, projeto_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Sincroniza um projeto do Jira com o banco de dados local.
+        
+        Args:
+            projeto_key: Chave do projeto no Jira
+            
+        Returns:
+            Optional[Dict[str, Any]]: Dados do projeto sincronizado ou None se falhar
+        """
+        import logging
+        logger = logging.getLogger("sincronizacoes_jira._sincronizar_projeto")
+        
+        try:
+            # Verificar se o projeto já existe no banco
+            projeto = await self.projeto_repository.get_by_jira_project_key(projeto_key)
+            
+            if projeto:
+                logger.info(f"[SINCRONIZAR_PROJETO] Projeto {projeto_key} já existe no banco")
+                return projeto.__dict__
+                
+            # Buscar detalhes do projeto no Jira
+            projeto_jira = self.jira_client.get_project(projeto_key)
+            
+            if not projeto_jira:
+                logger.warning(f"[SINCRONIZAR_PROJETO] Projeto {projeto_key} não encontrado no Jira")
+                return None
+                
+            # Extrair dados do projeto
+            projeto_nome = projeto_jira.get("name") or f"Projeto {projeto_key}"
+            
+            # Buscar o status padrão para projetos
+            status_projeto = await self.projeto_repository.get_status_default()
+            
+            if not status_projeto:
+                logger.error(f"[SINCRONIZAR_PROJETO] Não foi possível encontrar status padrão para projetos")
+                return None
+                
+            # Dados para criar o projeto
+            projeto_data = {
+                "nome": projeto_nome,
+                "jira_project_key": projeto_key,
+                "status_projeto_id": status_projeto.id,
+                "ativo": True
+            }
+            
+            # Criar o projeto no banco
+            projeto = await self.projeto_repository.create(projeto_data)
+            
+            logger.info(f"[SINCRONIZAR_PROJETO] Projeto {projeto_key} criado com sucesso")
+            return projeto.__dict__
+            
+        except Exception as e:
+            logger.error(f"[SINCRONIZAR_PROJETO] Erro ao sincronizar projeto {projeto_key}: {str(e)}")
+            return None
+            
+    async def _sincronizar_issue(self, issue_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Sincroniza uma issue do Jira com o banco de dados local.
+        
+        Args:
+            issue_key: Chave da issue no Jira
+            
+        Returns:
+            Optional[Dict[str, Any]]: Dados da issue sincronizada ou None se falhar
+        """
+        import logging
+        logger = logging.getLogger("sincronizacoes_jira._sincronizar_issue")
+        
+        try:
+            # Buscar detalhes da issue no Jira
+            issue_jira = self.jira_client.get_issue(issue_key)
+            
+            if not issue_jira:
+                logger.warning(f"[SINCRONIZAR_ISSUE] Issue {issue_key} não encontrada no Jira")
+                return None
+                
+            # Extrair o project_key da issue_key (formato: PROJECT-123)
+            project_key = issue_key.split('-')[0] if '-' in issue_key else None
+            
+            if not project_key:
+                logger.warning(f"[SINCRONIZAR_ISSUE] Não foi possível extrair project_key de {issue_key}")
+                return None
+                
+            # Sincronizar o projeto primeiro
+            projeto = await self._sincronizar_projeto(project_key)
+            
+            if not projeto:
+                logger.error(f"[SINCRONIZAR_ISSUE] Falha ao sincronizar projeto {project_key} para issue {issue_key}")
+                return None
+                
+            # Retornar os dados da issue
+            return {
+                "key": issue_key,
+                "summary": issue_jira.get("fields", {}).get("summary", ""),
+                "projeto_id": projeto.get("id")
+            }
+            
+        except Exception as e:
+            logger.error(f"[SINCRONIZAR_ISSUE] Erro ao sincronizar issue {issue_key}: {str(e)}")
+            return None
+            
+    async def _sincronizar_worklog(self, worklog: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Sincroniza um worklog do Jira com o banco de dados local.
+        
+        Args:
+            worklog: Dados do worklog do Jira
+            
+        Returns:
+            Optional[Dict[str, Any]]: Dados do worklog sincronizado ou None se falhar
+        """
+        import logging
+        logger = logging.getLogger("sincronizacoes_jira._sincronizar_worklog")
+        
+        try:
+            # Extrair dados básicos do worklog
+            worklog_id = str(worklog.get("id"))
+            issue_key = worklog.get("issueKey")
+            
+            if not worklog_id or not issue_key:
+                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem ID ou issue_key: {worklog}")
+                return None
+                
+            # Sincronizar a issue primeiro
+            issue = await self._sincronizar_issue(issue_key)
+            
+            if not issue:
+                logger.error(f"[SINCRONIZAR_WORKLOG] Falha ao sincronizar issue {issue_key} para worklog {worklog_id}")
+                return None
+                
+            # Extrair dados do autor
+            author = worklog.get("author", {})
+            author_account_id = author.get("accountId")
+            author_email = author.get("emailAddress")
+            author_display_name = author.get("displayName")
+            
+            # Buscar o recurso pelo jira_user_id ou email
+            recurso = None
+            if author_account_id:
+                recurso = await self.recurso_repository.get_by_jira_user_id(author_account_id)
+                
+            if not recurso and author_email:
+                recurso = await self.recurso_repository.get_by_email(author_email)
+                
+            # Se não encontramos o recurso, criar um novo
+            if not recurso:
+                logger.info(f"[SINCRONIZAR_WORKLOG] Recurso não encontrado para {author_account_id}/{author_email}, criando novo")
+                
+                # Dados para criar o recurso
+                recurso_data = {
+                    "nome": author_display_name or author_email or "Usuário Jira",
+                    "email": author_email or f"{author_account_id}@jira.weg.net",
+                    "jira_user_id": author_account_id,
+                    "ativo": True
+                }
+                
+                try:
+                    recurso = await self.recurso_repository.create(recurso_data)
+                except Exception as e:
+                    logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao criar recurso: {str(e)}")
+                    return None
+            
+            # Extrair horas apontadas
+            time_spent_seconds = worklog.get("timeSpentSeconds")
+            
+            if not time_spent_seconds:
+                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem timeSpentSeconds: {worklog}")
+                return None
+                
+            # Converter segundos para horas (com precisão de 2 casas decimais)
+            horas_apontadas = round(time_spent_seconds / 3600, 2)
+            
+            # Extrair data e hora do apontamento
+            started = worklog.get("started")  # Formato ISO: 2023-05-29T12:00:00.000+0000
+            
+            if not started:
+                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem data de início: {worklog}")
+                return None
+                
+            # Converter string ISO para datetime
+            from datetime import datetime
+            import dateutil.parser
+            
+            try:
+                data_hora_inicio = dateutil.parser.parse(started)
+                # Remover timezone para compatibilidade com o banco
+                if data_hora_inicio.tzinfo:
+                    data_hora_inicio = data_hora_inicio.replace(tzinfo=None)
+                    
+                # Extrair apenas a data para data_apontamento
+                data_apontamento = data_hora_inicio.date()
+            except Exception as e:
+                logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao converter data: {str(e)}")
+                return None
+            
+            # Extrair descrição do worklog
+            descricao = worklog.get("comment") or ""
+            
+            # Se o comentário for um objeto complexo (como em alguns formatos do Jira)
+            if isinstance(descricao, dict):
+                # Tentar extrair o texto do objeto de comentário
+                if "content" in descricao:
+                    try:
+                        # Extrair texto do formato Atlassian Document Format
+                        texto = []
+                        for item in descricao.get("content", []):
+                            if item.get("type") == "paragraph":
+                                for content in item.get("content", []):
+                                    if content.get("type") == "text":
+                                        texto.append(content.get("text", ""))
+                        descricao = " ".join(texto)
+                    except Exception as e:
+                        logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao extrair texto do comentário: {str(e)}")
+                        descricao = "Comentário em formato não suportado"
+            
+            # Montar o objeto de dados para o apontamento
+            apontamento_data = {
+                "jira_worklog_id": worklog_id,
+                "recurso_id": recurso.id,
+                "projeto_id": issue.get("projeto_id"),
+                "jira_issue_key": issue_key,
+                "data_hora_inicio_trabalho": data_hora_inicio,
+                "data_apontamento": data_apontamento,
+                "horas_apontadas": horas_apontadas,
+                "descricao": descricao,
+                "fonte_apontamento": "JIRA",
+                "data_sincronizacao_jira": datetime.now(),
+                "data_criacao": datetime.now(),
+                "data_atualizacao": datetime.now()
+            }
+            
+            logger.info(f"[SINCRONIZAR_WORKLOG] Dados extraídos com sucesso para worklog {worklog_id}")
+            return apontamento_data
+            
+        except Exception as e:
+            logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao sincronizar worklog: {str(e)}")
+            # Logar o worklog para diagnóstico
+            logger.error(f"[SINCRONIZAR_WORKLOG] Worklog problemático: {worklog}")
+            return None
     
     async def _extrair_dados_worklog(self, worklog: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -375,134 +620,6 @@ class SincronizacaoJiraService:
             # Logar o worklog para diagnóstico
             logger.error(f"[WORKLOG_EXTRACT] Worklog problemático: {worklog}")
             return None
-            
-            if not author_account_id:
-                return None
-            
-            # Extrair outros dados necessários do worklog
-            # ... (código para extrair outros dados necessários)
-            
-            return {
-                "jira_worklog_id": worklog_id,
-                "issue_id": issue_id,
-                "issue_key": issue_key,
-                "author_account_id": author_account_id
-            }
-            
-        except Exception as e:
-            # Log detalhado do erro
-            print(f"Erro ao extrair dados do worklog: {str(e)}")
-            if hasattr(e, 'response') and e.response is not None:
-                print(f"Status: {e.response.status_code}, Resposta: {e.response.text}")
-            return None
-    
-    async def _sincronizar_projeto(self, projeto: Dict[str, Any]) -> None:
-        """
-        Sincroniza um projeto do Jira com o banco de dados local.
-        
-        Args:
-            projeto: Dados do projeto do Jira
-        """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira.sincronizar_projeto")
-        
-        try:
-            # Extrair dados básicos do projeto
-            project_key = projeto.get("key")
-            project_name = projeto.get("name")
-            
-            if not project_key or not project_name:
-                logger.warning(f"[PROJETO_SYNC] Projeto sem key ou name: {projeto}")
-                return
-            
-            logger.info(f"[PROJETO_SYNC] Sincronizando projeto {project_key}: {project_name}")
-            
-            # Verificar se o projeto já existe no banco
-            projeto_existente = await self.projeto_repository.get_by_jira_project_key(project_key)
-            
-            if projeto_existente:
-                logger.info(f"[PROJETO_SYNC] Projeto {project_key} já existe no banco, atualizando")
-                
-                # Atualizar dados do projeto
-                await self.projeto_repository.update(projeto_existente.id, {
-                    "nome": project_name,
-                    "data_atualizacao": datetime.now()
-                })
-            else:
-                logger.info(f"[PROJETO_SYNC] Projeto {project_key} não existe no banco, criando")
-                
-                # Buscar o status padrão para projetos
-                status_projeto = await self.projeto_repository.get_status_default()
-                
-                if not status_projeto:
-                    logger.error(f"[PROJETO_SYNC] Não foi possível encontrar status padrão para projetos")
-                    return
-                
-                # Criar o projeto no banco
-                await self.projeto_repository.create({
-                    "nome": project_name,
-                    "jira_project_key": project_key,
-                    "status_projeto_id": status_projeto.id,
-                    "ativo": True,
-                    "data_criacao": datetime.now(),
-                    "data_atualizacao": datetime.now()
-                })
-                
-            logger.info(f"[PROJETO_SYNC] Projeto {project_key} sincronizado com sucesso")
-            
-        except Exception as e:
-            logger.error(f"[PROJETO_SYNC] Erro ao sincronizar projeto {projeto.get('key', 'N/A')}: {str(e)}")
-            # Não propagar a exceção para não interromper o processo de sincronização
-    
-    async def _sincronizar_issue(self, issue: Dict[str, Any]) -> None:
-        """
-        Sincroniza uma issue do Jira com o banco de dados local.
-        
-        Args:
-            issue: Dados da issue do Jira
-        """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira.sincronizar_issue")
-        
-        try:
-            # Extrair dados básicos da issue
-            issue_id = issue.get("id")
-            issue_key = issue.get("key")
-            
-            if not issue_id or not issue_key:
-                logger.warning(f"[ISSUE_SYNC] Issue sem id ou key: {issue}")
-                return
-            
-            logger.info(f"[ISSUE_SYNC] Sincronizando issue {issue_key}")
-            
-            # Como não temos uma tabela específica para issues, apenas registramos o log
-            # Em uma implementação completa, poderíamos criar uma tabela para issues
-            
-            logger.info(f"[ISSUE_SYNC] Issue {issue_key} sincronizada com sucesso")
-            
-        except Exception as e:
-            logger.error(f"[ISSUE_SYNC] Erro ao sincronizar issue {issue.get('key', 'N/A')}: {str(e)}")
-            # Não propagar a exceção para não interromper o processo de sincronização
-    
-    async def _sincronizar_worklog(self, worklog: Dict[str, Any]) -> None:
-        """
-        Sincroniza um worklog do Jira com o banco de dados local.
-        
-        Args:
-            worklog: Dados do worklog do Jira
-        """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira.sincronizar_worklog")
-        
-        try:
-            # Extrair dados básicos do worklog
-            worklog_id = worklog.get("id")
-            
-            if not worklog_id:
-                logger.warning(f"[WORKLOG_SYNC] Worklog sem id: {worklog}")
-                return
-            
-            logger.info(f"[WORKLOG_SYNC] Sincronizando worklog {worklog_id}")
             
             # Extrair dados do worklog para o formato do sistema
             worklog_data = await self._extrair_dados_worklog(worklog)
