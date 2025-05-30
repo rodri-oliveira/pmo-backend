@@ -231,6 +231,7 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
     ) -> Dict[str, Any]:
         """
         Busca apontamentos com filtros avançados e opcionalmente agrega horas.
+        Corrigido para evitar JOIN duplo em recurso/equipe.
         
         Args:
             recurso_id: Filtro por recurso
@@ -246,45 +247,49 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         Returns:
             Dicionário com resultados e agregações
         """
-        # Usar joinedload para carregar relacionamentos necessários para agrupamento
         query = select(self.model)
         
-        # Carregar relacionamentos se necessário para agrupamento
+        # joinedload para agrupamento
         if agrupar_por_recurso:
             query = query.options(joinedload(self.model.recurso))
-            
         if agrupar_por_projeto:
             query = query.options(joinedload(self.model.projeto))
         
-        # Aplicar filtros
+        # Flags para controlar se join já foi feito
+        recurso_joined = False
+        equipe_joined = False
+
+        # JOIN em Recurso se necessário para qualquer filtro relacional
+        if any([equipe_id, secao_id]):
+            query = query.join(Recurso, self.model.recurso_id == Recurso.id, isouter=False)
+            recurso_joined = True
+        
+        # JOIN em Equipe se necessário para filtro de seção
+        if secao_id:
+            query = query.join(Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=False)
+            equipe_joined = True
+
+        # Filtros diretos
         if recurso_id:
             query = query.filter(self.model.recurso_id == recurso_id)
-            
         if projeto_id:
             query = query.filter(self.model.projeto_id == projeto_id)
-            
         if equipe_id:
-            query = query.join(Recurso, self.model.recurso_id == Recurso.id, isouter=False).filter(Recurso.equipe_principal_id == equipe_id)
-            
+            # Se já fez join em Recurso, só filtra
+            query = query.filter(Recurso.equipe_principal_id == equipe_id)
         if secao_id:
-            query = query.join(Recurso, self.model.recurso_id == Recurso.id, isouter=False)\
-                   .join(Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=False)\
-                   .filter(Equipe.secao_id == secao_id)
-            
+            # Se já fez join em Equipe, só filtra
+            query = query.filter(Equipe.secao_id == secao_id)
         if data_inicio:
             query = query.filter(self.model.data_apontamento >= data_inicio)
-            
         if data_fim:
             query = query.filter(self.model.data_apontamento <= data_fim)
-            
         if fonte_apontamento:
             query = query.filter(self.model.fonte_apontamento == fonte_apontamento)
-            
         if jira_issue_key:
             query = query.filter(self.model.jira_issue_key == jira_issue_key)
             
         try:
-            # Obter os apontamentos base para processamento
             result = await self.db.execute(query)
             apontamentos = result.scalars().all()
             

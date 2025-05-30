@@ -9,6 +9,7 @@ from app.repositories.apontamento_repository import ApontamentoRepository
 from app.db.orm_models import FonteApontamento
 from app.models.usuario import UsuarioInDB
 from app.services.relatorio_service import RelatorioService
+from app.utils.date_utils import parse_date_flex
 
 router = APIRouter(prefix="/relatorios", tags=["Relatórios"])
 
