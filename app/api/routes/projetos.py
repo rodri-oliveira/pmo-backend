@@ -1,11 +1,13 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.api.dtos.projeto_schema import ProjetoCreateSchema, ProjetoUpdateSchema, ProjetoResponseSchema
 from app.core.security import get_current_admin_user
 from app.db.session import get_db
 from app.services.projeto_service import ProjetoService
+from app.models import Projeto, Recurso, Equipe
 
 router = APIRouter(prefix="/projetos", tags=["Projetos"])
 
@@ -23,7 +25,6 @@ def autocomplete_projetos(
     Endpoint para autocomplete de projetos por nome ou código da empresa.
     """
     query = db.query(Projeto)
-    from sqlalchemy import or_
     query = query.filter(or_(Projeto.nome.ilike(f"%{search}%"), Projeto.codigo_empresa.ilike(f"%{search}%")))
     if apenas_ativos:
         query = query.filter(Projeto.ativo == True)
@@ -59,19 +60,32 @@ def list_projetos(
     codigo_empresa: Optional[str] = None,
     status_projeto: Optional[int] = None,
     ativo: Optional[bool] = None,
+    equipe_id: Optional[int] = None,
+    secao_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
     service = ProjetoService(db)
-    projetos = service.list(
-        skip=skip, 
-        limit=limit, 
-        nome=nome, 
-        codigo_empresa=codigo_empresa, 
-        status_projeto=status_projeto, 
-        ativo=ativo
-    )
-    return {"items": projetos}
+    query = service.model.query
+    if nome:
+        query = query.filter(service.model.nome.ilike(f"%{nome}%"))
+    if codigo_empresa:
+        query = query.filter(service.model.codigo_empresa.ilike(f"%{codigo_empresa}%"))
+    if status_projeto is not None:
+        query = query.filter(service.model.status_projeto_id == status_projeto)
+    if ativo is not None:
+        query = query.filter(service.model.ativo == ativo)
+    if equipe_id or secao_id:
+        query = query.join(Recurso, service.model.recurso_id == Recurso.id, isouter=False)
+    if equipe_id:
+        query = query.filter(Recurso.equipe_principal_id == equipe_id)
+    if secao_id:
+        query = query.join(Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=False)
+        query = query.filter(Equipe.secao_id == secao_id)
+
+    total = query.count()
+    projetos = query.offset(skip).limit(limit).all()
+    return {"items": projetos, "total": total}
 
 @router.get("/{projeto_id}", response_model=ProjetoResponseSchema)
 def get_projeto(

@@ -4,6 +4,7 @@ from app.api.dtos.projeto_schema import ProjetoCreateSchema, ProjetoUpdateSchema
 from app.repositories.projeto_repository import ProjetoRepository
 from app.repositories.status_projeto_repository import StatusProjetoRepository
 from app.api.dtos.projeto_schema import ProjetoResponseSchema, StatusProjetoSchema
+from app.models import Projeto, StatusProjeto
 
 class ProjetoService:
     def __init__(self, db: Session):
@@ -62,7 +63,7 @@ class ProjetoService:
         projeto = self.repository.get(id)
         if not projeto:
             return None
-        return ProjetoResponseSchema.model_validate(obj)
+        return ProjetoResponseSchema.model_validate(projeto)
     
     def list(self, skip: int = 0, limit: int = 100, nome: Optional[str] = None, 
              codigo_empresa: Optional[str] = None, status_projeto: Optional[int] = None, 
@@ -130,7 +131,7 @@ class ProjetoService:
         # Atualizar projeto
         data_dict = projeto_data.dict(exclude_unset=True)
         projeto = self.repository.update(id, data_dict)
-        return ProjetoResponseSchema.model_validate(obj)
+        return ProjetoResponseSchema.model_validate(projeto)
     
     def delete(self, id: int) -> None:
         """
@@ -148,4 +149,4 @@ class ProjetoService:
             raise ValueError(f"Projeto com ID {id} não encontrado")
         
         # Excluir logicamente o projeto
-        self.repository.delete(id) 
+        self.repository.delete(id)

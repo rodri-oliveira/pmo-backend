@@ -6,7 +6,7 @@ import logging
 from app.api.dtos.recurso_schema import RecursoCreateSchema, RecursoUpdateSchema, RecursoResponseSchema
 from app.core.security import get_current_admin_user
 from app.db.session import get_db
-from app.services.recurso_service import RecursoService
+from app.application.services.recurso_service import RecursoService
 
 router = APIRouter(prefix="/recursos", tags=["Recursos"])
 
@@ -189,4 +189,4 @@ def delete_recurso(
     try:
         service.delete(recurso_id)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) 
+        raise HTTPException(status_code=400, detail=str(e))
