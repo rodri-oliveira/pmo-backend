@@ -951,4 +951,56 @@ class JiraClient:
             
         except Exception as e:
             logger.error(f"Erro na sincronização de worklogs: {str(e)}")
-            raise 
+            raise
+
+    def get_worklogs_periodo(self, data_inicio: datetime, data_fim: datetime) -> List[Dict[str, Any]]:
+        """
+        Obtém worklogs registrados entre duas datas.
+        Args:
+            data_inicio: Data inicial (datetime)
+            data_fim: Data final (datetime)
+        Returns:
+            Lista de worklogs no período
+        """
+        import logging
+        logger = logging.getLogger("jira_client.get_worklogs_periodo")
+        try:
+            start_str = data_inicio.strftime("%Y-%m-%d")
+            end_str = data_fim.strftime("%Y-%m-%d")
+            jql = f"worklogDate >= {start_str} AND worklogDate <= {end_str} ORDER BY updated DESC"
+            issues = self.search_issues(jql, ["key", "summary"], 100)
+            if not issues:
+                logger.warning(f"[JIRA_WORKLOGS_PERIODO] Nenhuma issue com worklog encontrada entre {start_str} e {end_str}")
+                return []
+            logger.info(f"[JIRA_WORKLOGS_PERIODO] Encontradas {len(issues)} issues com worklogs no período")
+            all_worklogs = []
+            from dateutil import parser
+            for issue in issues:
+                issue_key = issue.get("key")
+                if not issue_key:
+                    continue
+                try:
+                    issue_worklogs = self.get_worklogs(issue_key)
+                    for worklog in issue_worklogs:
+                        started = worklog.get("started")
+                        if started:
+                            try:
+                                worklog_date = parser.parse(started)
+                                from datetime import timezone
+                                # Garante que data_inicio e data_fim são aware (UTC)
+                                aware_inicio = data_inicio if data_inicio.tzinfo else data_inicio.replace(tzinfo=timezone.utc)
+                                aware_fim = data_fim if data_fim.tzinfo else data_fim.replace(tzinfo=timezone.utc)
+                                if not (aware_inicio <= worklog_date <= aware_fim):
+                                    continue
+                            except Exception as e:
+                                logger.warning(f"[JIRA_WORKLOGS_PERIODO] Erro ao processar data do worklog: {str(e)}")
+                        worklog["issueKey"] = issue_key
+                        worklog["issueSummary"] = issue.get("fields", {}).get("summary", "")
+                        all_worklogs.append(worklog)
+                except Exception as e:
+                    logger.error(f"[JIRA_WORKLOGS_PERIODO] Erro ao buscar worklogs da issue {issue_key}: {str(e)}")
+            logger.info(f"[JIRA_WORKLOGS_PERIODO] Total de {len(all_worklogs)} worklogs encontrados")
+            return all_worklogs
+        except Exception as e:
+            logger.error(f"[JIRA_WORKLOGS_PERIODO] Erro ao buscar worklogs por período: {str(e)}")
+            return []
