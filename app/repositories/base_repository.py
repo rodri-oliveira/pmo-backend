@@ -68,19 +68,16 @@ class BaseRepository(Generic[T]):
             await self.db.rollback()
             raise e
     
-    async def update(self, id: Any, obj_in: Dict[str, Any]) -> Optional[T]:
+    async def update(self, id: Any, obj_in: Dict[str, Any]) -> Optional[dict]:
         """
-        Atualiza um registro existente.
+        Atualiza um registro existente e retorna um dicionário simples (evita problemas de ORM async).
         
         Args:
             id: ID do registro
             obj_in: Dados atualizados
             
         Returns:
-            Registro atualizado ou None se não encontrado
-            
-        Raises:
-            SQLAlchemyError: Se ocorrer um erro ao atualizar o registro
+            Dicionário com os dados atualizados ou None se não encontrado
         """
         try:
             obj = await self.get(id)
@@ -92,9 +89,18 @@ class BaseRepository(Generic[T]):
                     setattr(obj, key, value)
                     
             await self.db.commit()
+            # Recarrega o objeto e converte para dict simples
             await self.db.refresh(obj)
-            return obj
-        except SQLAlchemyError as e:
+            return {
+                "id": obj.id,
+                "data_inicio": obj.data_inicio.isoformat() if obj.data_inicio else None,
+                "data_fim": obj.data_fim.isoformat() if obj.data_fim else None,
+                "status": obj.status,
+                "mensagem": obj.mensagem,
+                "quantidade_apontamentos_processados": obj.quantidade_apontamentos_processados,
+                "usuario_id": obj.usuario_id
+            }
+        except Exception as e:
             await self.db.rollback()
             raise e
     
@@ -174,4 +180,4 @@ class BaseRepository(Generic[T]):
             await self.db.delete(entity)
             await self.db.commit()
         
-        return True 
+        return True

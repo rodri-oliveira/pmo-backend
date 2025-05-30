@@ -172,24 +172,23 @@ class SincronizacaoJiraService:
             "limit": limit
         }
     
-    async def sincronizar_apontamentos(self, usuario_id: Optional[int] = None) -> Dict[str, Any]:
+    async def sincronizar_apontamentos(self, usuario_id: Optional[int] = None, data_inicio: Optional[datetime] = None, data_fim: Optional[datetime] = None) -> Dict[str, Any]:
         """
         Sincroniza apontamentos com o Jira.
         
         Args:
             usuario_id: ID do usuário que iniciou a sincronização (opcional)
-            
+            data_inicio: Data inicial do período de busca dos worklogs (opcional)
+            data_fim: Data final do período de busca dos worklogs (opcional)
         Returns:
             Dict[str, Any]: Resultado da sincronização
         """
         import logging
         logger = logging.getLogger("sincronizacoes_jira.sincronizar_apontamentos")
-        
+        from datetime import datetime, timedelta
+
         # Registrar início da sincronização
-        # Como data_fim não pode ser NULL no banco de dados, usamos a mesma data de início
         data_atual = datetime.now()
-        
-        # Criar dados para o registro de sincronização
         dados_sincronizacao = {
             "data_inicio": data_atual,
             "data_fim": data_atual,  # Usamos a mesma data de início e atualizamos depois
@@ -197,58 +196,51 @@ class SincronizacaoJiraService:
             "mensagem": "Iniciando sincronização com o Jira",
             "quantidade_apontamentos_processados": 0
         }
-        
-        # Adicionar usuario_id apenas se for fornecido e não for None
         if usuario_id is not None:
             dados_sincronizacao["usuario_id"] = usuario_id
-            
         sincronizacao = await self.sincronizacao_repository.create(dados_sincronizacao)
-        
+        sincronizacao_id = sincronizacao["id"] if isinstance(sincronizacao, dict) else sincronizacao.id
+
         try:
-            # Buscar worklogs recentes (dos últimos 30 dias)
-            logger.info("[SINCRONIZAR_APONTAMENTOS] Buscando worklogs recentes dos últimos 30 dias")
-            worklogs = self.jira_client.get_recent_worklogs(days=30)
-            logger.info(f"[SINCRONIZAR_APONTAMENTOS] Encontrados {len(worklogs)} worklogs recentes")
-            
-            # Processar os worklogs
+            # Definir período de busca
+            if data_inicio and data_fim:
+                logger.info(f"[SINCRONIZAR_APONTAMENTOS] Buscando worklogs entre {data_inicio.date()} e {data_fim.date()}")
+                worklogs = self.jira_client.get_worklogs_periodo(data_inicio, data_fim)
+            else:
+                # Padrão: últimos 30 dias
+                logger.info("[SINCRONIZAR_APONTAMENTOS] Buscando worklogs recentes dos últimos 30 dias")
+                worklogs = self.jira_client.get_recent_worklogs(days=30)
+            logger.info(f"[SINCRONIZAR_APONTAMENTOS] Encontrados {len(worklogs)} worklogs no período")
+
             count = 0
             for worklog in worklogs:
                 try:
-                    # Extrair dados do worklog
                     worklog_data = await self._extrair_dados_worklog(worklog)
-                    
                     if worklog_data:
-                        # Sincronizar no banco
                         await self.apontamento_repository.sync_jira_apontamento(worklog_data["jira_worklog_id"], worklog_data)
                         count += 1
                         logger.info(f"[SINCRONIZAR_APONTAMENTOS] Worklog {worklog_data['jira_worklog_id']} sincronizado com sucesso")
                 except Exception as e:
                     logger.error(f"[SINCRONIZAR_APONTAMENTOS] Erro ao processar worklog: {str(e)}")
-                    # Continuar com o próximo worklog
-            
-            # Atualizar registro de sincronização
-            await self.sincronizacao_repository.update(sincronizacao.id, {
+
+            await self.sincronizacao_repository.update(sincronizacao_id, {
                 "data_fim": datetime.now(),
                 "status": "SUCESSO",
                 "mensagem": f"Sincronização concluída com sucesso. {count} apontamentos processados.",
                 "quantidade_apontamentos_processados": count
             })
-            
             return {
                 "status": "success",
                 "message": f"Sincronização concluída com sucesso",
                 "apontamentos_processados": count
             }
-            
         except Exception as e:
-            # Registrar falha
-            await self.sincronizacao_repository.update(sincronizacao.id, {
+            await self.sincronizacao_repository.update(sincronizacao_id, {
                 "data_fim": datetime.now(),
                 "status": "ERRO",
                 "mensagem": f"Erro na sincronização: {str(e)}",
                 "quantidade_apontamentos_processados": 0
             })
-            
             raise ValueError(f"Erro na sincronização com o Jira: {str(e)}")
             
     async def _sincronizar_projeto(self, projeto_key: str) -> Optional[Dict[str, Any]]:
