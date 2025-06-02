@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from app.domain.models.recurso_model import Recurso as DomainRecurso
 from app.application.dtos.recurso_dtos import RecursoCreateDTO, RecursoUpdateDTO
 from app.domain.repositories.recurso_repository import RecursoRepository
-from app.infrastructure.database.recurso_sql_model import RecursoSQL
+from app.db.orm_models import Recurso
 from app.utils.dependency_checker import check_dependents
 from fastapi import HTTPException
 from sqlalchemy import func
@@ -26,57 +26,57 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
         equipe_id: Optional[int] = None
     ):
         from sqlalchemy import or_
-        query = select(RecursoSQL)
+        query = select(Recurso)
         search_filter = or_(
-            RecursoSQL.nome.ilike(f"%{search}%"),
-            RecursoSQL.email.ilike(f"%{search}%"),
-            RecursoSQL.matricula.ilike(f"%{search}%")
+            Recurso.nome.ilike(f"%{search}%"),
+            Recurso.email.ilike(f"%{search}%"),
+            Recurso.matricula.ilike(f"%{search}%")
         )
         query = query.filter(search_filter)
         if apenas_ativos:
-            query = query.filter(RecursoSQL.ativo == True)
+            query = query.filter(Recurso.ativo == True)
         if equipe_id is not None:
-            query = query.filter(RecursoSQL.equipe_principal_id == equipe_id)
-        query = query.order_by(RecursoSQL.nome.asc())
+            query = query.filter(Recurso.equipe_principal_id == equipe_id)
+        query = query.order_by(Recurso.nome.asc())
         query = query.offset(skip).limit(limit)
         result = await self.db_session.execute(query)
         recursos_sql = result.scalars().all()
         return [DomainRecurso.model_validate(recurso) for recurso in recursos_sql]
 
     async def get_by_id(self, recurso_id: int) -> Optional[DomainRecurso]:
-        result = await self.db_session.execute(select(RecursoSQL).filter(RecursoSQL.id == recurso_id))
+        result = await self.db_session.execute(select(Recurso).filter(Recurso.id == recurso_id))
         recurso_sql = result.scalars().first()
         if recurso_sql:
             return DomainRecurso.model_validate(recurso_sql)
         return None
 
     async def get_by_email(self, email: str) -> Optional[DomainRecurso]:
-        result = await self.db_session.execute(select(RecursoSQL).filter(RecursoSQL.email == email))
+        result = await self.db_session.execute(select(Recurso).filter(Recurso.email == email))
         recurso_sql = result.scalars().first()
         if recurso_sql:
             return DomainRecurso.model_validate(recurso_sql)
         return None
 
     async def get_by_matricula(self, matricula: str) -> Optional[DomainRecurso]:
-        result = await self.db_session.execute(select(RecursoSQL).filter(RecursoSQL.matricula == matricula))
+        result = await self.db_session.execute(select(Recurso).filter(Recurso.matricula == matricula))
         recurso_sql = result.scalars().first()
         if recurso_sql:
             return DomainRecurso.model_validate(recurso_sql)
         return None
 
     async def get_by_jira_user_id(self, jira_user_id: str) -> Optional[DomainRecurso]:
-        result = await self.db_session.execute(select(RecursoSQL).filter(RecursoSQL.jira_user_id == jira_user_id))
+        result = await self.db_session.execute(select(Recurso).filter(Recurso.jira_user_id == jira_user_id))
         recurso_sql = result.scalars().first()
         if recurso_sql:
             return DomainRecurso.model_validate(recurso_sql)
         return None
 
     async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, equipe_id: Optional[int] = None) -> List[DomainRecurso]:
-        query = select(RecursoSQL)
+        query = select(Recurso)
         if apenas_ativos:
-            query = query.filter(RecursoSQL.ativo == True)
+            query = query.filter(Recurso.ativo == True)
         if equipe_id is not None:
-            query = query.filter(RecursoSQL.equipe_principal_id == equipe_id)
+            query = query.filter(Recurso.equipe_principal_id == equipe_id)
         
         query = query.offset(skip).limit(limit)
         
@@ -97,10 +97,11 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
                 if isinstance(value, str) and (value == "" or value.upper() == "NULL"):
                     data[key] = None
                     
-            new_recurso_sql = RecursoSQL(
+            now_naive = datetime.now().replace(microsecond=0, tzinfo=None)
+            new_recurso_sql = Recurso(
                 **data,
-                data_criacao=datetime.now(timezone.utc),
-                data_atualizacao=datetime.now(timezone.utc),
+                data_criacao=now_naive,
+                data_atualizacao=now_naive,
                 ativo=True
             )
             self.db_session.add(new_recurso_sql)
@@ -116,7 +117,7 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
 
     async def update(self, recurso_id: int, recurso_update_dto: RecursoUpdateDTO) -> Optional[DomainRecurso]:
         try:
-            recurso_sql = await self.db_session.get(RecursoSQL, recurso_id)
+            recurso_sql = await self.db_session.get(Recurso, recurso_id)
             if not recurso_sql:
                 return None
 
@@ -130,7 +131,7 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
             for key, value in update_data.items():
                 setattr(recurso_sql, key, value)
             
-            recurso_sql.data_atualizacao = datetime.now(timezone.utc)
+            recurso_sql.data_atualizacao = datetime.now().replace(microsecond=0, tzinfo=None)
             await self.db_session.commit()
             await self.db_session.refresh(recurso_sql)
             return DomainRecurso.model_validate(recurso_sql)
@@ -192,13 +193,13 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
                 )
 
             # Buscar o recurso
-            recurso_to_delete_sql = await self.db_session.get(RecursoSQL, recurso_id)
+            recurso_to_delete_sql = await self.db_session.get(Recurso, recurso_id)
             if not recurso_to_delete_sql:
                 return None
 
             # Inativar o recurso em vez de deletar
             recurso_to_delete_sql.ativo = False
-            recurso_to_delete_sql.data_atualizacao = datetime.now(timezone.utc)
+            recurso_to_delete_sql.data_atualizacao = datetime.now().replace(microsecond=0, tzinfo=None)
             await self.db_session.commit()
             await self.db_session.refresh(recurso_to_delete_sql)
             
