@@ -8,6 +8,30 @@ def remove_timezone(dt):
     if dt and dt.tzinfo:
         return dt.replace(tzinfo=None)
     return dt
+
+# Nova função para padronizar formato de datetime (sem microssegundos)
+def padronizar_datetime(dt):
+    """Remove timezone e microssegundos de um datetime"""
+    if dt and dt.tzinfo:
+        dt = dt.replace(tzinfo=None)
+    if dt and dt.microsecond:
+        dt = dt.replace(microsecond=0)
+    return dt
+
+# Função para converter string de data ISO para datetime padronizado
+def converter_data_jira(data_str):
+    """Converte data do Jira para datetime padronizado (sem timezone e microssegundos)"""
+    if not data_str:
+        return None
+    try:
+        if 'Z' in data_str:
+            dt = datetime.fromisoformat(data_str.replace('Z', '+00:00'))
+        else:
+            dt = datetime.fromisoformat(data_str)
+        return padronizar_datetime(dt)
+    except Exception as e:
+        logger.warning(f"Erro ao converter data: {e}. Valor original: {data_str}")
+        return None
 import aiohttp
 from app.db.session import AsyncSessionLocal
 # Assumindo que SQLAlchemyProjetoRepository interage com sua tabela 'projeto' local
@@ -142,28 +166,14 @@ async def sincronizar_epics_jira():
                     epic_nao_ativo = nome_status_epic_jira in ['concluído', 'fechado', 'resolvido', 'cancelado', 'done', 'closed', 'resolved', 'cancelled']
                     projeto_ativo_local = not epic_nao_ativo
 
-                    # Datas previstas do Epic
-                    data_fim_prevista_epic = None
-                    data_inicio_prevista_epic = None
-                    
+                    # Processa data de criação
                     created_str = fields.get("created")
                     if created_str:
-                        try:
-                            # Converte a data de criação do formato ISO para datetime
-                            # O formato do Jira é algo como "2024-10-21T15:54:14.336-0300"
-                            if 'Z' in created_str:
-                                # Se usar 'Z' para UTC
-                                data_criacao = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
-                            else:
-                                # Se já tiver o fuso horário especificado
-                                data_criacao = datetime.fromisoformat(created_str)
-                            logger.info(f"Data de criação extraída do Jira para {epic_key_jira}: {data_criacao}")
-                        except Exception as e:
-                            logger.warning(f"Erro ao converter data de criação para {epic_key_jira}: {e}. Valor original: {created_str}")
-                            data_criacao = datetime.now()
+                        data_criacao = converter_data_jira(created_str)
+                        logger.info(f"Data de criação extraída do Jira para {epic_key_jira}: {data_criacao}")
                     else:
                         logger.warning(f"Campo 'created' não encontrado para {epic_key_jira}, usando data atual")
-                        data_criacao = datetime.now()
+                        data_criacao = padronizar_datetime(datetime.now())
 
                     # Extrai datas de início e fim do Epic (customfield_10020 para sprints)
                     data_inicio_prevista = None
@@ -173,39 +183,25 @@ async def sincronizar_epics_jira():
                     sprint_data = fields.get("customfield_10020", [])
                     if sprint_data and len(sprint_data) > 0:
                         logger.debug(f"Sprint data para {epic_key_jira}: {sprint_data}")
-                        # Pega o primeiro sprint (geralmente o mais recente)
                         sprint_info = sprint_data[0]
                         logger.debug(f"Sprint info para {epic_key_jira}: {sprint_info}")
                         
-                        # Extrai startDate e endDate do sprint
                         start_date_str = sprint_info.get("startDate")
                         end_date_str = sprint_info.get("endDate")
                         
                         logger.debug(f"Datas encontradas para {epic_key_jira}: startDate={start_date_str}, endDate={end_date_str}")
                         
                         if start_date_str:
-                            try:
-                                # Converte de ISO para datetime e extrai apenas a data
-                                if 'Z' in start_date_str:
-                                    start_date = datetime.fromisoformat(start_date_str.replace('Z', '+00:00')).date()
-                                else:
-                                    start_date = datetime.fromisoformat(start_date_str).date()
-                                data_inicio_prevista = start_date
-                                logger.info(f"Data início extraída para {epic_key_jira}: {start_date} (valor original: {start_date_str})")
-                            except Exception as e:
-                                logger.warning(f"Erro ao converter data de início para {epic_key_jira}: {e} (valor original: {start_date_str})")
+                            start_datetime = converter_data_jira(start_date_str)
+                            if start_datetime:
+                                data_inicio_prevista = start_datetime.date()
+                                logger.info(f"Data início extraída para {epic_key_jira}: {data_inicio_prevista}")
                         
                         if end_date_str:
-                            try:
-                                # Converte de ISO para datetime e extrai apenas a data
-                                if 'Z' in end_date_str:
-                                    end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00')).date()
-                                else:
-                                    end_date = datetime.fromisoformat(end_date_str).date()
-                                data_fim_prevista = end_date
-                                logger.info(f"Data fim extraída para {epic_key_jira}: {end_date} (valor original: {end_date_str})")
-                            except Exception as e:
-                                logger.warning(f"Erro ao converter data de fim para {epic_key_jira}: {e} (valor original: {end_date_str})")
+                            end_datetime = converter_data_jira(end_date_str)
+                            if end_datetime:
+                                data_fim_prevista = end_datetime.date()
+                                logger.info(f"Data fim extraída para {epic_key_jira}: {data_fim_prevista}")
                     else:
                         logger.warning(f"Nenhum dado de sprint encontrado para {epic_key_jira}")
                     
@@ -213,65 +209,44 @@ async def sincronizar_epics_jira():
                     if data_fim_prevista is None:
                         duedate_str = fields.get("duedate")
                         if duedate_str:
-                            try:
-                                if 'Z' in duedate_str:
-                                    due_date = datetime.fromisoformat(duedate_str.replace('Z', '+00:00')).date()
-                                else:
-                                    due_date = datetime.fromisoformat(duedate_str).date()
-                                data_fim_prevista = due_date
-                                logger.info(f"Data fim extraída de duedate para {epic_key_jira}: {due_date} (valor original: {duedate_str})")
-                            except Exception as e:
-                                logger.warning(f"Erro ao converter duedate para {epic_key_jira}: {e} (valor original: {duedate_str})")
+                            due_datetime = converter_data_jira(duedate_str)
+                            if due_datetime:
+                                data_fim_prevista = due_datetime.date()
+                                logger.info(f"Data fim extraída de duedate para {epic_key_jira}: {data_fim_prevista}")
                     
                     # Fallback para data de criação se não tiver data de início
-                    if data_inicio_prevista is None and created_str:
-                        try:
-                            # Usa a data de criação como fallback para data de início
-                            data_inicio_prevista = data_criacao.date()
-                            logger.info(f"Usando data de criação como fallback para data de início para {epic_key_jira}: {data_inicio_prevista}")
-                        except Exception as e:
-                            logger.warning(f"Erro ao usar data de criação como fallback para {epic_key_jira}: {e}")
+                    if data_inicio_prevista is None and data_criacao:
+                        data_inicio_prevista = data_criacao.date()
+                        logger.info(f"Usando data de criação como fallback para data de início para {epic_key_jira}: {data_inicio_prevista}")
                     
                     # Fallback para data de início + 30 dias se não tiver data de fim
                     if data_fim_prevista is None and data_inicio_prevista is not None:
-                        try:
-                            # Adiciona 30 dias à data de início como estimativa para data de fim
-                            from datetime import timedelta
-                            data_fim_prevista = data_inicio_prevista + timedelta(days=30)
-                            logger.info(f"Usando data de início + 30 dias como fallback para data de fim para {epic_key_jira}: {data_fim_prevista}")
-                        except Exception as e:
-                            logger.warning(f"Erro ao calcular data de fim como fallback para {epic_key_jira}: {e}")
+                        data_fim_prevista = data_inicio_prevista + timedelta(days=30)
+                        logger.info(f"Usando data de início + 30 dias como fallback para data de fim para {epic_key_jira}: {data_fim_prevista}")
 
                     if not epic_key_jira or not epic_name_jira:
                         logger.warning(f"Epic no Jira com dados incompletos (chave ou nome faltando) na seção '{chave_jira_secao}', ID Jira: {epic_data_jira.get('id')}. Pulando.")
                         continue
 
                     projeto_local_existente = await repo_projeto_local.get_by_jira_project_key(epic_key_jira)
-                    now = datetime.now()
+                    now = padronizar_datetime(datetime.now())  # Padroniza também o datetime atual
 
                     if projeto_local_existente is None:
                         # INSERT novo projeto local (Epic)
-                        # A data_criacao já foi extraída anteriormente do campo 'created' do Jira
-                        logger.info(f"Usando data de criação já extraída para {epic_key_jira}: {data_criacao}")
-                        
-                        # Remover fuso horário das datas antes de criar o DTO
-                        data_criacao_sem_tz = remove_timezone(data_criacao)
-                        now_sem_tz = remove_timezone(now)
-                        
-                        logger.info(f"Data de criação após remover timezone para {epic_key_jira}: {data_criacao_sem_tz}")
+                        logger.info(f"Usando data de criação padronizada para {epic_key_jira}: {data_criacao}")
 
                         dto_create = ProjetoCreateDTO(
                             nome=epic_name_jira,
                             jira_project_key=epic_key_jira,
-                            secao_id=secao_id,  # Preenche corretamente com o id da secao
+                            secao_id=secao_id,
                             status_projeto_id=STATUS_NAO_INICIADO_ID,
                             ativo=projeto_ativo_local,
                             descricao=epic_description_jira,
                             codigo_empresa=None,
                             data_inicio_prevista=data_inicio_prevista,
                             data_fim_prevista=data_fim_prevista,
-                            data_criacao=data_criacao_sem_tz,
-                            data_atualizacao=now_sem_tz
+                            data_criacao=data_criacao,
+                            data_atualizacao=now
                         )
                         try:
                             await repo_projeto_local.create(dto_create)
@@ -280,31 +255,23 @@ async def sincronizar_epics_jira():
                             logger.error(f"Erro ao inserir projeto local para Epic {epic_key_jira}: {e}")
                     else:
                         # UPDATE projeto local existente (Epic)
-                        # Defina quais campos devem ser atualizados a partir do Jira
-                        # Remover fuso horário da data de atualização
-                        now_sem_tz = remove_timezone(now)
-                        logger.info(f"Data de atualização após remover timezone para {epic_key_jira}: {now_sem_tz}")
+                        logger.info(f"Data de atualização padronizada para {epic_key_jira}: {now}")
                         
                         update_data = {
                             "nome": epic_name_jira,
                             "descricao": epic_description_jira,
                             "ativo": projeto_ativo_local,
-                            "data_atualizacao": now_sem_tz,
-                            "secao_id": secao_id  # Preenche corretamente com o id da secao
-                            # Considere atualizar status_projeto_id se houver mapeamento do status do Epic Jira
-                            # Considere atualizar data_inicio_prevista e data_fim_prevista
+                            "data_atualizacao": now,
+                            "secao_id": secao_id
                         }
                         if data_inicio_prevista:
                             update_data["data_inicio_prevista"] = data_inicio_prevista
-                        if data_fim_prevista: # Se duedate for None, não tentará atualizar para None se o DTO não permitir
+                        if data_fim_prevista:
                              update_data["data_fim_prevista"] = data_fim_prevista
-                        else: # Se duedate for None e você quiser limpar a data_fim_prevista
+                        else:
                             update_data["data_fim_prevista"] = None
 
-
-                        # Crie o DTO de update com os campos que podem ser None
-                        # Certifique-se que seu ProjetoUpdateDTO lida com campos opcionais (None)
-                        dto_update = ProjetoUpdateDTO(**{k: v for k, v in update_data.items() if v is not None or k in ["descricao", "data_inicio_prevista", "data_fim_prevista"]}) # Permite None para certos campos
+                        dto_update = ProjetoUpdateDTO(**{k: v for k, v in update_data.items() if v is not None or k in ["descricao", "data_inicio_prevista", "data_fim_prevista"]})
                         
                         try:
                             await repo_projeto_local.update(projeto_local_existente.id, dto_update)

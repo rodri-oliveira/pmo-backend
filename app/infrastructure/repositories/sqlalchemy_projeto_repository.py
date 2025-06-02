@@ -73,64 +73,46 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
 
     async def create(self, projeto_create_dto: ProjetoCreateDTO) -> DomainProjeto:
         try:
-            # Extrair dados do DTO
             data = projeto_create_dto.model_dump()
             
-            # NÃO vamos mais substituir as datas por datetime.now() aqui
-            # Vamos deixar que o valor padrão do banco seja usado apenas se realmente não houver data no DTO
-            # Isso garante que as datas extraídas do Jira sejam preservadas
-                
-            # Criando um dicionário com os campos obrigatórios e opcionais
+            # Criar dicionário apenas com campos obrigatórios
             projeto_data = {
                 "nome": data["nome"],
                 "status_projeto_id": data["status_projeto_id"],
+                "ativo": data.get("ativo", True)
             }
             
-            # Adicionando campos opcionais apenas se estiverem presentes no DTO
-            for campo in ["jira_project_key", "secao_id", "ativo", "descricao", "codigo_empresa", 
-                         "data_inicio_prevista", "data_fim_prevista"]:
+            # Adicionar campos opcionais apenas se presentes e não nulos
+            campos_opcionais = [
+                "jira_project_key", "secao_id", "descricao", "codigo_empresa",
+                "data_inicio_prevista", "data_fim_prevista"
+            ]
+            
+            for campo in campos_opcionais:
                 if campo in data and data[campo] is not None:
                     projeto_data[campo] = data[campo]
             
-            # Adicionando as datas de criação e atualização APENAS se estiverem presentes no DTO
-            # Isso é crucial para manter as datas do Jira quando fornecidas
+            # Tratar datas especiais - usar apenas se fornecidas explicitamente
             if "data_criacao" in data and data["data_criacao"] is not None:
                 projeto_data["data_criacao"] = data["data_criacao"]
-                
+            
             if "data_atualizacao" in data and data["data_atualizacao"] is not None:
                 projeto_data["data_atualizacao"] = data["data_atualizacao"]
-                
-            # Criar o objeto SQL com os campos explícitos
+            
+            # Criar objeto apenas com dados válidos
             new_projeto_sql = Projeto(**projeto_data)
             
             self.db_session.add(new_projeto_sql)
-            await self.db_session.commit()
+            await self.db_session.flush()
             await self.db_session.refresh(new_projeto_sql)
             
-            # Converter para dicionário antes de validar
-            projeto_dict = self._to_dict(new_projeto_sql)
-            return DomainProjeto.model_validate(projeto_dict)
+            return DomainProjeto.model_validate(self._to_dict(new_projeto_sql))
         except Exception as e:
-            # Rollback em caso de erro
             await self.db_session.rollback()
-            
-            # Identificar tipos específicos de erros
-            error_msg = str(e)
-            if "violates unique constraint" in error_msg:
-                if "projeto_nome_key" in error_msg:
-                    raise HTTPException(status_code=400, detail=f"Já existe um projeto com este nome.")
-                elif "projeto_codigo_empresa_key" in error_msg:
-                    raise HTTPException(status_code=400, detail=f"Já existe um projeto com este código de empresa.")
-                elif "projeto_jira_project_key_key" in error_msg:
-                    raise HTTPException(status_code=400, detail=f"Já existe um projeto com esta chave de projeto Jira.")
-                else:
-                    raise HTTPException(status_code=400, detail=f"Violação de restrição única: {error_msg}")
-            elif "violates foreign key constraint" in error_msg and "status_projeto_id" in error_msg:
-                raise HTTPException(status_code=400, detail=f"O status de projeto informado não existe.")
-            else:
-                # Log do erro para diagnóstico
-                print(f"Erro ao criar projeto: {error_msg}")
-                raise HTTPException(status_code=500, detail=f"Erro ao criar projeto: {error_msg}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao criar projeto: {str(e)}"
+            )
 
     async def update(self, projeto_id: int, projeto_update_dto: ProjetoUpdateDTO) -> Optional[DomainProjeto]:
         try:
@@ -157,19 +139,19 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             error_msg = str(e)
             if "violates unique constraint" in error_msg:
                 if "projeto_nome_key" in error_msg:
-                    raise HTTPException(status_code=400, detail=f"Já existe outro projeto com este nome.")
+                    raise HTTPException(status_code=400, detail=f"Já existe um projeto com este nome.")
                 elif "projeto_codigo_empresa_key" in error_msg:
-                    raise HTTPException(status_code=400, detail=f"Já existe outro projeto com este código de empresa.")
+                    raise HTTPException(status_code=400, detail=f"Já existe um projeto com este código de empresa.")
                 elif "projeto_jira_project_key_key" in error_msg:
-                    raise HTTPException(status_code=400, detail=f"Já existe outro projeto com esta chave de projeto Jira.")
+                    raise HTTPException(status_code=400, detail=f"Já existe um projeto com esta chave de projeto Jira.")
                 else:
                     raise HTTPException(status_code=400, detail=f"Violação de restrição única: {error_msg}")
             elif "violates foreign key constraint" in error_msg and "status_projeto_id" in error_msg:
                 raise HTTPException(status_code=400, detail=f"O status de projeto informado não existe.")
             else:
                 # Log do erro para diagnóstico
-                print(f"Erro ao atualizar projeto: {error_msg}")
-                raise HTTPException(status_code=500, detail=f"Erro ao atualizar projeto: {error_msg}")
+                print(f"Erro ao criar projeto: {error_msg}")
+                raise HTTPException(status_code=500, detail=f"Erro ao criar projeto: {error_msg}")
 
     async def delete(self, projeto_id: int) -> Optional[DomainProjeto]:
         try:
