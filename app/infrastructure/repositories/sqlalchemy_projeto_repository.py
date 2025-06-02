@@ -8,7 +8,7 @@ from sqlalchemy.orm import class_mapper
 from app.domain.models.projeto_model import Projeto as DomainProjeto
 from app.application.dtos.projeto_dtos import ProjetoCreateDTO, ProjetoUpdateDTO
 from app.domain.repositories.projeto_repository import ProjetoRepository
-from app.infrastructure.database.projeto_sql_model import ProjetoSQL
+from app.db.orm_models import Projeto
 from fastapi import HTTPException
 
 class SQLAlchemyProjetoRepository(ProjetoRepository):
@@ -22,28 +22,28 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
         return {c.key: getattr(obj, c.key) for c in class_mapper(obj.__class__).columns}
 
     async def get_by_id(self, projeto_id: int) -> Optional[DomainProjeto]:
-        result = await self.db_session.execute(select(ProjetoSQL).filter(ProjetoSQL.id == projeto_id))
+        result = await self.db_session.execute(select(Projeto).filter(Projeto.id == projeto_id))
         projeto_sql = result.scalars().first()
         if projeto_sql:
             return DomainProjeto.model_validate(self._to_dict(projeto_sql))
         return None
 
     async def get_by_nome(self, nome: str) -> Optional[DomainProjeto]:
-        result = await self.db_session.execute(select(ProjetoSQL).filter(ProjetoSQL.nome == nome))
+        result = await self.db_session.execute(select(Projeto).filter(Projeto.nome == nome))
         projeto_sql = result.scalars().first()
         if projeto_sql:
             return DomainProjeto.model_validate(self._to_dict(projeto_sql))
         return None
 
     async def get_by_codigo_empresa(self, codigo_empresa: str) -> Optional[DomainProjeto]:
-        result = await self.db_session.execute(select(ProjetoSQL).filter(ProjetoSQL.codigo_empresa == codigo_empresa))
+        result = await self.db_session.execute(select(Projeto).filter(Projeto.codigo_empresa == codigo_empresa))
         projeto_sql = result.scalars().first()
         if projeto_sql:
             return DomainProjeto.model_validate(self._to_dict(projeto_sql))
         return None
 
     async def get_by_jira_project_key(self, jira_project_key: str) -> Optional[DomainProjeto]:
-        result = await self.db_session.execute(select(ProjetoSQL).filter(ProjetoSQL.jira_project_key == jira_project_key))
+        result = await self.db_session.execute(select(Projeto).filter(Projeto.jira_project_key == jira_project_key))
         projeto_sql = result.scalars().first()
         if projeto_sql:
             return DomainProjeto.model_validate(self._to_dict(projeto_sql))
@@ -52,14 +52,14 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
     async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto: Optional[int] = None) -> List[DomainProjeto]:
         try:
             # Usar selectinload para carregar o relacionamento status_projeto
-            query = select(ProjetoSQL).options(selectinload(ProjetoSQL.status_projeto))
+            query = select(Projeto).options(selectinload(Projeto.status_projeto))
             
             if apenas_ativos:
-                query = query.filter(ProjetoSQL.ativo == True)
+                query = query.filter(Projeto.ativo == True)
             if status_projeto is not None:
-                query = query.filter(ProjetoSQL.status_projeto_id == status_projeto)
+                query = query.filter(Projeto.status_projeto_id == status_projeto)
             
-            query = query.order_by(ProjetoSQL.nome).offset(skip).limit(limit)
+            query = query.order_by(Projeto.nome).offset(skip).limit(limit)
             result = await self.db_session.execute(query)
             projetos_sql = result.scalars().all()
             
@@ -82,7 +82,7 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             data["data_atualizacao"] = now
             
             # Criar o objeto SQL e salvá-lo
-            new_projeto_sql = ProjetoSQL(**data)
+            new_projeto_sql = Projeto(**data)
             self.db_session.add(new_projeto_sql)
             await self.db_session.commit()
             await self.db_session.refresh(new_projeto_sql)
@@ -114,7 +114,7 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
 
     async def update(self, projeto_id: int, projeto_update_dto: ProjetoUpdateDTO) -> Optional[DomainProjeto]:
         try:
-            projeto_sql = await self.db_session.get(ProjetoSQL, projeto_id)
+            projeto_sql = await self.db_session.get(Projeto, projeto_id)
             if not projeto_sql:
                 return None
 
@@ -153,7 +153,7 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
 
     async def delete(self, projeto_id: int) -> Optional[DomainProjeto]:
         try:
-            projeto_to_delete_sql = await self.db_session.get(ProjetoSQL, projeto_id)
+            projeto_to_delete_sql = await self.db_session.get(Projeto, projeto_id)
             if not projeto_to_delete_sql:
                 return None
             
