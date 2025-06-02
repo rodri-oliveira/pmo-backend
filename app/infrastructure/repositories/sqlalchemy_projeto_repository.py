@@ -76,13 +76,33 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             # Extrair dados do DTO
             data = projeto_create_dto.model_dump()
             
-            # Adicionar manualmente as datas
-            now = datetime.now()
-            data["data_criacao"] = now
-            data["data_atualizacao"] = now
+            # NÃO vamos mais substituir as datas por datetime.now() aqui
+            # Vamos deixar que o valor padrão do banco seja usado apenas se realmente não houver data no DTO
+            # Isso garante que as datas extraídas do Jira sejam preservadas
+                
+            # Criando um dicionário com os campos obrigatórios e opcionais
+            projeto_data = {
+                "nome": data["nome"],
+                "status_projeto_id": data["status_projeto_id"],
+            }
             
-            # Criar o objeto SQL e salvá-lo
-            new_projeto_sql = Projeto(**data)
+            # Adicionando campos opcionais apenas se estiverem presentes no DTO
+            for campo in ["jira_project_key", "secao_id", "ativo", "descricao", "codigo_empresa", 
+                         "data_inicio_prevista", "data_fim_prevista"]:
+                if campo in data and data[campo] is not None:
+                    projeto_data[campo] = data[campo]
+            
+            # Adicionando as datas de criação e atualização APENAS se estiverem presentes no DTO
+            # Isso é crucial para manter as datas do Jira quando fornecidas
+            if "data_criacao" in data and data["data_criacao"] is not None:
+                projeto_data["data_criacao"] = data["data_criacao"]
+                
+            if "data_atualizacao" in data and data["data_atualizacao"] is not None:
+                projeto_data["data_atualizacao"] = data["data_atualizacao"]
+                
+            # Criar o objeto SQL com os campos explícitos
+            new_projeto_sql = Projeto(**projeto_data)
+            
             self.db_session.add(new_projeto_sql)
             await self.db_session.commit()
             await self.db_session.refresh(new_projeto_sql)
