@@ -12,6 +12,7 @@ class ProjetoSQL(Base):
     descricao = Column(Text, nullable=True)
     jira_project_key = Column(String(100), unique=True, nullable=True, index=True)
     status_projeto_id = Column(Integer, ForeignKey("status_projeto.id", ondelete="RESTRICT"), nullable=False, index=True)
+    secao_id = Column(Integer, ForeignKey("secao.id", ondelete="RESTRICT"), nullable=True, index=True)
     data_inicio_prevista = Column(Date, nullable=True)
     data_fim_prevista = Column(Date, nullable=True)
     data_criacao = Column(DateTime(timezone=True), nullable=False)
@@ -19,4 +20,5 @@ class ProjetoSQL(Base):
     ativo = Column(Boolean, nullable=False, default=True)
 
     status_projeto = relationship("StatusProjetoSQL")
+    secao = relationship("Secao")
 

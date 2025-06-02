@@ -9,6 +9,7 @@ class Projeto(BaseModel):
     descricao: Optional[str] = None
     jira_project_key: Optional[str] = None
     status_projeto_id: int
+    secao_id: Optional[int] = None
     data_inicio_prevista: Optional[date] = None
     data_fim_prevista: Optional[date] = None
     data_criacao: Optional[datetime] = None
