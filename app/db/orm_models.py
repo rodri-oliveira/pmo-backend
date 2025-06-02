@@ -26,6 +26,7 @@ class Secao(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     nome = Column(String(100), nullable=False, unique=True)
     descricao = Column(Text, nullable=True)
+    jira_project_key = Column(String(20), nullable=True, unique=True, index=True)  # Chave do Jira para vinculação
     data_criacao = Column(DateTime, nullable=False, default=func.now())
     data_atualizacao = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
     ativo = Column(Boolean, nullable=False, default=True)
@@ -98,6 +99,7 @@ class Projeto(Base):
     descricao = Column(Text, nullable=True)
     jira_project_key = Column(String(100), nullable=True, unique=True, index=True)
     status_projeto_id = Column(Integer, ForeignKey("status_projeto.id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False, index=True)
+    secao_id = Column(Integer, ForeignKey("secao.id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=True, index=True)
     data_inicio_prevista = Column(Date, nullable=True)
     data_fim_prevista = Column(Date, nullable=True)
     data_criacao = Column(DateTime, nullable=False, default=func.now())
@@ -106,6 +108,7 @@ class Projeto(Base):
     
     # Relacionamentos
     status = relationship("StatusProjeto", back_populates="projetos")
+    secao = relationship("Secao")
     alocacoes = relationship("AlocacaoRecursoProjeto", back_populates="projeto")
     apontamentos = relationship("Apontamento", back_populates="projeto")
 
