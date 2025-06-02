@@ -13,7 +13,9 @@ class ProjetoBaseDTO(BaseModel):
     data_fim_prevista: Optional[date] = None
 
 class ProjetoCreateDTO(ProjetoBaseDTO):
-    pass
+    data_criacao: Optional[datetime] = None
+    data_atualizacao: Optional[datetime] = None
+    ativo: bool = True
 
 class ProjetoUpdateDTO(BaseModel):
     nome: Optional[str] = None
