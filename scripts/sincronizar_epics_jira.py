@@ -101,7 +101,7 @@ async def buscar_epics_do_projeto_jira(session_http, chave_jira_secao):
             "jql": f'project = "{chave_jira_secao}" AND issuetype = Epic', # Chave do projeto entre aspas na JQL
             "fields": "summary,key,description,project,status,duedate,created,updated,customfield_10020", # Campos necessários incluindo customfield_10020 para datas de sprint/epic
             "startAt": start_at,
-            "maxResults": MAX_RESULTS_PER_PAGE
+            "maxResults": 100
         }
         logger.info(f"Buscando Epics para seção Jira '{chave_jira_secao}' (página começando em: {start_at})...")
         async with session_http.get(JIRA_API_SEARCH_URL, headers=JIRA_AUTH_HEADER, params=params) as resp:
@@ -111,13 +111,13 @@ async def buscar_epics_do_projeto_jira(session_http, chave_jira_secao):
 
             data = await resp.json()
             issues_na_pagina = data.get("issues", [])
+            total_issues_jira = data.get("total", 0)
+            logger.info(f"Secao {chave_jira_secao} (página startAt={start_at}): {len(issues_na_pagina)} epics encontrados | total reportado pela API: {total_issues_jira}")
             if not issues_na_pagina:
                 logger.info(f"Nenhum Epic a mais encontrado para '{chave_jira_secao}' nesta página.")
                 break # Fim da paginação
 
             all_epics.extend(issues_na_pagina)
-            
-            total_issues_jira = data.get("total", 0)
             start_at += len(issues_na_pagina) # Incrementa para a próxima página
             
             if start_at >= total_issues_jira:
