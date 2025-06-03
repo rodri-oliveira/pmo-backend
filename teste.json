@@ -2,7 +2,7 @@
     "expand": "schema,names",
     "startAt": 0,
     "maxResults": 50,
-    "total": 770935,
+    "total": 770976,
     "issues": [
         {
             "expand": "operations,versionedRepresentations,editmeta,changelog,customfield_10010.requestTypePractice,renderedFields",
@@ -4456,13 +4456,6 @@
                 },
                 "customfield_10261": null,
                 "customfield_10262": null,
-                "customfield_12560": {
-                    "errorMessage": "Você não tem permissão para acessar este projeto de serviço.",
-                    "i18nErrorMessage": {
-                        "i18nKey": "sd.jsm.agent.servicedesk.error.project.nopermission",
-                        "parameters": []
-                    }
-                },
                 "customfield_10020": [
                     {
                         "id": 46554,
@@ -4475,6 +4468,13 @@
                         "completeDate": "2025-05-16T12:40:03.999Z"
                     }
                 ],
+                "customfield_12560": {
+                    "errorMessage": "Você não tem permissão para acessar este projeto de serviço.",
+                    "i18nErrorMessage": {
+                        "i18nKey": "sd.jsm.agent.servicedesk.error.project.nopermission",
+                        "parameters": []
+                    }
+                },
                 "customfield_10263": null,
                 "customfield_10142": null,
                 "customfield_10021": null,
@@ -5192,15 +5192,8 @@
                     "isWatching": false
                 },
                 "customfield_10260": null,
-                "customfield_12561": {
-                    "errorMessage": "Você não tem permissão para acessar este projeto de serviço.",
-                    "i18nErrorMessage": {
-                        "i18nKey": "sd.jsm.agent.servicedesk.error.project.nopermission",
-                        "parameters": []
-                    }
-                },
                 "customfield_10261": null,
-                "customfield_12560": {
+                "customfield_12561": {
                     "errorMessage": "Você não tem permissão para acessar este projeto de serviço.",
                     "i18nErrorMessage": {
                         "i18nKey": "sd.jsm.agent.servicedesk.error.project.nopermission",
@@ -5209,6 +5202,13 @@
                 },
                 "customfield_10020": null,
                 "customfield_10262": null,
+                "customfield_12560": {
+                    "errorMessage": "Você não tem permissão para acessar este projeto de serviço.",
+                    "i18nErrorMessage": {
+                        "i18nKey": "sd.jsm.agent.servicedesk.error.project.nopermission",
+                        "parameters": []
+                    }
+                },
                 "customfield_10263": null,
                 "customfield_10142": null,
                 "customfield_10021": null,
@@ -5962,6 +5962,8 @@
                     }
                 },
                 "customfield_10261": null,
+                "customfield_10020": null,
+                "customfield_10262": null,
                 "customfield_12560": {
                     "errorMessage": "Você não tem permissão para acessar este projeto de serviço.",
                     "i18nErrorMessage": {
@@ -5969,8 +5971,6 @@
                         "parameters": []
                     }
                 },
-                "customfield_10020": null,
-                "customfield_10262": null,
                 "customfield_10263": null,
                 "customfield_10142": null,
                 "customfield_10021": null,
@@ -6681,6 +6681,8 @@
                     }
                 },
                 "customfield_10261": null,
+                "customfield_10020": null,
+                "customfield_10262": null,
                 "customfield_12560": {
                     "errorMessage": "Você não tem permissão para acessar este projeto de serviço.",
                     "i18nErrorMessage": {
@@ -6688,8 +6690,6 @@
                         "parameters": []
                     }
                 },
-                "customfield_10020": null,
-                "customfield_10262": null,
                 "customfield_10263": null,
                 "customfield_10142": null,
                 "customfield_10021": null,

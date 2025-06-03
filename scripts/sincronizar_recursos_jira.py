@@ -70,24 +70,37 @@ async def buscar_issues_jira(session_http):
     # Lista de projetos para buscar (SEG, SGI, DTIN)
     projetos = ["SEG", "SGI", "DTIN"]
     todas_issues = []
-    
+    data_inicio = "2024-08-01"
+    max_results = 100
+
     for projeto in projetos:
-        # Busca issues do projeto específico
-        jql = f"project = {projeto}"
-        url = f"{JIRA_API_URL}/search?jql={jql}&maxResults=1000"
-        logger.info(f"Buscando issues do projeto {projeto} na URL: {url}")
-        
-        async with session_http.get(url, headers=JIRA_AUTH_HEADER) as resp:
-            if resp.status != 200:
-                error_text = await resp.text()
-                logger.error(f"Erro ao buscar issues do projeto {projeto}: {resp.status} - {error_text}")
-                continue  # Continua para o próximo projeto mesmo se houver erro
-            
-            data = await resp.json()
-            issues_do_projeto = data.get("issues", [])
-            logger.info(f"Projeto {projeto}: {len(issues_do_projeto)} issues encontradas")
-            todas_issues.extend(issues_do_projeto)
-    
+        start_at = 0
+        total_issues = 0
+        while True:
+            # JQL com filtro de data de criação
+            jql = f"project = {projeto} AND created >= {data_inicio}"
+            url = f"{JIRA_API_URL}/search?jql={jql}&maxResults={max_results}&startAt={start_at}"
+            logger.info(f"Buscando issues do projeto {projeto} na URL: {url}")
+
+            async with session_http.get(url, headers=JIRA_AUTH_HEADER) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    logger.error(f"Erro ao buscar issues do projeto {projeto}: {resp.status} - {error_text}")
+                    break  # Sai da paginação deste projeto
+
+                data = await resp.json()
+                issues_do_projeto = data.get("issues", [])
+                total_reportado = data.get("total")
+                logger.info(f"Projeto {projeto} (página startAt={start_at}): {len(issues_do_projeto)} issues encontradas | total reportado pela API: {total_reportado}")
+                total_issues += len(issues_do_projeto)
+                todas_issues.extend(issues_do_projeto)
+
+                if len(issues_do_projeto) < max_results:
+                    # Última página
+                    break
+                start_at += max_results
+        logger.info(f"Projeto {projeto}: Total de issues coletadas = {total_issues}")
+
     logger.info(f"Total de issues encontradas em todos os projetos: {len(todas_issues)}")
     return todas_issues
 
