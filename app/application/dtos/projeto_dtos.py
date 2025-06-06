@@ -8,7 +8,7 @@ class ProjetoBaseDTO(BaseModel):
     descricao: Optional[str] = None
     jira_project_key: Optional[str] = None
     status_projeto_id: int # Foreign Key
-    secao_id: Optional[int] = None # Foreign Key para a tabela secao
+    secao_id: int # Foreign Key para a tabela secao
     data_inicio_prevista: Optional[date] = None
     data_fim_prevista: Optional[date] = None
 

@@ -20,8 +20,8 @@ async def relatorio_horas_apontadas(
     projeto_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     secao_id: Optional[int] = None,
-    data_inicio: Optional[str] = None,  # <-- Trocar aqui
-    data_fim: Optional[str] = None,     # <-- Trocar aqui
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
     fonte_apontamento: Optional[FonteApontamento] = None,
     agrupar_por_recurso: bool = False,
     agrupar_por_projeto: bool = False,
@@ -51,41 +51,11 @@ async def relatorio_horas_apontadas(
     Returns:
         List[Dict[str, Any]]: Relatório de horas apontadas
     """
-    from datetime import datetime
-    from datetime import datetime
     repository = ApontamentoRepository(db)
 
-    def parse_date(value):
-        if value is None:
-            return None
-        try:
-            # Tenta formato ISO
-            return datetime.strptime(value, "%Y-%m-%d").date()
-        except ValueError:
-            try:
-                # Tenta formato brasileiro
-                return datetime.strptime(value, "%d/%m/%Y").date()
-            except ValueError:
-                raise HTTPException(status_code=422, detail=f"Formato de data inválido: {value}. Use YYYY-MM-DD ou DD/MM/YYYY.")
-
-    data_inicio_date = parse_date(data_inicio)
-    data_fim_date = parse_date(data_fim)
-
-    def parse_date(value):
-        if value is None:
-            return None
-        try:
-            # Tenta formato ISO
-            return datetime.strptime(value, "%Y-%m-%d").date()
-        except ValueError:
-            try:
-                # Tenta formato brasileiro
-                return datetime.strptime(value, "%d/%m/%Y").date()
-            except ValueError:
-                raise HTTPException(status_code=422, detail=f"Formato de data inválido: {value}. Use YYYY-MM-DD ou DD/MM/YYYY.")
-
-    data_inicio_date = parse_date(data_inicio)
-    data_fim_date = parse_date(data_fim)
+    # Parsear datas de filtro
+    data_inicio_date = parse_date_flex(data_inicio)
+    data_fim_date = parse_date_flex(data_fim)
 
     return await repository.find_with_filters_and_aggregate(
         recurso_id=recurso_id,
@@ -336,7 +306,8 @@ async def get_disponibilidade_recursos_endpoint(
     ano: int = Query(..., description="Ano de referência para a disponibilidade"),
     mes: Optional[int] = Query(None, description="Mês de referência (1-12). Se não informado, retorna para o ano todo.", ge=1, le=12),
     recurso_id: Optional[int] = Query(None, description="ID do recurso para filtrar a disponibilidade"),
-    # Adicionar outros Query Params para filtros como equipe_id, secao_id se necessário
+    equipe_id: Optional[int] = Query(None, description="ID da equipe para filtrar a disponibilidade"),
+    secao_id: Optional[int] = Query(None, description="ID da seção para filtrar a disponibilidade"),
     db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user) # Protegendo o endpoint
 ):
@@ -350,13 +321,17 @@ async def get_disponibilidade_recursos_endpoint(
     - **ano**: Ano para o qual o relatório de disponibilidade é gerado.
     - **mes**: Mês específico para filtrar o relatório (opcional).
     - **recurso_id**: ID do recurso para obter disponibilidade específica (opcional).
+    - **equipe_id**: ID da equipe para filtrar a disponibilidade (opcional).
+    - **secao_id**: ID da seção para filtrar a disponibilidade (opcional).
     """
     relatorio_service = RelatorioService(db)
     try:
         dados_disponibilidade = await relatorio_service.get_disponibilidade_recursos(
             ano=ano,
             mes=mes,
-            recurso_id=recurso_id
+            recurso_id=recurso_id,
+            equipe_id=equipe_id,
+            secao_id=secao_id
         )
         if not dados_disponibilidade and (recurso_id or mes):
             # Se filtros específicos foram aplicados e nada foi encontrado, pode ser um 404

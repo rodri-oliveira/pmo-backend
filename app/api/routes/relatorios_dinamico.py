@@ -28,6 +28,14 @@ async def relatorio_dinamico(
         service = RelatorioDinamicoService(db)
         data_inicio_conv = parse_date_flex(data_inicio)
         data_fim_conv = parse_date_flex(data_fim)
+        # Validar campos de agrupamento
+        allowed_fields = {"recurso", "equipe", "secao", "projeto", "mes", "ano"}
+        if agrupar_por:
+            invalid = set(agrupar_por) - allowed_fields
+            if invalid:
+                raise HTTPException(status_code=400, detail=f"Agrupamentos inválidos: {invalid}. Valores válidos: {allowed_fields}")
+        else:
+            agrupar_por = []
         result = await service.get_relatorio(
             recurso_id=recurso_id,
             equipe_id=equipe_id,

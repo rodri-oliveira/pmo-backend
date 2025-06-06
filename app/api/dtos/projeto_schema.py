@@ -12,9 +12,22 @@ class ProjetoCreateSchema(BaseModel):
     descricao: Optional[str] = None
     jira_project_key: Optional[str] = None
     status_projeto_id: int
+    secao_id: Optional[int] = None
     data_inicio_prevista: Optional[date] = None
     data_fim_prevista: Optional[date] = None
     ativo: bool = True
+
+class ProjetoUpdateSchema(BaseModel):
+    """Schema para atualização de projeto."""
+    nome: Optional[str] = None
+    codigo_empresa: Optional[str] = None
+    descricao: Optional[str] = None
+    jira_project_key: Optional[str] = None
+    status_projeto_id: Optional[int] = None
+    secao_id: Optional[int] = None
+    data_inicio_prevista: Optional[date] = None
+    data_fim_prevista: Optional[date] = None
+    ativo: Optional[bool] = None
 
 class StatusProjetoSchema(BaseModel):
     id: int
@@ -37,6 +50,7 @@ class ProjetoResponseSchema(BaseModel):
     jira_project_key: Optional[str] = None
     status_projeto: StatusProjetoSchema
     status_projeto_id: int
+    secao_id: Optional[int] = None
     data_inicio_prevista: Optional[date] = None
     data_fim_prevista: Optional[date] = None
     data_criacao: datetime

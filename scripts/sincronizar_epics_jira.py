@@ -2,6 +2,10 @@ import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import asyncio
 from datetime import datetime, timedelta
+import argparse
+
+# Data inicial padrão para busca de Epics
+DEFAULT_START_DATE = datetime(2024, 8, 1)
 
 # Função para remover fuso horário de um datetime
 def remove_timezone(dt):
@@ -23,15 +27,22 @@ def converter_data_jira(data_str):
     """Converte data do Jira para datetime padronizado (sem timezone e microssegundos)"""
     if not data_str:
         return None
+    # Ajusta timezone sem dois pontos (ex: -0300 -> -03:00)
+    import re
+    m = re.match(r'^(.*)([+-]\d{2})(\d{2})$', data_str)
+    if m:
+        base, hh, mm = m.groups()
+        data_str = f"{base}{hh}:{mm}"
     try:
-        if 'Z' in data_str:
-            dt = datetime.fromisoformat(data_str.replace('Z', '+00:00'))
-        else:
-            dt = datetime.fromisoformat(data_str)
+        # Trata 'Z' como UTC
+        if data_str.endswith('Z'):
+            data_str = data_str.replace('Z', '+00:00')
+        dt = datetime.fromisoformat(data_str)
         return padronizar_datetime(dt)
     except Exception as e:
         logger.warning(f"Erro ao converter data: {e}. Valor original: {data_str}")
         return None
+
 import aiohttp
 from app.db.session import AsyncSessionLocal
 # Assumindo que SQLAlchemyProjetoRepository interage com sua tabela 'projeto' local
@@ -89,7 +100,7 @@ def extrair_texto_descricao_jira(description_field):
     # Fallback para outros formatos inesperados, converte para string
     return str(description_field)
 
-async def buscar_epics_do_projeto_jira(session_http, chave_jira_secao):
+async def buscar_epics_do_projeto_jira(session_http, chave_jira_secao, data_inicio=None, data_fim=None):
     """
     Busca todos os issues do tipo 'Epic' para um determinado Projeto Jira (Seção).
     Lida com a paginação da API do Jira.
@@ -97,9 +108,16 @@ async def buscar_epics_do_projeto_jira(session_http, chave_jira_secao):
     all_epics = []
     start_at = 0
     while True:
+        # Monta JQL dinamicamente com intervalo
+        jql = f'project = "{chave_jira_secao}" AND issuetype = Epic'
+        if data_inicio:
+            jql += f' AND created >= "{data_inicio.date().isoformat()}"'
+        if data_fim:
+            jql += f' AND created <= "{data_fim.date().isoformat()}"'
         params = {
-            "jql": f'project = "{chave_jira_secao}" AND issuetype = Epic', # Chave do projeto entre aspas na JQL
-            "fields": "summary,key,description,project,status,duedate,created,updated,customfield_10020", # Campos necessários incluindo customfield_10020 para datas de sprint/epic
+            "jql": jql,
+            "fields": "summary,key,description,project,status,duedate,created,updated,customfield_10020,priority,issuetype,resolution,components,fixVersions,worklog,comment,attachment",
+            "expand": "changelog",
             "startAt": start_at,
             "maxResults": 100
         }
@@ -125,12 +143,24 @@ async def buscar_epics_do_projeto_jira(session_http, chave_jira_secao):
                 break # Fim da paginação
     return all_epics
 
-async def sincronizar_epics_jira():
+async def sincronizar_epics_jira(start_str=None, end_str=None):
     logger.info("Iniciando sincronização de Epics do Jira para a tabela 'projeto' local...")
     async with aiohttp.ClientSession() as session_http:
         async with AsyncSessionLocal() as db_session:
             # 'repo_projeto_local' interage com sua tabela 'projeto' (que armazena Epics)
             repo_projeto_local = SQLAlchemyProjetoRepository(db_session)
+
+            # Determina intervalo de busca
+            if start_str and end_str:
+                try:
+                    data_inicio = datetime.fromisoformat(start_str)
+                    data_fim = datetime.fromisoformat(end_str)
+                except Exception as e:
+                    logger.error(f"Formato de data inválido: {e}")
+                    return
+            else:
+                data_inicio = DEFAULT_START_DATE
+                data_fim = datetime.now()
 
             for chave_jira_secao, _ in JIRA_SECOES_MAPEAMENTO.items():
                 logger.info(f"Processando Epics da Seção Jira: '{chave_jira_secao}'")
@@ -145,7 +175,7 @@ async def sincronizar_epics_jira():
                     logger.info(f"[DEBUG] Encontrou secao: id={secao.id}, nome='{secao.nome}', jira_project_key='{secao.jira_project_key}' para chave_jira_secao='{chave_jira_secao}'")
                     secao_id = secao.id
 
-                epics_do_jira = await buscar_epics_do_projeto_jira(session_http, chave_jira_secao)
+                epics_do_jira = await buscar_epics_do_projeto_jira(session_http, chave_jira_secao, data_inicio, data_fim)
 
                 if not epics_do_jira:
                     logger.info(f"Nenhum Epic encontrado no Jira para a seção '{chave_jira_secao}'.")
@@ -283,4 +313,19 @@ async def sincronizar_epics_jira():
             logger.info("Sincronização de Epics do Jira para projetos locais concluída.")
 
 if __name__ == "__main__":
-    asyncio.run(sincronizar_epics_jira())
+    parser = argparse.ArgumentParser(description="Sincroniza Epics do Jira para projetos locais")
+    parser.add_argument("start", nargs="?", help="Data de início (YYYY-MM-DD)")
+    parser.add_argument("end", nargs="?", help="Data de fim (YYYY-MM-DD)")
+    parser.add_argument("--mensal", action="store_true", help="Rotina mensal para mês anterior")
+    args = parser.parse_args()
+
+    if args.start and args.end:
+        asyncio.run(sincronizar_epics_jira(args.start, args.end))
+    elif args.mensal:
+        hoje = datetime.now()
+        primeiro_mes = hoje.replace(day=1)
+        ultimo_mes_anterior = primeiro_mes - timedelta(days=1)
+        inicio_mes_anterior = ultimo_mes_anterior.replace(day=1)
+        asyncio.run(sincronizar_epics_jira(inicio_mes_anterior.isoformat(), ultimo_mes_anterior.isoformat()))
+    else:
+        asyncio.run(sincronizar_epics_jira())
