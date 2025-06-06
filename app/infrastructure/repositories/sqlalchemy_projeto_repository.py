@@ -51,8 +51,8 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
 
     async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto: Optional[int] = None) -> List[DomainProjeto]:
         try:
-            # Usar selectinload para carregar o relacionamento status_projeto
-            query = select(Projeto).options(selectinload(Projeto.status_projeto))
+            # Usar selectinload para carregar o relacionamento status
+            query = select(Projeto).options(selectinload(Projeto.status))
             
             if apenas_ativos:
                 query = query.filter(Projeto.ativo == True)
