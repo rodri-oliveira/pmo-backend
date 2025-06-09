@@ -6,6 +6,7 @@ from sqlalchemy.orm import joinedload
 from app.db.orm_models import Apontamento, Recurso, Projeto, Equipe, Secao, FonteApontamento
 from app.repositories.base_repository import BaseRepository
 import logging
+import calendar
 
 logger = logging.getLogger(__name__)
 
@@ -401,6 +402,20 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
                 resultado_agrupado.sort(key=lambda x: x.get("projeto_nome", "") if "projeto_nome" in x else x.get("projeto_id", 0))
             elif agrupar_por_mes:
                 resultado_agrupado.sort(key=lambda x: (x.get("ano", 0), x.get("mes", 0)))
+            
+            # Ajuste de tipos e nomenclatura para exibição
+            month_names = {i: calendar.month_name[i] for i in range(1,13)}
+            for grupo in resultado_agrupado:
+                if "ano" in grupo:
+                    grupo["ano"] = int(grupo["ano"])
+                if "mes" in grupo:
+                    mes_int = int(grupo["mes"])
+                    grupo["mes"] = mes_int
+                    grupo["mes_nome"] = month_names.get(mes_int)
+                if "quantidade" in grupo:
+                    grupo["qtd_lancamentos"] = int(grupo.pop("quantidade"))
+                if "horas" in grupo:
+                    grupo["horas"] = round(float(grupo["horas"]), 2)
             
             return {
                 "items": resultado_agrupado,
