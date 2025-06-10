@@ -1,7 +1,8 @@
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, func, and_, or_, extract
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.orm_models import Apontamento, Recurso, Equipe, Secao, Projeto, HorasDisponiveisRH
+from app.db.orm_models import Apontamento, Recurso, Equipe, Secao, Projeto, HorasDisponiveisRH, equipe_projeto_association
+from app.repositories.apontamento_repository import ApontamentoRepository
 
 def get_groupby_columns(agrupar_por):
     columns = []
@@ -29,7 +30,8 @@ class RelatorioDinamicoService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_relatorio(self,
+    async def get_relatorio(
+        self,
         recurso_id: Optional[int] = None,
         equipe_id: Optional[int] = None,
         secao_id: Optional[int] = None,
@@ -38,34 +40,20 @@ class RelatorioDinamicoService:
         data_fim: Optional[str] = None,
         agrupar_por: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        columns = [func.sum(Apontamento.horas_apontadas).label("total_horas")]
-        columns += get_groupby_columns(agrupar_por)
-        query = select(*columns)
-        # Joins necessários
-        query = query.join(Recurso, Apontamento.recurso_id == Recurso.id)
-        query = query.join(Equipe, Recurso.equipe_principal_id == Equipe.id)
-        query = query.join(Secao, Equipe.secao_id == Secao.id)
-        query = query.join(Projeto, Apontamento.projeto_id == Projeto.id)
-        # Filtros
-        if recurso_id:
-            query = query.where(Recurso.id == recurso_id)
-        if equipe_id:
-            query = query.where(Equipe.id == equipe_id)
-        if secao_id:
-            query = query.where(Secao.id == secao_id)
-        if projeto_id:
-            query = query.where(Projeto.id == projeto_id)
-        if data_inicio:
-            query = query.where(Apontamento.data_apontamento >= data_inicio)
-        if data_fim:
-            query = query.where(Apontamento.data_apontamento <= data_fim)
-        # Group by
-        groupby_cols = get_groupby_columns(agrupar_por)
-        if groupby_cols:
-            query = query.group_by(*groupby_cols)
-        result = await self.db.execute(query)
-        rows = result.fetchall()
-        return [dict(row._mapping) for row in rows]
+        repo = ApontamentoRepository(self.db)
+        return await repo.find_with_filters_and_aggregate(
+            recurso_id=recurso_id,
+            projeto_id=projeto_id,
+            equipe_id=equipe_id,
+            secao_id=secao_id,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            agrupar_por_recurso="recurso" in agrupar_por,
+            agrupar_por_projeto="projeto" in agrupar_por,
+            agrupar_por_data="data" in agrupar_por,
+            agrupar_por_mes="mes" in agrupar_por,
+            aggregate=True
+        )
 
     async def get_horas_disponiveis(self, recurso_id: Optional[int] = None, ano: Optional[int] = None, mes: Optional[int] = None) -> List[Dict[str, Any]]:
         query = select(HorasDisponiveisRH.recurso_id, HorasDisponiveisRH.ano, HorasDisponiveisRH.mes, HorasDisponiveisRH.horas_disponiveis_mes)

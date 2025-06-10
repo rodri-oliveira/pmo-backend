@@ -3,7 +3,7 @@ from datetime import date, datetime
 from sqlalchemy import func, extract, and_, or_, text, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
-from app.db.orm_models import Apontamento, Recurso, Projeto, Equipe, Secao, FonteApontamento
+from app.db.orm_models import Apontamento, Recurso, Projeto, Equipe, Secao, FonteApontamento, equipe_projeto_association
 from app.repositories.base_repository import BaseRepository
 import logging
 import calendar
@@ -259,6 +259,7 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         # Flags para controlar se join já foi feito
         recurso_joined = False
         equipe_joined = False
+        projeto_joined = False
 
         # JOIN em Recurso se necessário para qualquer filtro relacional
         if any([equipe_id, secao_id]):
@@ -276,8 +277,16 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         if projeto_id:
             query = query.filter(self.model.projeto_id == projeto_id)
         if equipe_id:
-            # Se já fez join em Recurso, só filtra
-            query = query.filter(Recurso.equipe_principal_id == equipe_id)
+            # Filtrar por projetos associados à equipe via N:N
+            if not projeto_joined:
+                query = query.join(Projeto, self.model.projeto_id == Projeto.id, isouter=False)
+                projeto_joined = True
+            query = query.join(
+                equipe_projeto_association,
+                equipe_projeto_association.c.projeto_id == Projeto.id,
+                isouter=False
+            )
+            query = query.filter(equipe_projeto_association.c.equipe_id == equipe_id)
         if secao_id:
             # Se já fez join em Equipe, só filtra
             query = query.filter(Equipe.secao_id == secao_id)

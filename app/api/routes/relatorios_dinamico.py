@@ -36,6 +36,7 @@ async def relatorio_dinamico(
                 raise HTTPException(status_code=400, detail=f"Agrupamentos inválidos: {invalid}. Valores válidos: {allowed_fields}")
         else:
             agrupar_por = []
+        # Filtragem de equipe via associação many-to-many
         result = await service.get_relatorio(
             recurso_id=recurso_id,
             equipe_id=equipe_id,

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_admin_user
 from app.db.session import get_async_db
-from app.repositories.apontamento_repository import ApontamentoRepository
+from app.repositories.apontamento_repository import ApontamentoRepository, equipe_projeto_association
 from app.db.orm_models import FonteApontamento
 from app.models.usuario import UsuarioInDB
 from app.services.relatorio_service import RelatorioService
@@ -57,6 +57,7 @@ async def relatorio_horas_apontadas(
     data_inicio_date = parse_date_flex(data_inicio)
     data_fim_date = parse_date_flex(data_fim)
 
+    # Executa consulta com associação many-to-many para equipe
     return await repository.find_with_filters_and_aggregate(
         recurso_id=recurso_id,
         projeto_id=projeto_id,

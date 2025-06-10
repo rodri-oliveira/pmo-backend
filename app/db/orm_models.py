@@ -1,11 +1,19 @@
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Date, Float, ForeignKey, Enum, UniqueConstraint, CheckConstraint, DECIMAL, SmallInteger, TIMESTAMP
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Date, Float, ForeignKey, Enum, UniqueConstraint, CheckConstraint, DECIMAL, SmallInteger, TIMESTAMP, Table
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from enum import Enum as PyEnum
 
 from app.db.session import Base
+
+# Associação N:N equipe_projeto
+equipe_projeto_association = Table(
+    "equipe_projeto",
+    Base.metadata,
+    Column("equipe_id", Integer, ForeignKey("equipe.id", ondelete="CASCADE"), primary_key=True),
+    Column("projeto_id", Integer, ForeignKey("projeto.id", ondelete="CASCADE"), primary_key=True),
+)
 
 # Enum para fonte de apontamento
 class FonteApontamento(str, PyEnum):
@@ -48,6 +56,12 @@ class Equipe(Base):
     # Relacionamentos
     secao = relationship("Secao", back_populates="equipes")
     recursos = relationship("Recurso", back_populates="equipe_principal")
+    # Associação N:N com projetos
+    projetos = relationship(
+        "Projeto",
+        secondary=equipe_projeto_association,
+        back_populates="equipes"
+    )
     
     # Restrições
     __table_args__ = (
@@ -111,6 +125,12 @@ class Projeto(Base):
     secao = relationship("Secao")
     alocacoes = relationship("AlocacaoRecursoProjeto", back_populates="projeto")
     apontamentos = relationship("Apontamento", back_populates="projeto")
+    # Associação N:N com equipes
+    equipes = relationship(
+        "Equipe",
+        secondary=equipe_projeto_association,
+        back_populates="projetos"
+    )
 
 class AlocacaoRecursoProjeto(Base):
     __tablename__ = "alocacao_recurso_projeto"
@@ -129,15 +149,6 @@ class AlocacaoRecursoProjeto(Base):
     # Relacionamentos
     recurso = relationship("Recurso", back_populates="alocacoes")
     projeto = relationship("Projeto", back_populates="alocacoes")
-    equipe = relationship("Equipe")
-    status_alocacao = relationship("StatusProjeto")
-    horas_planejadas = relationship("HorasPlanejadas", back_populates="alocacao")
-
-    # Restrições
-    __table_args__ = (
-        UniqueConstraint('recurso_id', 'projeto_id', 'data_inicio_alocacao', name='uq_alocacao_recurso_projeto_data'),
-        CheckConstraint('data_fim_alocacao IS NULL OR data_fim_alocacao >= data_inicio_alocacao', name='chk_alocacao_datas'),
-    )
     equipe = relationship("Equipe")
     status_alocacao = relationship("StatusProjeto")
     horas_planejadas = relationship("HorasPlanejadas", back_populates="alocacao")

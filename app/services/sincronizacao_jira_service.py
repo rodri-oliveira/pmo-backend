@@ -7,6 +7,7 @@ from app.repositories.apontamento_repository import ApontamentoRepository
 from app.repositories.recurso_repository import RecursoRepository
 from app.repositories.projeto_repository import ProjetoRepository
 from app.repositories.sincronizacao_jira_repository import SincronizacaoJiraRepository
+from app.repositories.secao_repository import SecaoRepository
 from app.db.orm_models import FonteApontamento
 
 class SincronizacaoJiraService:
@@ -19,6 +20,7 @@ class SincronizacaoJiraService:
         self.recurso_repository = RecursoRepository(db)
         self.projeto_repository = ProjetoRepository(db)
         self.sincronizacao_repository = SincronizacaoJiraRepository(db)
+        self.secao_repository = SecaoRepository(db)
 
     async def sincronizar_tudo(self, usuario_id: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -361,17 +363,29 @@ class SincronizacaoJiraService:
         try:
             # Extrair dados básicos do worklog
             worklog_id = str(worklog.get("id"))
-            issue_key = worklog.get("issueKey")
             
-            if not worklog_id or not issue_key:
-                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem ID ou issue_key: {worklog}")
+            # Verificar se temos o ID do worklog
+            if not worklog_id:
+                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem ID: {worklog}")
                 return None
                 
-            # Sincronizar a issue primeiro
-            issue = await self._sincronizar_issue(issue_key)
+            # Extrair informações da issue
+            issue_id = worklog.get("issueId")
+            issue_key = worklog.get("issueKey")
             
-            if not issue:
-                logger.error(f"[SINCRONIZAR_WORKLOG] Falha ao sincronizar issue {issue_key} para worklog {worklog_id}")
+            # Se não temos a chave da issue, tentar obtê-la do campo issueId
+            if not issue_key and issue_id:
+                logger.info(f"[SINCRONIZAR_WORKLOG] Obtendo issue_key a partir do issue_id: {issue_id}")
+                try:
+                    # Tentar obter a issue pelo ID
+                    issue_data = self.jira_client.get_issue(issue_id)
+                    issue_key = issue_data.get("key")
+                except Exception as e:
+                    logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao obter issue pelo ID {issue_id}: {str(e)}")
+            
+            # Se ainda não temos a chave da issue, não podemos continuar
+            if not issue_key:
+                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem issue_key: {worklog}")
                 return None
                 
             # Extrair dados do autor
@@ -380,6 +394,11 @@ class SincronizacaoJiraService:
             author_email = author.get("emailAddress")
             author_display_name = author.get("displayName")
             
+            # Verificar se temos informações do autor
+            if not author_account_id and not author_email:
+                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem informações do autor: {worklog}")
+                return None
+                
             # Buscar o recurso pelo jira_user_id ou email
             recurso = None
             if author_account_id:
@@ -404,6 +423,49 @@ class SincronizacaoJiraService:
                     recurso = await self.recurso_repository.create(recurso_data)
                 except Exception as e:
                     logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao criar recurso: {str(e)}")
+                    return None
+            
+            # Buscar o projeto pelo jira_project_key
+            # Extrair o project_key da issue_key (formato: PROJECT-123)
+            project_key = issue_key.split('-')[0] if '-' in issue_key else None
+            
+            if not project_key:
+                logger.warning(f"[SINCRONIZAR_WORKLOG] Não foi possível extrair project_key de {issue_key}")
+                return None
+                
+            projeto = await self.projeto_repository.get_by_jira_project_key(project_key)
+            
+            # Se não encontramos o projeto, criar um novo
+            if not projeto:
+                logger.info(f"[SINCRONIZAR_WORKLOG] Projeto não encontrado para {project_key}, criando novo")
+                
+                # Buscar detalhes do projeto no Jira
+                try:
+                    projeto_jira = self.jira_client.get_project(project_key)
+                    projeto_nome = projeto_jira.get("name") or f"Projeto {project_key}"
+                except Exception as e:
+                    logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao obter projeto do Jira: {str(e)}")
+                    projeto_nome = f"Projeto {project_key}"
+                
+                # Buscar o status padrão para projetos
+                status_projeto = await self.projeto_repository.get_status_default()
+                
+                if not status_projeto:
+                    logger.error(f"[SINCRONIZAR_WORKLOG] Não foi possível encontrar status padrão para projetos")
+                    return None
+                
+                # Dados para criar o projeto
+                projeto_data = {
+                    "nome": projeto_nome,
+                    "jira_project_key": project_key,
+                    "status_projeto_id": status_projeto.id,
+                    "ativo": True
+                }
+                
+                try:
+                    projeto = await self.projeto_repository.create(projeto_data)
+                except Exception as e:
+                    logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao criar projeto: {str(e)}")
                     return None
             
             # Extrair horas apontadas
@@ -463,7 +525,7 @@ class SincronizacaoJiraService:
             apontamento_data = {
                 "jira_worklog_id": worklog_id,
                 "recurso_id": recurso.id,
-                "projeto_id": issue.get("projeto_id"),
+                "projeto_id": projeto.id,
                 "jira_issue_key": issue_key,
                 "data_hora_inicio_trabalho": data_hora_inicio,
                 "data_apontamento": data_apontamento,
@@ -598,6 +660,11 @@ class SincronizacaoJiraService:
                     "status_projeto_id": status_projeto.id,
                     "ativo": True
                 }
+                
+                # se existir secao, vincula o projeto à secao
+                secao = await self.secao_repository.get_by_jira_project_key(project_key)
+                if secao:
+                    projeto_data["secao_id"] = secao.id
                 
                 try:
                     projeto = await self.projeto_repository.create(projeto_data)
