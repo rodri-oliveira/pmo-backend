@@ -94,6 +94,9 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         """
         logger.info(f"[SYNC_APONTAMENTO] Sincronizando apontamento para worklog_id={jira_worklog_id}")
         
+        # Garantir que o campo jira_worklog_id seja salvo
+        data["jira_worklog_id"] = jira_worklog_id
+        
         try:
             # Verificar se o apontamento já existe
             query = select(Apontamento).where(Apontamento.jira_worklog_id == jira_worklog_id)

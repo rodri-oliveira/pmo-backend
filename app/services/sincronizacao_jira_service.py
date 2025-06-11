@@ -634,6 +634,16 @@ class SincronizacaoJiraService:
                 
             projeto = await self.projeto_repository.get_by_jira_project_key(project_key)
             
+            # Atualiza nome do projeto se mudou no Jira
+            if projeto:
+                try:
+                    projeto_jira = self.jira_client.get_project(project_key)
+                    projeto_nome = projeto_jira.get("name") or f"Projeto {project_key}"
+                    if projeto.nome != projeto_nome:
+                        await self.projeto_repository.update(projeto.id, {"nome": projeto_nome})
+                except Exception as e:
+                    logger.error(f"[WORKLOG_EXTRACT] Erro ao atualizar nome do projeto {project_key}: {str(e)}")
+            
             # Se não encontramos o projeto, criar um novo
             if not projeto:
                 logger.info(f"[WORKLOG_EXTRACT] Projeto não encontrado para {project_key}, criando novo")

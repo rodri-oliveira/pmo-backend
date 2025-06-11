@@ -507,6 +507,23 @@ class JiraClient:
             logger.error(f"[JIRA_RECENT_WORKLOGS] Erro ao buscar worklogs recentes: {str(e)}")
             return []
 
+    def get_all_worklogs(self, issue_id_or_key: str) -> List[Dict[str, Any]]:
+        """
+        Obtém todos os worklogs de uma issue, paginando até obter todos.
+        """
+        all_worklogs = []
+        start_at = 0
+        max_results = 100
+        while True:
+            endpoint = f"/rest/api/3/issue/{issue_id_or_key}/worklog?startAt={start_at}&maxResults={max_results}"
+            response = self._make_request("GET", endpoint)
+            worklogs = response.get("worklogs", [])
+            all_worklogs.extend(worklogs)
+            if len(worklogs) < max_results:
+                break
+            start_at += max_results
+        return all_worklogs
+
     def get_worklogs(self, issue_key: str) -> List[Dict[str, Any]]:
         """
         Obtém todos os worklogs de uma issue.
@@ -1004,3 +1021,30 @@ class JiraClient:
         except Exception as e:
             logger.error(f"[JIRA_WORKLOGS_PERIODO] Erro ao buscar worklogs por período: {str(e)}")
             return []
+
+    def get_all_issues(self, jql: str, fields: List[str] = None, max_results: int = 100) -> List[Dict[str, Any]]:
+        """
+        Obtém todos os issues do Jira por JQL, paginando até obter todos.
+        """
+        # Paginação via POST para evitar problemas de encoding
+        all_issues = []
+        start_at = 0
+        # Campos padrão se não fornecidos
+        if fields is None:
+            fields = ["key", "summary", "assignee", "worklog"]
+        while True:
+            data = {
+                "jql": jql,
+                "fields": fields,
+                "startAt": start_at,
+                "maxResults": max_results
+            }
+            response = self._make_request("POST", "/rest/api/3/search", data)
+            issues = response.get("issues", [])
+            if not issues:
+                break
+            all_issues.extend(issues)
+            if len(issues) < max_results:
+                break
+            start_at += max_results
+        return all_issues
