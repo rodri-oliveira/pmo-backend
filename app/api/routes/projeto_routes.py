@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 import logging
 from starlette import status
 from typing import List, Optional
+from datetime import date
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dtos.projeto_schema import ProjetoCreateSchema
@@ -11,7 +12,7 @@ from app.application.services.status_projeto_service import StatusProjetoService
 from app.infrastructure.repositories.sqlalchemy_projeto_repository import SQLAlchemyProjetoRepository
 from app.infrastructure.repositories.sqlalchemy_status_projeto_repository import SQLAlchemyStatusProjetoRepository 
 from app.db.session import get_db, get_async_db
-from app.db.orm_models import Projeto, equipe_projeto_association, Apontamento
+from app.db.orm_models import Projeto, equipe_projeto_association, Apontamento, Recurso, Equipe, StatusProjeto
 from app.core.security import get_current_admin_user
 
 router = APIRouter()
@@ -42,10 +43,8 @@ async def autocomplete_projetos(
     query = query.order_by(Projeto.nome.asc()).offset(skip).limit(limit)
     result = await db.execute(query)
     projetos = result.scalars().all()
-    items = [{"id": p.id, "nome": p.nome} for p in projetos]
+    items = [{ "id": p.id, "nome": p.nome } for p in projetos]
     return {"items": items}
-
-
 
 # Dependency for ProjetoService
 async def get_projeto_service(db: AsyncSession = Depends(get_async_db)) -> ProjetoService:
@@ -68,24 +67,55 @@ async def create_projeto(projeto_create: ProjetoCreateSchema, service: ProjetoSe
         logger.error(f"[create_projeto] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao criar projeto: {str(e)}")
 
-@router.get("/{projeto_id}", response_model=ProjetoDTO)
-async def get_projeto(projeto_id: int, service: ProjetoService = Depends(get_projeto_service)):
-    logger = logging.getLogger("app.api.routes.projeto_routes")
-    logger.info(f"[get_projeto] Início - projeto_id: {projeto_id}")
-    try:
-        projeto = await service.get_projeto_by_id(projeto_id)
-        if projeto is None:
-            logger.warning(f"[get_projeto] Projeto não encontrado - projeto_id: {projeto_id}")
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto não encontrado")
-        logger.info(f"[get_projeto] Sucesso - projeto_id: {projeto_id}")
-        return projeto
-    except HTTPException as e:
-        logger.warning(f"[get_projeto] HTTPException: {str(e.detail)}")
-        raise e
-    except Exception as e:
-        logger.error(f"[get_projeto] Erro inesperado: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro inesperado ao buscar projeto: {str(e)}")
-    return projeto
+@router.get("/filtrar", response_model=List[ProjetoDTO])
+async def filtrar_projetos(
+    secao_id: Optional[int] = Query(None),
+    equipe_id: Optional[int] = Query(None),
+    recurso_id: Optional[int] = Query(None),
+    data_inicio: Optional[date] = Query(None),
+    data_fim: Optional[date] = Query(None),
+    ativo: Optional[bool] = Query(None),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Filtra projetos com base na existência de apontamentos que correspondam
+    aos critérios de seção, equipe e recurso, em cascata.
+    Permite filtrar adicionalmente por projetos ativos ou inativos.
+    Retorna apenas projetos que possuem horas apontadas que satisfaçam os filtros.
+    """
+    # A query base seleciona projetos distintos que possuem pelo menos um apontamento.
+    query = select(Projeto).distinct().join(Apontamento)
+
+    # CORREÇÃO: Usamos outerjoin para não excluir apontamentos de recursos 
+    # que não tenham uma equipe principal definida.
+    if secao_id is not None or equipe_id is not None:
+        query = query.outerjoin(Recurso, Apontamento.recurso_id == Recurso.id).outerjoin(Equipe, Recurso.equipe_principal_id == Equipe.id)
+    elif recurso_id is not None:
+        query = query.outerjoin(Recurso, Apontamento.recurso_id == Recurso.id)
+
+    # Aplica os filtros de cascata
+    if secao_id is not None:
+        query = query.where(Equipe.secao_id == secao_id)
+    
+    if equipe_id is not None:
+        query = query.where(Equipe.id == equipe_id)
+        
+    if recurso_id is not None:
+        query = query.where(Recurso.id == recurso_id)
+
+    # Aplica o filtro de período nos apontamentos
+    if data_inicio:
+        query = query.where(Apontamento.data_apontamento >= data_inicio)
+    if data_fim:
+        query = query.where(Apontamento.data_apontamento <= data_fim)
+
+    # Filtra por projetos ativos, se especificado
+    if ativo is not None:
+        query = query.where(Projeto.ativo == ativo)
+
+    query = query.order_by(Projeto.nome)
+    result = await db.execute(query)
+    return result.scalars().all()
 
 @router.get("/", response_model=dict)
 async def get_all_projetos(
@@ -106,6 +136,25 @@ async def get_all_projetos(
     except Exception as e:
         logger.error(f"[get_all_projetos] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar projetos: {str(e)}")
+
+@router.get("/{projeto_id}", response_model=ProjetoDTO)
+async def get_projeto(projeto_id: int, service: ProjetoService = Depends(get_projeto_service)):
+    logger = logging.getLogger("app.api.routes.projeto_routes")
+    logger.info(f"[get_projeto] Início - projeto_id: {projeto_id}")
+    try:
+        projeto = await service.get_projeto_by_id(projeto_id)
+        if projeto is None:
+            logger.warning(f"[get_projeto] Projeto não encontrado - projeto_id: {projeto_id}")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto não encontrado")
+        logger.info(f"[get_projeto] Sucesso - projeto_id: {projeto_id}")
+        return projeto
+    except HTTPException as e:
+        logger.warning(f"[get_projeto] HTTPException: {str(e.detail)}")
+        raise e
+    except Exception as e:
+        logger.error(f"[get_projeto] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao buscar projeto: {str(e)}")
+    return projeto
 
 @router.put("/{projeto_id}", response_model=ProjetoDTO)
 async def update_projeto(projeto_id: int, projeto_update: ProjetoUpdateDTO, service: ProjetoService = Depends(get_projeto_service)):
@@ -136,27 +185,3 @@ async def delete_projeto(projeto_id: int, service: ProjetoService = Depends(get_
     except Exception as e:
         logger.error(f"[delete_projeto] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao excluir projeto: {str(e)}")
-
-@router.get("/filtrar", response_model=List[ProjetoDTO])
-async def filtrar_projetos(
-    secao_id: Optional[int] = Query(None),
-    equipe_id: Optional[int] = Query(None),
-    recurso_id: Optional[int] = Query(None),
-    db: AsyncSession = Depends(get_async_db)
-):
-    query = select(Projeto).distinct()
-    if secao_id is not None:
-        query = query.where(Projeto.secao_id == secao_id)
-    if equipe_id is not None:
-        query = query.join(
-            equipe_projeto_association,
-            Projeto.id == equipe_projeto_association.c.projeto_id
-        ).where(equipe_projeto_association.c.equipe_id == equipe_id)
-    if recurso_id is not None:
-        query = query.join(
-            Apontamento,
-            Projeto.id == Apontamento.projeto_id
-        ).where(Apontamento.recurso_id == recurso_id)
-    query = query.order_by(Projeto.nome)
-    result = await db.execute(query)
-    return result.scalars().all()
