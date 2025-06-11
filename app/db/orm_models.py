@@ -111,7 +111,7 @@ class Projeto(Base):
     nome = Column(String(200), nullable=False)
     codigo_empresa = Column(String(50), nullable=True, unique=True, index=True)
     descricao = Column(Text, nullable=True)
-    jira_project_key = Column(String(100), nullable=True, unique=True, index=True)
+    jira_project_key = Column(String(100), nullable=True, index=True)  # unique=False para permitir múltiplos projetos com a mesma key
     status_projeto_id = Column(Integer, ForeignKey("status_projeto.id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False, index=True)
     secao_id = Column(Integer, ForeignKey("secao.id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=True, index=True)
     data_inicio_prevista = Column(Date, nullable=True)

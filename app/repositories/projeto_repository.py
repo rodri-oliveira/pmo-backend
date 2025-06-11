@@ -26,6 +26,20 @@ class ProjetoRepository(BaseRepository[Projeto]):
         query = select(self.model).where(self.model.jira_project_key == jira_project_key)
         result = await self.db.execute(query)
         return result.scalars().first()
+
+    async def get_by_name(self, nome: str) -> Optional[Projeto]:
+        """
+        Busca um projeto pelo nome exato.
+
+        Args:
+            nome: Nome do projeto.
+
+        Returns:
+            Projeto encontrado ou None
+        """
+        query = select(self.model).where(self.model.nome == nome)
+        result = await self.db.execute(query)
+        return result.scalars().first()
         
     async def get_status_default(self) -> Optional[StatusProjeto]:
         """

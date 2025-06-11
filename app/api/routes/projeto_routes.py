@@ -11,7 +11,7 @@ from app.application.services.status_projeto_service import StatusProjetoService
 from app.infrastructure.repositories.sqlalchemy_projeto_repository import SQLAlchemyProjetoRepository
 from app.infrastructure.repositories.sqlalchemy_status_projeto_repository import SQLAlchemyStatusProjetoRepository 
 from app.db.session import get_db, get_async_db
-from app.db.orm_models import Projeto
+from app.db.orm_models import Projeto, equipe_projeto_association, Apontamento
 from app.core.security import get_current_admin_user
 
 router = APIRouter()
@@ -136,3 +136,27 @@ async def delete_projeto(projeto_id: int, service: ProjetoService = Depends(get_
     except Exception as e:
         logger.error(f"[delete_projeto] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao excluir projeto: {str(e)}")
+
+@router.get("/filtrar", response_model=List[ProjetoDTO])
+async def filtrar_projetos(
+    secao_id: Optional[int] = Query(None),
+    equipe_id: Optional[int] = Query(None),
+    recurso_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_async_db)
+):
+    query = select(Projeto).distinct()
+    if secao_id is not None:
+        query = query.where(Projeto.secao_id == secao_id)
+    if equipe_id is not None:
+        query = query.join(
+            equipe_projeto_association,
+            Projeto.id == equipe_projeto_association.c.projeto_id
+        ).where(equipe_projeto_association.c.equipe_id == equipe_id)
+    if recurso_id is not None:
+        query = query.join(
+            Apontamento,
+            Projeto.id == Apontamento.projeto_id
+        ).where(Apontamento.recurso_id == recurso_id)
+    query = query.order_by(Projeto.nome)
+    result = await db.execute(query)
+    return result.scalars().all()
