@@ -57,8 +57,8 @@ async def relatorio_horas_apontadas(
     data_inicio_date = parse_date_flex(data_inicio)
     data_fim_date = parse_date_flex(data_fim)
 
-    # Executa consulta com associação many-to-many para equipe
-    return await repository.find_with_filters_and_aggregate(
+    # A nova função do repositório retorna uma lista de dicionários (mappings)
+    resultados = await repository.find_with_filters_and_aggregate(
         recurso_id=recurso_id,
         projeto_id=projeto_id,
         equipe_id=equipe_id,
@@ -71,6 +71,15 @@ async def relatorio_horas_apontadas(
         agrupar_por_data=agrupar_por_data,
         agrupar_por_mes=agrupar_por_mes
     )
+    
+    # Calcular o total de horas a partir dos resultados agregados.
+    # A consulta agregada pode retornar Decimal, então convertemos para float.
+    total_horas = sum(float(item.get('horas') or 0) for item in resultados)
+
+    return {
+        "items": resultados,
+        "total_horas": total_horas
+    }
 
 
 @router.get("/horas-por-projeto")
