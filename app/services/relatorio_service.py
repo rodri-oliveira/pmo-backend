@@ -1,6 +1,7 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date
-from sqlalchemy import func, and_, or_, text, extract, select
+from sqlalchemy import func, and_, or_, text, extract, select, join
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.orm_models import (
@@ -170,182 +171,125 @@ class RelatorioService:
     ) -> List[Dict[str, Any]]:
         """
         Obtém análise comparativa entre horas planejadas e horas efetivamente apontadas.
-        
-        Args:
-            ano: Ano de referência
-            mes: Mês de referência (opcional)
-            projeto_id: Filtrar por projeto
-            recurso_id: Filtrar por recurso
-            equipe_id: Filtrar por equipe
-            secao_id: Filtrar por seção
-            
-        Returns:
-            Lista de dicionários com informações comparativas
         """
-        # Base da consulta para horas planejadas
-        planejado_query = select(
+        # CTE para Horas Planejadas
+        planejado_cte_query = select(
             AlocacaoRecursoProjeto.recurso_id,
             AlocacaoRecursoProjeto.projeto_id,
             HorasPlanejadas.ano,
             HorasPlanejadas.mes,
-            Recurso.nome.label("recurso_nome"),
-            Projeto.nome.label("projeto_nome"),
-            Equipe.nome.label("equipe_nome"),
-            Secao.nome.label("secao_nome"),
             func.sum(HorasPlanejadas.horas_planejadas).label("horas_planejadas")
         ).join(
             HorasPlanejadas, HorasPlanejadas.alocacao_id == AlocacaoRecursoProjeto.id
+        ).filter(HorasPlanejadas.ano == ano)
+
+        if mes:
+            planejado_cte_query = planejado_cte_query.filter(HorasPlanejadas.mes == mes)
+        if projeto_id:
+            planejado_cte_query = planejado_cte_query.filter(AlocacaoRecursoProjeto.projeto_id == projeto_id)
+        if recurso_id:
+            planejado_cte_query = planejado_cte_query.filter(AlocacaoRecursoProjeto.recurso_id == recurso_id)
+
+        if equipe_id or secao_id:
+            planejado_cte_query = planejado_cte_query.join(Recurso, AlocacaoRecursoProjeto.recurso_id == Recurso.id)
+            if equipe_id:
+                planejado_cte_query = planejado_cte_query.filter(Recurso.equipe_principal_id == equipe_id)
+            if secao_id:
+                planejado_cte_query = planejado_cte_query.join(Equipe, Recurso.equipe_principal_id == Equipe.id)
+                planejado_cte_query = planejado_cte_query.filter(Equipe.secao_id == secao_id)
+
+        planejado_cte_query = planejado_cte_query.group_by(
+            AlocacaoRecursoProjeto.recurso_id,
+            AlocacaoRecursoProjeto.projeto_id,
+            HorasPlanejadas.ano,
+            HorasPlanejadas.mes
+        ).cte("planejado_cte")
+
+        # CTE para Horas Realizadas (Apontadas)
+        realizado_cte_query = select(
+            Apontamento.recurso_id,
+            Apontamento.projeto_id,
+            extract("year", Apontamento.data_apontamento).label("ano"),
+            extract("month", Apontamento.data_apontamento).label("mes"),
+            func.sum(Apontamento.horas_apontadas).label("horas_realizadas")
+        ).filter(extract("year", Apontamento.data_apontamento) == ano)
+
+        if mes:
+            realizado_cte_query = realizado_cte_query.filter(extract("month", Apontamento.data_apontamento) == mes)
+        if projeto_id:
+            realizado_cte_query = realizado_cte_query.filter(Apontamento.projeto_id == projeto_id)
+        if recurso_id:
+            realizado_cte_query = realizado_cte_query.filter(Apontamento.recurso_id == recurso_id)
+
+        if equipe_id or secao_id:
+            realizado_cte_query = realizado_cte_query.join(Recurso, Apontamento.recurso_id == Recurso.id)
+            if equipe_id:
+                realizado_cte_query = realizado_cte_query.filter(Recurso.equipe_principal_id == equipe_id)
+            if secao_id:
+                realizado_cte_query = realizado_cte_query.join(Equipe, Recurso.equipe_principal_id == Equipe.id)
+                realizado_cte_query = realizado_cte_query.filter(Equipe.secao_id == secao_id)
+
+        realizado_cte_query = realizado_cte_query.group_by(
+            Apontamento.recurso_id,
+            Apontamento.projeto_id,
+            extract("year", Apontamento.data_apontamento),
+            extract("month", Apontamento.data_apontamento)
+        ).cte("realizado_cte")
+
+        # Consulta principal com FULL OUTER JOIN
+        final_query = select(
+            Recurso.id.label("recurso_id"),
+            Recurso.nome.label("recurso_nome"),
+            Projeto.id.label("projeto_id"),
+            Projeto.nome.label("projeto_nome"),
+            Equipe.nome.label("equipe_nome"),
+            Secao.nome.label("secao_nome"),
+            func.coalesce(planejado_cte_query.c.ano, realizado_cte_query.c.ano).label("ano"),
+            func.coalesce(planejado_cte_query.c.mes, realizado_cte_query.c.mes).label("mes"),
+            func.coalesce(planejado_cte_query.c.horas_planejadas, 0).label("horas_planejadas"),
+            func.coalesce(realizado_cte_query.c.horas_realizadas, 0).label("horas_realizadas")
+        ).select_from(
+            join(
+                planejado_cte_query,
+                realizado_cte_query,
+                and_(
+                    planejado_cte_query.c.recurso_id == realizado_cte_query.c.recurso_id,
+                    planejado_cte_query.c.projeto_id == realizado_cte_query.c.projeto_id,
+                    planejado_cte_query.c.ano == realizado_cte_query.c.ano,
+                    planejado_cte_query.c.mes == realizado_cte_query.c.mes,
+                ),
+                full=True
+            )
         ).join(
-            Recurso, AlocacaoRecursoProjeto.recurso_id == Recurso.id
+            Recurso, Recurso.id == func.coalesce(planejado_cte_query.c.recurso_id, realizado_cte_query.c.recurso_id)
         ).join(
-            Projeto, AlocacaoRecursoProjeto.projeto_id == Projeto.id
+            Projeto, Projeto.id == func.coalesce(planejado_cte_query.c.projeto_id, realizado_cte_query.c.projeto_id)
         ).join(
             Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True
         ).join(
             Secao, Equipe.secao_id == Secao.id, isouter=True
-        ).filter(
-            HorasPlanejadas.ano == ano
         )
-        
-        # Filtros adicionais para planejado
-        if mes:
-            planejado_query = planejado_query.filter(HorasPlanejadas.mes == mes)
-            
-        if projeto_id:
-            planejado_query = planejado_query.filter(AlocacaoRecursoProjeto.projeto_id == projeto_id)
-            
-        if recurso_id:
-            planejado_query = planejado_query.filter(AlocacaoRecursoProjeto.recurso_id == recurso_id)
-            
-        if equipe_id:
-            planejado_query = planejado_query.filter(Recurso.equipe_id == equipe_id)
-            
-        if secao_id:
-            planejado_query = planejado_query.filter(Recurso.secao_id == secao_id)
-            
-        # Agrupar dados planejados
-        planejado_query = planejado_query.group_by(
-            AlocacaoRecursoProjeto.recurso_id,
-            AlocacaoRecursoProjeto.projeto_id,
-            HorasPlanejadas.ano,
-            HorasPlanejadas.mes,
-            Recurso.nome,
-            Projeto.nome,
-            Equipe.nome,
-            Secao.nome
-        )
-        
-        # Base da consulta para horas realizadas
-        realizado_query = select(
-            Apontamento.recurso_id,
-            Apontamento.projeto_id,
-            extract('year', Apontamento.data_apontamento).label('ano'),
-            extract('month', Apontamento.data_apontamento).label('mes'),
-            func.sum(Apontamento.horas_apontadas).label("horas_realizadas")
-        ).filter(
-            extract('year', Apontamento.data_apontamento) == ano
-        )
-        
-        # Filtros adicionais para realizado
-        if mes:
-            realizado_query = realizado_query.filter(extract('month', Apontamento.data_apontamento) == mes)
-            
-        if projeto_id:
-            realizado_query = realizado_query.filter(Apontamento.projeto_id == projeto_id)
-            
-        if recurso_id:
-            realizado_query = realizado_query.filter(Apontamento.recurso_id == recurso_id)
-            
-        if equipe_id or secao_id:
-            realizado_query = realizado_query.join(
-                Recurso, Apontamento.recurso_id == Recurso.id
-            )
-            
-            if equipe_id:
-                realizado_query = realizado_query.filter(Recurso.equipe_id == equipe_id)
-                
-            if secao_id:
-                realizado_query = realizado_query.filter(Recurso.secao_id == secao_id)
-                
-        # Agrupar dados realizados
-        realizado_query = realizado_query.group_by(
-            Apontamento.recurso_id,
-            Apontamento.projeto_id,
-            'ano',
-            'mes'
-        )
-        
-        # Converter para dicionário para combinar os resultados
-        planejado_dict = {}
-        result = await self.db.execute(planejado_query)
-        rows = result.fetchall()
+
+
+        result = await self.db.execute(final_query)
+        rows = result.mappings().all()
+
+        response_data = []
         for row in rows:
-            key = (row.recurso_id, row.projeto_id, row.ano, row.mes)
-            planejado_dict[key] = {
-                "recurso_id": row.recurso_id,
-                "recurso_nome": row.recurso_nome,
-                "projeto_id": row.projeto_id,
-                "projeto_nome": row.projeto_nome,
-                "equipe_nome": row.equipe_nome,
-                "secao_nome": row.secao_nome,
-                "ano": row.ano,
-                "mes": row.mes,
-                "horas_planejadas": float(row.horas_planejadas) if row.horas_planejadas else 0,
-                "horas_realizadas": 0,
-                "diferenca": 0,
-                "percentual_realizado": 0
-            }
+            planejadas = float(row["horas_planejadas"])
+            realizadas = float(row["horas_realizadas"])
+            diferenca = planejadas - realizadas
+            percentual = (realizadas / planejadas * 100) if planejadas > 0 else 0
             
-        # Combinar com dados realizados
-        result = await self.db.execute(realizado_query)
-        rows = result.fetchall()
-        for row in rows:
-            key = (row.recurso_id, row.projeto_id, row.ano, row.mes)
-            if key in planejado_dict:
-                planejado_dict[key]["horas_realizadas"] = float(row.horas_realizadas) if row.horas_realizadas else 0
-                planejado_dict[key]["diferenca"] = planejado_dict[key]["horas_realizadas"] - planejado_dict[key]["horas_planejadas"]
-                
-                if planejado_dict[key]["horas_planejadas"] > 0:
-                    planejado_dict[key]["percentual_realizado"] = (planejado_dict[key]["horas_realizadas"] / planejado_dict[key]["horas_planejadas"]) * 100
-            else:
-                # Caso haja horas realizadas sem planejamento
-                # Buscar informações adicionais
-                recurso = await self.db.execute(
-                    select(
-                        Recurso.nome,
-                        Equipe.nome.label("equipe_nome"),
-                        Secao.nome.label("secao_nome")
-                    )
-                    .join(Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True)
-                    .join(Secao, Equipe.secao_id == Secao.id, isouter=True)
-                    .filter(Recurso.id == row.recurso_id)
-                )
-                recurso = recurso.fetchone()
-                
-                projeto = await self.db.execute(
-                    select(Projeto.nome)
-                    .filter(Projeto.id == row.projeto_id)
-                )
-                
-                projeto = projeto.fetchone()
-                
-                planejado_dict[key] = {
-                    "recurso_id": row.recurso_id,
-                    "recurso_nome": recurso.nome if recurso else "Desconhecido",
-                    "projeto_id": row.projeto_id,
-                    "projeto_nome": projeto.nome if projeto else "Desconhecido",
-                    "equipe_nome": recurso.equipe_nome if recurso else "Desconhecido",
-                    "secao_nome": recurso.secao_nome if recurso else "Desconhecido",
-                    "ano": row.ano,
-                    "mes": row.mes,
-                    "horas_planejadas": 0,
-                    "horas_realizadas": float(row.horas_realizadas) if row.horas_realizadas else 0,
-                    "diferenca": float(row.horas_realizadas) if row.horas_realizadas else 0,
-                    "percentual_realizado": None  # Não é possível calcular percentual sem planejamento
-                }
-        
-        # Converter para lista
-        return list(planejado_dict.values())
+            response_data.append({
+                **row,
+                "horas_planejadas": planejadas,
+                "horas_realizadas": realizadas,
+                "diferenca": diferenca,
+                "percentual_realizado": round(percentual, 2)
+            })
+            
+        return response_data
     
     async def get_disponibilidade_recursos(
         self,
