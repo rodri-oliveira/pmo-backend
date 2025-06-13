@@ -18,7 +18,7 @@ from app.core.security import get_current_admin_user
 router = APIRouter()
 
 from sqlalchemy.future import select
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 
 @router.get("/autocomplete", response_model=dict)
 async def autocomplete_projetos(
@@ -84,35 +84,42 @@ async def filtrar_projetos(
     Retorna apenas projetos que possuem horas apontadas que satisfaçam os filtros.
     """
     # A query base seleciona projetos distintos que possuem pelo menos um apontamento.
+    # Base da consulta: Projetos distintos que possuem apontamentos
     query = select(Projeto).distinct().join(Apontamento)
 
-    # CORREÇÃO: Usamos outerjoin para não excluir apontamentos de recursos 
-    # que não tenham uma equipe principal definida.
-    if secao_id is not None or equipe_id is not None:
-        query = query.outerjoin(Recurso, Apontamento.recurso_id == Recurso.id).outerjoin(Equipe, Recurso.equipe_principal_id == Equipe.id)
-    elif recurso_id is not None:
-        query = query.outerjoin(Recurso, Apontamento.recurso_id == Recurso.id)
+    # Lista de condições para o WHERE
+    conditions = [Apontamento.horas_apontadas > 0]
 
-    # Aplica os filtros de cascata
-    if secao_id is not None:
-        query = query.where(Equipe.secao_id == secao_id)
+    # Adicionar joins e filtros de hierarquia de forma cumulativa
+    if secao_id:
+        query = query.join(Recurso, Apontamento.recurso_id == Recurso.id)\
+                     .join(Equipe, Recurso.equipe_principal_id == Equipe.id)
+        conditions.append(Equipe.secao_id == secao_id)
     
-    if equipe_id is not None:
-        query = query.where(Equipe.id == equipe_id)
-        
-    if recurso_id is not None:
-        query = query.where(Recurso.id == recurso_id)
+    if equipe_id:
+        # Se o join com Recurso ainda não foi feito, adiciona
+        if not any(isinstance(j.right, Recurso.__table__.c.id.parent.entity.persist_selectable) for j in query.froms):
+             query = query.join(Recurso, Apontamento.recurso_id == Recurso.id)
+        conditions.append(Recurso.equipe_principal_id == equipe_id)
 
-    # Aplica o filtro de período nos apontamentos
+    if recurso_id:
+        conditions.append(Apontamento.recurso_id == recurso_id)
+
+    # Filtros de data
     if data_inicio:
-        query = query.where(Apontamento.data_apontamento >= data_inicio)
+        conditions.append(Apontamento.data_apontamento >= data_inicio)
     if data_fim:
-        query = query.where(Apontamento.data_apontamento <= data_fim)
+        conditions.append(Apontamento.data_apontamento <= data_fim)
 
-    # Filtra por projetos ativos, se especificado
+    # Filtro de status do projeto
     if ativo is not None:
-        query = query.where(Projeto.ativo == ativo)
+        conditions.append(Projeto.ativo == ativo)
 
+    # Aplicar todas as condições
+    if conditions:
+        query = query.where(and_(*conditions))
+
+    # Ordenar e executar
     query = query.order_by(Projeto.nome)
     result = await db.execute(query)
     return result.scalars().all()
