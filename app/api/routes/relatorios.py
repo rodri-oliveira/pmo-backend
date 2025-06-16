@@ -10,7 +10,9 @@ from app.db.orm_models import FonteApontamento
 from app.models.usuario import UsuarioInDB
 from app.services.relatorio_service import RelatorioService
 from app.utils.date_utils import parse_date_flex
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/relatorios", tags=["Relatórios"])
 
 
@@ -88,111 +90,109 @@ async def get_horas_por_projeto(
     data_fim: Optional[str] = None,
     secao_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
+    agrupar_por_mes: bool = Query(True, description="Opcional. Agrupa os resultados por mês. Padrão: True."),
     db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
     """
-    Obter relatório de horas apontadas por projeto.
-    
-    - **data_inicio**: Data inicial do período de análise
-    - **data_fim**: Data final do período de análise
-    - **secao_id**: Filtrar por seção específica
-    - **equipe_id**: Filtrar por equipe específica
-    
-    Retorna uma lista de projetos com o total de horas apontadas.
+    Obtém o relatório de horas apontadas, agrupando por projeto. O agrupamento por mês é opcional.
+
+    - **data_inicio**: Data inicial (formato `YYYY-MM-DD` ou `DD/MM/YYYY`).
+    - **data_fim**: Data final (formato `YYYY-MM-DD` ou `DD/MM/YYYY`).
+    - **secao_id**: (Opcional) ID da seção para filtrar.
+    - **equipe_id**: (Opcional) ID da equipe para filtrar.
+    - **agrupar_por_mes**: (Opcional) `True` para agrupar por mês. Padrão: `True`.
+
+    **Retorna**:
+    - `items`: Lista com os dados agregados.
+    - `total_horas`: Soma total de horas.
     """
-    relatorio_service = RelatorioService(db)
-    
-    # Conversão dos formatos de data
-    from datetime import datetime, date
-    def parse_date_field(v):
-        if v is None:
-            return v
-        if isinstance(v, date) and not isinstance(v, datetime):
-            return v
-        if isinstance(v, datetime):
-            return v.date()
-        if isinstance(v, str):
-            try:
-                return datetime.fromisoformat(v.replace('Z', '+00:00')).date()
-            except Exception:
-                pass
-            try:
-                return datetime.strptime(v, "%d/%m/%Y").date()
-            except Exception:
-                pass
-        return v
-    data_inicio_conv = parse_date_flex(data_inicio)
-    data_fim_conv = parse_date_flex(data_fim)
-    result = await relatorio_service.get_horas_por_projeto(
-        data_inicio=data_inicio_conv,
-        data_fim=data_fim_conv,
-        secao_id=secao_id,
-        equipe_id=equipe_id
-    )
-    return {"items": result}
+    repo = ApontamentoRepository(db)
+    try:
+        data_inicio_date = parse_date_flex(data_inicio)
+        data_fim_date = parse_date_flex(data_fim)
+
+        dados = await repo.find_with_filters_and_aggregate(
+            data_inicio=data_inicio_date,
+            data_fim=data_fim_date,
+            secao_id=secao_id,
+            equipe_id=equipe_id,
+            agrupar_por_projeto=True,
+            agrupar_por_mes=agrupar_por_mes
+        )
+        
+        total_horas = sum(float(item.get('horas') or 0) for item in dados)
+
+        return {
+            "items": dados,
+            "total_horas": total_horas
+        }
+    except Exception as e:
+        logger.error(f"Erro ao gerar relatório de horas por projeto: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno ao gerar relatório.")
 
 @router.get("/horas-por-recurso")
 async def get_horas_por_recurso(
-    data_inicio: Optional[str] = None,
-    data_fim: Optional[str] = None,
-    projeto_id: Optional[int] = None,
-    equipe_id: Optional[int] = None,
-    secao_id: Optional[int] = None,
+    data_inicio: Optional[str] = Query(None),
+    data_fim: Optional[str] = Query(None),
+    secao_id: Optional[int] = Query(None),
+    equipe_id: Optional[int] = Query(None),
+    recurso_id: Optional[int] = Query(None),
+    agrupar_por_projeto: bool = Query(True, description="Opcional. Agrupa os resultados por projeto. Padrão: True."),
+    agrupar_por_mes: bool = Query(True, description="Opcional. Agrupa os resultados por mês. Padrão: True."),
     db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
     """
-    Obter relatório de horas apontadas por recurso.
-    
-    - **data_inicio**: Data inicial do período de análise (formatos aceitos: YYYY-MM-DD, DD/MM/YYYY)
-    - **data_fim**: Data final do período de análise (formatos aceitos: YYYY-MM-DD, DD/MM/YYYY)
-    - **projeto_id**: Filtrar por projeto específico
-    - **equipe_id**: Filtrar por equipe específica
-    - **secao_id**: Filtrar por seção específica
-    
-    Retorna uma lista de recursos com o total de horas apontadas.
+    Obtém o relatório de horas apontadas, agrupando por recurso. O agrupamento por projeto e mês é opcional.
+
+    - **data_inicio**: Data inicial (formato `YYYY-MM-DD` ou `DD/MM/YYYY`).
+    - **data_fim**: Data final (formato `YYYY-MM-DD` ou `DD/MM/YYYY`).
+    - **secao_id**: (Opcional) ID da seção para filtrar.
+    - **equipe_id**: (Opcional) ID da equipe para filtrar.
+    - **recurso_id**: (Opcional) ID do recurso para filtrar.
+    - **agrupar_por_projeto**: (Opcional) `True` para agrupar por projeto. Padrão: `True`.
+    - **agrupar_por_mes**: (Opcional) `True` para agrupar por mês. Padrão: `True`.
+
+    **Retorna**:
+    - `items`: Lista com os dados agregados.
+    - `total_horas`: Soma total de horas.
     """
-    relatorio_service = RelatorioService(db)
-    
-    # Conversão dos formatos de data
-    from datetime import datetime, date
-    def parse_date_field(v):
-        if v is None:
-            return v
-        if isinstance(v, date) and not isinstance(v, datetime):
-            return v
-        if isinstance(v, datetime):
-            return v.date()
-        if isinstance(v, str):
-            try:
-                return datetime.fromisoformat(v.replace('Z', '+00:00')).date()
-            except Exception:
-                pass
-            try:
-                return datetime.strptime(v, "%d/%m/%Y").date()
-            except Exception:
-                pass
-        return v
-    data_inicio_conv = parse_date_flex(data_inicio)
-    data_fim_conv = parse_date_flex(data_fim)
-    result = await relatorio_service.get_horas_por_recurso(
-        data_inicio=data_inicio_conv,
-        data_fim=data_fim_conv,
-        projeto_id=projeto_id,
-        equipe_id=equipe_id,
-        secao_id=secao_id
-    )
-    return {"items": result}
+    repo = ApontamentoRepository(db)
+    try:
+        data_inicio_date = parse_date_flex(data_inicio)
+        data_fim_date = parse_date_flex(data_fim)
+
+        dados = await repo.find_with_filters_and_aggregate(
+            data_inicio=data_inicio_date,
+            data_fim=data_fim_date,
+            secao_id=secao_id,
+            equipe_id=equipe_id,
+            recurso_id=recurso_id,
+            agrupar_por_recurso=True,
+            agrupar_por_projeto=agrupar_por_projeto,
+            agrupar_por_mes=agrupar_por_mes,
+        )
+        
+        total_horas = sum(float(item.get('horas') or 0) for item in dados)
+
+        return {
+            "items": dados,
+            "total_horas": total_horas
+        }
+    except Exception as e:
+        logger.error(f"Erro ao gerar relatório de horas por recurso: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno ao gerar relatório.")
 
 @router.get("/planejado-vs-realizado")
 async def get_planejado_vs_realizado(
-    ano: int = Query(..., description="Ano de referência"),
-    mes: Optional[int] = Query(None, description="Mês de referência (1-12)"),
+    ano: int,
+    mes: Optional[int] = None,
     projeto_id: Optional[int] = None,
     recurso_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     secao_id: Optional[int] = None,
+    agrupar_por_projeto: bool = Query(True, description="Agrupa os resultados por projeto. Se `false`, os dados são agregados apenas por recurso, mês e ano."),
     db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
@@ -205,6 +205,7 @@ async def get_planejado_vs_realizado(
     - **recurso_id**: Filtrar por recurso específico
     - **equipe_id**: Filtrar por equipe específica
     - **secao_id**: Filtrar por seção específica
+    - **agrupar_por_projeto**: Agrupa os resultados por projeto. Se `false`, os dados são agregados apenas por recurso, mês e ano.
     
     Retorna uma lista com comparativo entre horas planejadas e realizadas.
     """
@@ -220,7 +221,8 @@ async def get_planejado_vs_realizado(
         projeto_id=projeto_id,
         recurso_id=recurso_id,
         equipe_id=equipe_id,
-        secao_id=secao_id
+        secao_id=secao_id,
+        agrupar_por_projeto=agrupar_por_projeto
     )
     return {"items": result}
 
@@ -231,6 +233,7 @@ async def get_disponibilidade_recursos_endpoint(
     recurso_id: Optional[int] = Query(None, description="ID do recurso para filtrar a disponibilidade"),
     equipe_id: Optional[int] = Query(None, description="ID da equipe para filtrar a disponibilidade"),
     secao_id: Optional[int] = Query(None, description="ID da seção para filtrar a disponibilidade"),
+    agrupar_por_mes: bool = Query(False, description="Agrupa os resultados por mês."),
     db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user) # Protegendo o endpoint
 ):
@@ -246,6 +249,7 @@ async def get_disponibilidade_recursos_endpoint(
     - **recurso_id**: ID do recurso para obter disponibilidade específica (opcional).
     - **equipe_id**: ID da equipe para filtrar a disponibilidade (opcional).
     - **secao_id**: ID da seção para filtrar a disponibilidade (opcional).
+    - **agrupar_por_mes**: Agrupa os resultados por mês.
     """
     relatorio_service = RelatorioService(db)
     try:
@@ -254,7 +258,8 @@ async def get_disponibilidade_recursos_endpoint(
             mes=mes,
             recurso_id=recurso_id,
             equipe_id=equipe_id,
-            secao_id=secao_id
+            secao_id=secao_id,
+            agrupar_por_mes=agrupar_por_mes
         )
         if not dados_disponibilidade and (recurso_id or mes):
             # Se filtros específicos foram aplicados e nada foi encontrado, pode ser um 404

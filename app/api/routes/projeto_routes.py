@@ -79,47 +79,42 @@ async def filtrar_projetos(
 ):
     """
     Filtra projetos com base na existência de apontamentos que correspondam
-    aos critérios de seção, equipe e recurso, em cascata.
-    Permite filtrar adicionalmente por projetos ativos ou inativos.
-    Retorna apenas projetos que possuem horas apontadas que satisfaçam os filtros.
+    aos critérios de seção, equipe e recurso, de forma cumulativa.
+    Retorna apenas projetos que possuem horas apontadas (> 0) que satisfaçam os filtros.
     """
-    # A query base seleciona projetos distintos que possuem pelo menos um apontamento.
-    # Base da consulta: Projetos distintos que possuem apontamentos
-    query = select(Projeto).distinct().join(Apontamento)
+    # Base da consulta: Projetos distintos.
+    query = select(Projeto).distinct()
 
-    # Lista de condições para o WHERE
+    # Estrutura de JOINs para suportar todos os filtros possíveis.
+    # O caminho é: Projeto -> Apontamento -> Recurso -> Equipe
+    query = query.join(Apontamento, Projeto.id == Apontamento.projeto_id)
+    query = query.join(Recurso, Apontamento.recurso_id == Recurso.id)
+    query = query.join(Equipe, Recurso.equipe_principal_id == Equipe.id)
+
+    # Coleta todas as condições de filtro.
     conditions = [Apontamento.horas_apontadas > 0]
 
-    # Adicionar joins e filtros de hierarquia de forma cumulativa
-    if secao_id:
-        query = query.join(Recurso, Apontamento.recurso_id == Recurso.id)\
-                     .join(Equipe, Recurso.equipe_principal_id == Equipe.id)
+    if secao_id is not None:
         conditions.append(Equipe.secao_id == secao_id)
-    
-    if equipe_id:
-        # Se o join com Recurso ainda não foi feito, adiciona
-        if not any(isinstance(j.right, Recurso.__table__.c.id.parent.entity.persist_selectable) for j in query.froms):
-             query = query.join(Recurso, Apontamento.recurso_id == Recurso.id)
-        conditions.append(Recurso.equipe_principal_id == equipe_id)
+    if equipe_id is not None:
+        conditions.append(Equipe.id == equipe_id)
+    if recurso_id is not None:
+        conditions.append(Recurso.id == recurso_id)
 
-    if recurso_id:
-        conditions.append(Apontamento.recurso_id == recurso_id)
-
-    # Filtros de data
+    # Filtros de data.
     if data_inicio:
         conditions.append(Apontamento.data_apontamento >= data_inicio)
     if data_fim:
         conditions.append(Apontamento.data_apontamento <= data_fim)
 
-    # Filtro de status do projeto
+    # Filtro de status do projeto.
     if ativo is not None:
         conditions.append(Projeto.ativo == ativo)
 
-    # Aplicar todas as condições
-    if conditions:
-        query = query.where(and_(*conditions))
+    # Aplica todas as condições de uma vez.
+    query = query.where(and_(*conditions))
 
-    # Ordenar e executar
+    # Ordena e executa.
     query = query.order_by(Projeto.nome)
     result = await db.execute(query)
     return result.scalars().all()
