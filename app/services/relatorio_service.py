@@ -166,7 +166,8 @@ class RelatorioService:
         projeto_id: Optional[int] = None,
         recurso_id: Optional[int] = None,
         equipe_id: Optional[int] = None,
-        secao_id: Optional[int] = None
+        secao_id: Optional[int] = None,
+        agrupar_por_projeto: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Obtém análise comparativa entre horas planejadas e horas efetivamente apontadas.
@@ -178,6 +179,7 @@ class RelatorioService:
             recurso_id: Filtrar por recurso
             equipe_id: Filtrar por equipe
             secao_id: Filtrar por seção
+            agrupar_por_projeto: Se False, consolida os resultados por recurso/mês.
             
         Returns:
             Lista de dicionários com informações comparativas
@@ -309,8 +311,7 @@ class RelatorioService:
                     planejado_dict[key]["percentual_realizado"] = (planejado_dict[key]["horas_realizadas"] / planejado_dict[key]["horas_planejadas"]) * 100
             else:
                 # Caso haja horas realizadas sem planejamento
-                # Buscar informações adicionais
-                recurso = await self.db.execute(
+                recurso_info = await self.db.execute(
                     select(
                         Recurso.nome,
                         Equipe.nome.label("equipe_nome"),
@@ -320,32 +321,62 @@ class RelatorioService:
                     .join(Secao, Equipe.secao_id == Secao.id, isouter=True)
                     .filter(Recurso.id == row.recurso_id)
                 )
-                recurso = recurso.fetchone()
+                recurso_data = recurso_info.fetchone()
                 
-                projeto = await self.db.execute(
-                    select(Projeto.nome)
-                    .filter(Projeto.id == row.projeto_id)
+                projeto_info = await self.db.execute(
+                    select(Projeto.nome).filter(Projeto.id == row.projeto_id)
                 )
-                
-                projeto = projeto.fetchone()
+                projeto_data = projeto_info.fetchone()
                 
                 planejado_dict[key] = {
                     "recurso_id": row.recurso_id,
-                    "recurso_nome": recurso.nome if recurso else "Desconhecido",
+                    "recurso_nome": recurso_data.nome if recurso_data else "Desconhecido",
                     "projeto_id": row.projeto_id,
-                    "projeto_nome": projeto.nome if projeto else "Desconhecido",
-                    "equipe_nome": recurso.equipe_nome if recurso else "Desconhecido",
-                    "secao_nome": recurso.secao_nome if recurso else "Desconhecido",
+                    "projeto_nome": projeto_data.nome if projeto_data else "Desconhecido",
+                    "equipe_nome": recurso_data.equipe_nome if recurso_data else "Desconhecido",
+                    "secao_nome": recurso_data.secao_nome if recurso_data else "Desconhecido",
                     "ano": row.ano,
                     "mes": row.mes,
                     "horas_planejadas": 0,
                     "horas_realizadas": float(row.horas_realizadas) if row.horas_realizadas else 0,
                     "diferenca": float(row.horas_realizadas) if row.horas_realizadas else 0,
-                    "percentual_realizado": None  # Não é possível calcular percentual sem planejamento
+                    "percentual_realizado": None
                 }
         
-        # Converter para lista
-        return list(planejado_dict.values())
+        result_list = list(planejado_dict.values())
+
+        if not agrupar_por_projeto:
+            consolidado_dict = {}
+            for item in result_list:
+                key = (item["recurso_id"], item["ano"], item["mes"])
+                if key not in consolidado_dict:
+                    consolidado_dict[key] = {
+                        "recurso_id": item["recurso_id"],
+                        "recurso_nome": item["recurso_nome"],
+                        "projeto_id": None,
+                        "projeto_nome": "Todos os Projetos",
+                        "equipe_nome": item["equipe_nome"],
+                        "secao_nome": item["secao_nome"],
+                        "ano": item["ano"],
+                        "mes": item["mes"],
+                        "horas_planejadas": 0,
+                        "horas_realizadas": 0,
+                    }
+                consolidado_dict[key]["horas_planejadas"] += item["horas_planejadas"]
+                consolidado_dict[key]["horas_realizadas"] += item["horas_realizadas"]
+            
+            for value in consolidado_dict.values():
+                planejadas = value["horas_planejadas"]
+                realizadas = value["horas_realizadas"]
+                value["diferenca"] = realizadas - planejadas
+                if planejadas > 0:
+                    value["percentual_realizado"] = (realizadas / planejadas) * 100
+                else:
+                    value["percentual_realizado"] = 0
+            
+            return list(consolidado_dict.values())
+
+        return result_list
     
     async def get_disponibilidade_recursos(
         self,

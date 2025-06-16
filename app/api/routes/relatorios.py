@@ -184,6 +184,7 @@ async def get_planejado_vs_realizado(
     recurso_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     secao_id: Optional[int] = None,
+    agrupar_por_projeto: bool = Query(True, description="Agrupar os resultados por projeto. Se False, consolida os totais por recurso."),
     db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
@@ -196,6 +197,7 @@ async def get_planejado_vs_realizado(
     - **recurso_id**: Filtrar por recurso específico
     - **equipe_id**: Filtrar por equipe específica
     - **secao_id**: Filtrar por seção específica
+    - **agrupar_por_projeto**: Se `False`, os resultados são consolidados por recurso, somando todos os projetos. O padrão é `True`.
     
     Retorna uma lista com comparativo entre horas planejadas e realizadas.
     """
@@ -211,7 +213,8 @@ async def get_planejado_vs_realizado(
         projeto_id=projeto_id,
         recurso_id=recurso_id,
         equipe_id=equipe_id,
-        secao_id=secao_id
+        secao_id=secao_id,
+        agrupar_por_projeto=agrupar_por_projeto
     )
     return {"items": result}
 
