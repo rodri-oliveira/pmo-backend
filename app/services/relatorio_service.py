@@ -167,127 +167,153 @@ class RelatorioService:
         projeto_id: Optional[int] = None,
         recurso_id: Optional[int] = None,
         equipe_id: Optional[int] = None,
-        secao_id: Optional[int] = None
+        secao_id: Optional[int] = None,
+        agrupar_por_projeto: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Obtém análise comparativa entre horas planejadas e horas efetivamente apontadas.
+        Opcionalmente agrupa os resultados por projeto.
         """
-        # CTE para Horas Planejadas
-        planejado_cte_query = select(
+
+        # --- CTE para Horas Planejadas ---
+        planejado_select_cols = [
             AlocacaoRecursoProjeto.recurso_id,
-            AlocacaoRecursoProjeto.projeto_id,
             HorasPlanejadas.ano,
             HorasPlanejadas.mes,
             func.sum(HorasPlanejadas.horas_planejadas).label("horas_planejadas")
-        ).join(
+        ]
+        planejado_group_by_cols = [
+            AlocacaoRecursoProjeto.recurso_id,
+            HorasPlanejadas.ano,
+            HorasPlanejadas.mes
+        ]
+
+        if agrupar_por_projeto:
+            planejado_select_cols.insert(1, AlocacaoRecursoProjeto.projeto_id)
+            planejado_group_by_cols.insert(1, AlocacaoRecursoProjeto.projeto_id)
+
+        planejado_query = select(*planejado_select_cols).join(
             HorasPlanejadas, HorasPlanejadas.alocacao_id == AlocacaoRecursoProjeto.id
         ).filter(HorasPlanejadas.ano == ano)
 
         if mes:
-            planejado_cte_query = planejado_cte_query.filter(HorasPlanejadas.mes == mes)
+            planejado_query = planejado_query.filter(HorasPlanejadas.mes == mes)
         if projeto_id:
-            planejado_cte_query = planejado_cte_query.filter(AlocacaoRecursoProjeto.projeto_id == projeto_id)
+            planejado_query = planejado_query.filter(AlocacaoRecursoProjeto.projeto_id == projeto_id)
         if recurso_id:
-            planejado_cte_query = planejado_cte_query.filter(AlocacaoRecursoProjeto.recurso_id == recurso_id)
+            planejado_query = planejado_query.filter(AlocacaoRecursoProjeto.recurso_id == recurso_id)
 
         if equipe_id or secao_id:
-            planejado_cte_query = planejado_cte_query.join(Recurso, AlocacaoRecursoProjeto.recurso_id == Recurso.id)
+            planejado_query = planejado_query.join(Recurso, AlocacaoRecursoProjeto.recurso_id == Recurso.id)
             if equipe_id:
-                planejado_cte_query = planejado_cte_query.filter(Recurso.equipe_principal_id == equipe_id)
+                planejado_query = planejado_query.filter(Recurso.equipe_principal_id == equipe_id)
             if secao_id:
-                planejado_cte_query = planejado_cte_query.join(Equipe, Recurso.equipe_principal_id == Equipe.id)
-                planejado_cte_query = planejado_cte_query.filter(Equipe.secao_id == secao_id)
+                planejado_query = planejado_query.join(Equipe, Recurso.equipe_principal_id == Equipe.id)
+                planejado_query = planejado_query.filter(Equipe.secao_id == secao_id)
 
-        planejado_cte_query = planejado_cte_query.group_by(
-            AlocacaoRecursoProjeto.recurso_id,
-            AlocacaoRecursoProjeto.projeto_id,
-            HorasPlanejadas.ano,
-            HorasPlanejadas.mes
-        ).cte("planejado_cte")
+        planejado_cte = planejado_query.group_by(*planejado_group_by_cols).cte("planejado_cte")
 
-        # CTE para Horas Realizadas (Apontadas)
-        realizado_cte_query = select(
+        # --- CTE para Horas Realizadas (Apontadas) ---
+        realizado_select_cols = [
             Apontamento.recurso_id,
-            Apontamento.projeto_id,
             extract("year", Apontamento.data_apontamento).label("ano"),
             extract("month", Apontamento.data_apontamento).label("mes"),
             func.sum(Apontamento.horas_apontadas).label("horas_realizadas")
-        ).filter(extract("year", Apontamento.data_apontamento) == ano)
-
-        if mes:
-            realizado_cte_query = realizado_cte_query.filter(extract("month", Apontamento.data_apontamento) == mes)
-        if projeto_id:
-            realizado_cte_query = realizado_cte_query.filter(Apontamento.projeto_id == projeto_id)
-        if recurso_id:
-            realizado_cte_query = realizado_cte_query.filter(Apontamento.recurso_id == recurso_id)
-
-        if equipe_id or secao_id:
-            realizado_cte_query = realizado_cte_query.join(Recurso, Apontamento.recurso_id == Recurso.id)
-            if equipe_id:
-                realizado_cte_query = realizado_cte_query.filter(Recurso.equipe_principal_id == equipe_id)
-            if secao_id:
-                realizado_cte_query = realizado_cte_query.join(Equipe, Recurso.equipe_principal_id == Equipe.id)
-                realizado_cte_query = realizado_cte_query.filter(Equipe.secao_id == secao_id)
-
-        realizado_cte_query = realizado_cte_query.group_by(
+        ]
+        realizado_group_by_cols = [
             Apontamento.recurso_id,
-            Apontamento.projeto_id,
             extract("year", Apontamento.data_apontamento),
             extract("month", Apontamento.data_apontamento)
-        ).cte("realizado_cte")
+        ]
 
-        # Consulta principal com FULL OUTER JOIN
-        final_query = select(
+        if agrupar_por_projeto:
+            realizado_select_cols.insert(1, Apontamento.projeto_id)
+            realizado_group_by_cols.insert(1, Apontamento.projeto_id)
+
+        realizado_query = select(*realizado_select_cols).filter(extract("year", Apontamento.data_apontamento) == ano)
+
+        if mes:
+            realizado_query = realizado_query.filter(extract("month", Apontamento.data_apontamento) == mes)
+        if projeto_id:
+            realizado_query = realizado_query.filter(Apontamento.projeto_id == projeto_id)
+        if recurso_id:
+            realizado_query = realizado_query.filter(Apontamento.recurso_id == recurso_id)
+
+        if equipe_id or secao_id:
+            realizado_query = realizado_query.join(Recurso, Apontamento.recurso_id == Recurso.id)
+            if equipe_id:
+                realizado_query = realizado_query.filter(Recurso.equipe_principal_id == equipe_id)
+            if secao_id:
+                realizado_query = realizado_query.join(Equipe, Recurso.equipe_principal_id == Equipe.id)
+                realizado_query = realizado_query.filter(Equipe.secao_id == secao_id)
+
+        realizado_cte = realizado_query.group_by(*realizado_group_by_cols).cte("realizado_cte")
+
+        # --- Consulta principal com FULL OUTER JOIN ---
+        join_conditions = [
+            planejado_cte.c.recurso_id == realizado_cte.c.recurso_id,
+            planejado_cte.c.ano == realizado_cte.c.ano,
+            planejado_cte.c.mes == realizado_cte.c.mes,
+        ]
+        if agrupar_por_projeto:
+            join_conditions.append(planejado_cte.c.projeto_id == realizado_cte.c.projeto_id)
+
+        final_select_cols = [
             Recurso.id.label("recurso_id"),
             Recurso.nome.label("recurso_nome"),
-            Projeto.id.label("projeto_id"),
-            Projeto.nome.label("projeto_nome"),
             Equipe.nome.label("equipe_nome"),
             Secao.nome.label("secao_nome"),
-            func.coalesce(planejado_cte_query.c.ano, realizado_cte_query.c.ano).label("ano"),
-            func.coalesce(planejado_cte_query.c.mes, realizado_cte_query.c.mes).label("mes"),
-            func.coalesce(planejado_cte_query.c.horas_planejadas, 0).label("horas_planejadas"),
-            func.coalesce(realizado_cte_query.c.horas_realizadas, 0).label("horas_realizadas")
-        ).select_from(
+            func.coalesce(planejado_cte.c.ano, realizado_cte.c.ano).label("ano"),
+            func.coalesce(planejado_cte.c.mes, realizado_cte.c.mes).label("mes"),
+            func.coalesce(planejado_cte.c.horas_planejadas, 0).label("horas_planejadas"),
+            func.coalesce(realizado_cte.c.horas_realizadas, 0).label("horas_realizadas")
+        ]
+
+        if agrupar_por_projeto:
+            final_select_cols.insert(2, Projeto.id.label("projeto_id"))
+            final_select_cols.insert(3, Projeto.nome.label("projeto_nome"))
+
+        final_query = select(*final_select_cols).select_from(
             join(
-                planejado_cte_query,
-                realizado_cte_query,
-                and_(
-                    planejado_cte_query.c.recurso_id == realizado_cte_query.c.recurso_id,
-                    planejado_cte_query.c.projeto_id == realizado_cte_query.c.projeto_id,
-                    planejado_cte_query.c.ano == realizado_cte_query.c.ano,
-                    planejado_cte_query.c.mes == realizado_cte_query.c.mes,
-                ),
+                planejado_cte,
+                realizado_cte,
+                and_(*join_conditions),
                 full=True
             )
         ).join(
-            Recurso, Recurso.id == func.coalesce(planejado_cte_query.c.recurso_id, realizado_cte_query.c.recurso_id)
-        ).join(
-            Projeto, Projeto.id == func.coalesce(planejado_cte_query.c.projeto_id, realizado_cte_query.c.projeto_id)
-        ).join(
+            Recurso, Recurso.id == func.coalesce(planejado_cte.c.recurso_id, realizado_cte.c.recurso_id)
+        )
+
+        if agrupar_por_projeto:
+            final_query = final_query.join(
+                Projeto, Projeto.id == func.coalesce(planejado_cte.c.projeto_id, realizado_cte.c.projeto_id)
+            )
+        
+        final_query = final_query.join(
             Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True
         ).join(
             Secao, Equipe.secao_id == Secao.id, isouter=True
         )
-
 
         result = await self.db.execute(final_query)
         rows = result.mappings().all()
 
         response_data = []
         for row in rows:
-            planejadas = float(row["horas_planejadas"])
-            realizadas = float(row["horas_realizadas"])
+            # Convert RowMapping to a mutable dictionary
+            row_dict = dict(row)
+            
+            planejadas = float(row_dict.get("horas_planejadas", 0))
+            realizadas = float(row_dict.get("horas_realizadas", 0))
             diferenca = planejadas - realizadas
             percentual = (realizadas / planejadas * 100) if planejadas > 0 else 0
             
-            response_data.append({
-                **row,
-                "horas_planejadas": planejadas,
-                "horas_realizadas": realizadas,
-                "diferenca": diferenca,
-                "percentual_realizado": round(percentual, 2)
-            })
+            row_dict["horas_planejadas"] = planejadas
+            row_dict["horas_realizadas"] = realizadas
+            row_dict["diferenca"] = diferenca
+            row_dict["percentual_realizado"] = round(percentual, 2)
+            
+            response_data.append(row_dict)
             
         return response_data
     

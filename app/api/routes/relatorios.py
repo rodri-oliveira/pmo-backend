@@ -186,12 +186,13 @@ async def get_horas_por_recurso(
 
 @router.get("/planejado-vs-realizado")
 async def get_planejado_vs_realizado(
-    ano: int = Query(..., description="Ano de referência"),
-    mes: Optional[int] = Query(None, description="Mês de referência (1-12)"),
+    ano: int,
+    mes: Optional[int] = None,
     projeto_id: Optional[int] = None,
     recurso_id: Optional[int] = None,
     equipe_id: Optional[int] = None,
     secao_id: Optional[int] = None,
+    agrupar_por_projeto: bool = Query(True, description="Agrupa os resultados por projeto. Se `false`, os dados são agregados apenas por recurso, mês e ano."),
     db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
@@ -204,6 +205,7 @@ async def get_planejado_vs_realizado(
     - **recurso_id**: Filtrar por recurso específico
     - **equipe_id**: Filtrar por equipe específica
     - **secao_id**: Filtrar por seção específica
+    - **agrupar_por_projeto**: Agrupa os resultados por projeto. Se `false`, os dados são agregados apenas por recurso, mês e ano.
     
     Retorna uma lista com comparativo entre horas planejadas e realizadas.
     """
@@ -219,7 +221,8 @@ async def get_planejado_vs_realizado(
         projeto_id=projeto_id,
         recurso_id=recurso_id,
         equipe_id=equipe_id,
-        secao_id=secao_id
+        secao_id=secao_id,
+        agrupar_por_projeto=agrupar_por_projeto
     )
     return {"items": result}
 
