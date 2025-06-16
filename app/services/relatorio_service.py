@@ -18,7 +18,7 @@ class RelatorioService:
     """
     Serviço para geração de relatórios e análises do sistema.
     """
-    
+
     def __init__(self, db: AsyncSession):
         """
         Inicializa o serviço com uma sessão do banco de dados.
@@ -27,7 +27,7 @@ class RelatorioService:
             db: Sessão do banco de dados assíncrona
         """
         self.db = db
-    
+
     async def get_horas_por_projeto(
         self, 
         data_inicio: Optional[date] = None, 
@@ -37,15 +37,6 @@ class RelatorioService:
     ) -> List[Dict[str, Any]]:
         """
         Obtém o total de horas apontadas por projeto.
-        
-        Args:
-            data_inicio: Data inicial do período
-            data_fim: Data final do período
-            secao_id: Filtrar por seção
-            equipe_id: Filtrar por equipe
-            
-        Returns:
-            Lista de dicionários com informações de horas por projeto
         """
         query = select(
             Projeto.id.label("projeto_id"),
@@ -88,7 +79,7 @@ class RelatorioService:
             }
             for row in rows
         ]
-    
+
     async def get_horas_por_recurso(
         self, 
         data_inicio: Optional[date] = None, 
@@ -99,16 +90,6 @@ class RelatorioService:
     ) -> List[Dict[str, Any]]:
         """
         Obtém o total de horas apontadas por recurso.
-        
-        Args:
-            data_inicio: Data inicial do período
-            data_fim: Data final do período
-            projeto_id: Filtrar por projeto
-            equipe_id: Filtrar por equipe
-            secao_id: Filtrar por seção
-            
-        Returns:
-            Lista de dicionários com informações de horas por recurso
         """
         query = select(
             Recurso.id.label("recurso_id"),
@@ -141,7 +122,6 @@ class RelatorioService:
         if secao_id:
             query = query.filter(Equipe.secao_id == secao_id)
         
-        import logging
         try:
             result = await self.db.execute(query)
             rows = result.fetchall()
@@ -156,9 +136,10 @@ class RelatorioService:
                 for row in rows
             ]
         except Exception as e:
+            import logging
             logging.exception("Erro ao executar query de horas por recurso")
             raise
-    
+
     async def get_analise_planejado_vs_realizado(
         self,
         ano: int,
@@ -170,21 +151,10 @@ class RelatorioService:
         agrupar_por_projeto: bool = True
     ) -> List[Dict[str, Any]]:
         """
-        Obtém análise comparativa entre horas planejadas e horas efetivamente apontadas.
-        
-        Args:
-            ano: Ano de referência
-            mes: Mês de referência (opcional)
-            projeto_id: Filtrar por projeto
-            recurso_id: Filtrar por recurso
-            equipe_id: Filtrar por equipe
-            secao_id: Filtrar por seção
-            agrupar_por_projeto: Se False, consolida os resultados por recurso/mês.
-            
-        Returns:
-            Lista de dicionários com informações comparativas
+        Obtém análise comparativa entre horas planejadas e horas efetivamente apontadas,
+        com filtros e opção de agrupamento.
         """
-        # Base da consulta para horas planejadas
+        # 1. Consulta para Horas Planejadas
         planejado_query = select(
             AlocacaoRecursoProjeto.recurso_id,
             AlocacaoRecursoProjeto.projeto_id,
@@ -205,178 +175,119 @@ class RelatorioService:
             Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True
         ).join(
             Secao, Equipe.secao_id == Secao.id, isouter=True
-        ).filter(
-            HorasPlanejadas.ano == ano
-        )
-        
-        # Filtros adicionais para planejado
-        if mes:
-            planejado_query = planejado_query.filter(HorasPlanejadas.mes == mes)
-            
-        if projeto_id:
-            planejado_query = planejado_query.filter(AlocacaoRecursoProjeto.projeto_id == projeto_id)
-            
-        if recurso_id:
-            planejado_query = planejado_query.filter(AlocacaoRecursoProjeto.recurso_id == recurso_id)
-            
-        if equipe_id:
-            planejado_query = planejado_query.filter(Recurso.equipe_id == equipe_id)
-            
-        if secao_id:
-            planejado_query = planejado_query.filter(Recurso.secao_id == secao_id)
-            
-        # Agrupar dados planejados
+        ).filter(HorasPlanejadas.ano == ano)
+
+        if mes: planejado_query = planejado_query.filter(HorasPlanejadas.mes == mes)
+        if projeto_id: planejado_query = planejado_query.filter(AlocacaoRecursoProjeto.projeto_id == projeto_id)
+        if recurso_id: planejado_query = planejado_query.filter(AlocacaoRecursoProjeto.recurso_id == recurso_id)
+        if equipe_id: planejado_query = planejado_query.filter(Recurso.equipe_principal_id == equipe_id)
+        if secao_id: planejado_query = planejado_query.filter(Equipe.secao_id == secao_id)
+
         planejado_query = planejado_query.group_by(
-            AlocacaoRecursoProjeto.recurso_id,
-            AlocacaoRecursoProjeto.projeto_id,
-            HorasPlanejadas.ano,
-            HorasPlanejadas.mes,
-            Recurso.nome,
-            Projeto.nome,
-            Equipe.nome,
-            Secao.nome
+            AlocacaoRecursoProjeto.recurso_id, AlocacaoRecursoProjeto.projeto_id, HorasPlanejadas.ano, 
+            HorasPlanejadas.mes, Recurso.nome, Projeto.nome, Equipe.nome, Secao.nome
         )
-        
-        # Base da consulta para horas realizadas
+
+        # 2. Consulta para Horas Realizadas
         realizado_query = select(
             Apontamento.recurso_id,
             Apontamento.projeto_id,
             extract('year', Apontamento.data_apontamento).label('ano'),
             extract('month', Apontamento.data_apontamento).label('mes'),
             func.sum(Apontamento.horas_apontadas).label("horas_realizadas")
-        ).filter(
-            extract('year', Apontamento.data_apontamento) == ano
-        )
-        
-        # Filtros adicionais para realizado
-        if mes:
-            realizado_query = realizado_query.filter(extract('month', Apontamento.data_apontamento) == mes)
-            
-        if projeto_id:
-            realizado_query = realizado_query.filter(Apontamento.projeto_id == projeto_id)
-            
-        if recurso_id:
-            realizado_query = realizado_query.filter(Apontamento.recurso_id == recurso_id)
-            
-        if equipe_id or secao_id:
-            realizado_query = realizado_query.join(
-                Recurso, Apontamento.recurso_id == Recurso.id
-            )
-            
-            if equipe_id:
-                realizado_query = realizado_query.filter(Recurso.equipe_id == equipe_id)
-                
-            if secao_id:
-                realizado_query = realizado_query.filter(Recurso.secao_id == secao_id)
-                
-        # Agrupar dados realizados
-        realizado_query = realizado_query.group_by(
-            Apontamento.recurso_id,
-            Apontamento.projeto_id,
-            'ano',
-            'mes'
-        )
-        
-        # Converter para dicionário para combinar os resultados
-        planejado_dict = {}
-        result = await self.db.execute(planejado_query)
-        rows = result.fetchall()
-        for row in rows:
-            key = (row.recurso_id, row.projeto_id, row.ano, row.mes)
-            planejado_dict[key] = {
-                "recurso_id": row.recurso_id,
-                "recurso_nome": row.recurso_nome,
-                "projeto_id": row.projeto_id,
-                "projeto_nome": row.projeto_nome,
-                "equipe_nome": row.equipe_nome,
-                "secao_nome": row.secao_nome,
-                "ano": row.ano,
-                "mes": row.mes,
-                "horas_planejadas": float(row.horas_planejadas) if row.horas_planejadas else 0,
-                "horas_realizadas": 0,
-                "diferenca": 0,
-                "percentual_realizado": 0
-            }
-            
-        # Combinar com dados realizados
-        result = await self.db.execute(realizado_query)
-        rows = result.fetchall()
-        for row in rows:
-            key = (row.recurso_id, row.projeto_id, row.ano, row.mes)
-            if key in planejado_dict:
-                planejado_dict[key]["horas_realizadas"] = float(row.horas_realizadas) if row.horas_realizadas else 0
-                planejado_dict[key]["diferenca"] = planejado_dict[key]["horas_realizadas"] - planejado_dict[key]["horas_planejadas"]
-                
-                if planejado_dict[key]["horas_planejadas"] > 0:
-                    planejado_dict[key]["percentual_realizado"] = (planejado_dict[key]["horas_realizadas"] / planejado_dict[key]["horas_planejadas"]) * 100
-            else:
-                # Caso haja horas realizadas sem planejamento
-                recurso_info = await self.db.execute(
-                    select(
-                        Recurso.nome,
-                        Equipe.nome.label("equipe_nome"),
-                        Secao.nome.label("secao_nome")
-                    )
-                    .join(Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True)
-                    .join(Secao, Equipe.secao_id == Secao.id, isouter=True)
-                    .filter(Recurso.id == row.recurso_id)
-                )
-                recurso_data = recurso_info.fetchone()
-                
-                projeto_info = await self.db.execute(
-                    select(Projeto.nome).filter(Projeto.id == row.projeto_id)
-                )
-                projeto_data = projeto_info.fetchone()
-                
-                planejado_dict[key] = {
-                    "recurso_id": row.recurso_id,
-                    "recurso_nome": recurso_data.nome if recurso_data else "Desconhecido",
-                    "projeto_id": row.projeto_id,
-                    "projeto_nome": projeto_data.nome if projeto_data else "Desconhecido",
-                    "equipe_nome": recurso_data.equipe_nome if recurso_data else "Desconhecido",
-                    "secao_nome": recurso_data.secao_nome if recurso_data else "Desconhecido",
-                    "ano": row.ano,
-                    "mes": row.mes,
-                    "horas_planejadas": 0,
-                    "horas_realizadas": float(row.horas_realizadas) if row.horas_realizadas else 0,
-                    "diferenca": float(row.horas_realizadas) if row.horas_realizadas else 0,
-                    "percentual_realizado": None
-                }
-        
-        result_list = list(planejado_dict.values())
+        ).filter(extract('year', Apontamento.data_apontamento) == ano)
 
+        realizado_query = realizado_query.join(Recurso, Recurso.id == Apontamento.recurso_id, isouter=True)
+        realizado_query = realizado_query.join(Equipe, Equipe.id == Recurso.equipe_principal_id, isouter=True)
+        realizado_query = realizado_query.join(Secao, Secao.id == Equipe.secao_id, isouter=True)
+
+        if mes: realizado_query = realizado_query.filter(extract('month', Apontamento.data_apontamento) == mes)
+        if projeto_id: realizado_query = realizado_query.filter(Apontamento.projeto_id == projeto_id)
+        if recurso_id: realizado_query = realizado_query.filter(Apontamento.recurso_id == recurso_id)
+        if equipe_id: realizado_query = realizado_query.filter(Recurso.equipe_principal_id == equipe_id)
+        if secao_id: realizado_query = realizado_query.filter(Equipe.secao_id == secao_id)
+
+        realizado_query = realizado_query.group_by(Apontamento.recurso_id, Apontamento.projeto_id, 'ano', 'mes')
+
+        # 3. Executar consultas e combinar resultados
+        planejado_result = await self.db.execute(planejado_query)
+        realizado_result = await self.db.execute(realizado_query)
+
+        combined_dict = {}
+        for row in planejado_result.mappings().all():
+            key = (row.recurso_id, row.projeto_id, row.ano, row.mes)
+            combined_dict[key] = {
+                **row,
+                "horas_planejadas": float(row.get("horas_planejadas", 0) or 0),
+                "horas_realizadas": 0
+            }
+
+        for row in realizado_result.mappings().all():
+            key = (row.recurso_id, row.projeto_id, row.ano, row.mes)
+            if key in combined_dict:
+                combined_dict[key]["horas_realizadas"] = float(row.get("horas_realizadas", 0) or 0)
+            else:
+                info_recurso_q = select(
+                    Recurso.nome.label("recurso_nome"), 
+                    Equipe.nome.label("equipe_nome"), 
+                    Secao.nome.label("secao_nome")
+                ).select_from(Recurso).join(
+                    Equipe, Equipe.id == Recurso.equipe_principal_id, isouter=True
+                ).join(
+                    Secao, Secao.id == Equipe.secao_id, isouter=True
+                ).where(Recurso.id == row.recurso_id)
+                
+                info_projeto_q = select(Projeto.nome.label("projeto_nome")).where(Projeto.id == row.projeto_id)
+                
+                info_recurso_res = (await self.db.execute(info_recurso_q)).mappings().first()
+                info_projeto_res = (await self.db.execute(info_projeto_q)).mappings().first()
+
+                combined_dict[key] = {
+                    "recurso_id": row.recurso_id, 
+                    "recurso_nome": info_recurso_res.get("recurso_nome") if info_recurso_res else 'N/A',
+                    "projeto_id": row.projeto_id, 
+                    "projeto_nome": info_projeto_res.get("projeto_nome") if info_projeto_res else 'N/A',
+                    "equipe_nome": info_recurso_res.get("equipe_nome") if info_recurso_res else 'N/A', 
+                    "secao_nome": info_recurso_res.get("secao_nome") if info_recurso_res else 'N/A',
+                    "ano": row.ano, "mes": row.mes,
+                    "horas_planejadas": 0,
+                    "horas_realizadas": float(row.get("horas_realizadas", 0) or 0)
+                }
+
+        # 4. Consolidar se agrupar_por_projeto for False
         if not agrupar_por_projeto:
             consolidado_dict = {}
-            for item in result_list:
-                key = (item["recurso_id"], item["ano"], item["mes"])
-                if key not in consolidado_dict:
-                    consolidado_dict[key] = {
-                        "recurso_id": item["recurso_id"],
-                        "recurso_nome": item["recurso_nome"],
+            for item in combined_dict.values():
+                key_consolidado = (item['recurso_id'], item['ano'], item['mes'])
+                if key_consolidado not in consolidado_dict:
+                    consolidado_dict[key_consolidado] = {
+                        "recurso_id": item['recurso_id'],
+                        "recurso_nome": item['recurso_nome'],
                         "projeto_id": None,
                         "projeto_nome": "Todos os Projetos",
-                        "equipe_nome": item["equipe_nome"],
-                        "secao_nome": item["secao_nome"],
-                        "ano": item["ano"],
-                        "mes": item["mes"],
+                        "equipe_nome": item['equipe_nome'],
+                        "secao_nome": item['secao_nome'],
+                        "ano": item['ano'],
+                        "mes": item['mes'],
                         "horas_planejadas": 0,
-                        "horas_realizadas": 0,
+                        "horas_realizadas": 0
                     }
-                consolidado_dict[key]["horas_planejadas"] += item["horas_planejadas"]
-                consolidado_dict[key]["horas_realizadas"] += item["horas_realizadas"]
+                consolidado_dict[key_consolidado]["horas_planejadas"] += item["horas_planejadas"]
+                consolidado_dict[key_consolidado]["horas_realizadas"] += item["horas_realizadas"]
             
-            for value in consolidado_dict.values():
-                planejadas = value["horas_planejadas"]
-                realizadas = value["horas_realizadas"]
-                value["diferenca"] = realizadas - planejadas
-                if planejadas > 0:
-                    value["percentual_realizado"] = (realizadas / planejadas) * 100
-                else:
-                    value["percentual_realizado"] = 0
-            
-            return list(consolidado_dict.values())
+            final_list = list(consolidado_dict.values())
+        else:
+            final_list = list(combined_dict.values())
 
-        return result_list
+        # 5. Calcular diferença e percentual para a lista final
+        for item in final_list:
+            item["diferenca"] = item["horas_planejadas"] - item["horas_realizadas"]
+            if item["horas_planejadas"] > 0:
+                item["percentual_realizado"] = round((item["horas_realizadas"] / item["horas_planejadas"]) * 100, 2)
+            else:
+                item["percentual_realizado"] = 100 if item["horas_realizadas"] > 0 else 0
+
+        return sorted(final_list, key=lambda x: (x['recurso_nome'], x.get('projeto_nome', ''), x['ano'], x['mes']))
     
     async def get_disponibilidade_recursos(
         self,
