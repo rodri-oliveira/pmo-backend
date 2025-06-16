@@ -230,6 +230,7 @@ async def get_disponibilidade_recursos_endpoint(
     recurso_id: Optional[int] = Query(None, description="ID do recurso para filtrar a disponibilidade"),
     equipe_id: Optional[int] = Query(None, description="ID da equipe para filtrar a disponibilidade"),
     secao_id: Optional[int] = Query(None, description="ID da seção para filtrar a disponibilidade"),
+    agrupar_por_mes: bool = Query(False, description="Agrupa os resultados por mês."),
     db: AsyncSession = Depends(get_async_db),
     current_user: UsuarioInDB = Depends(get_current_admin_user) # Protegendo o endpoint
 ):
@@ -245,6 +246,7 @@ async def get_disponibilidade_recursos_endpoint(
     - **recurso_id**: ID do recurso para obter disponibilidade específica (opcional).
     - **equipe_id**: ID da equipe para filtrar a disponibilidade (opcional).
     - **secao_id**: ID da seção para filtrar a disponibilidade (opcional).
+    - **agrupar_por_mes**: Agrupa os resultados por mês.
     """
     relatorio_service = RelatorioService(db)
     try:
@@ -253,7 +255,8 @@ async def get_disponibilidade_recursos_endpoint(
             mes=mes,
             recurso_id=recurso_id,
             equipe_id=equipe_id,
-            secao_id=secao_id
+            secao_id=secao_id,
+            agrupar_por_mes=agrupar_por_mes
         )
         if not dados_disponibilidade and (recurso_id or mes):
             # Se filtros específicos foram aplicados e nada foi encontrado, pode ser um 404

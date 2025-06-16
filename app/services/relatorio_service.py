@@ -298,7 +298,8 @@ class RelatorioService:
         recurso_id: Optional[int] = None,
         equipe_id: Optional[int] = None,
         secao_id: Optional[int] = None,
-        ) -> List[Dict[str, Any]]:
+        agrupar_por_mes: bool = False
+    ) -> List[Dict[str, Any]]:
         """
         Calcula e retorna a disponibilidade dos recursos, incluindo horas disponíveis,
         planejadas, realizadas, e métricas de utilização.
@@ -317,31 +318,45 @@ class RelatorioService:
         recursos_cte = recursos_query.cte("recursos_cte")
 
         # 2. CTE para horas planejadas, já filtrando pelos recursos corretos
+        planejadas_select_cols = [
+            AlocacaoRecursoProjeto.recurso_id,
+            func.sum(HorasPlanejadas.horas_planejadas).label("total_horas_planejadas")
+        ]
+        planejadas_group_by_cols = [AlocacaoRecursoProjeto.recurso_id]
+
+        if agrupar_por_mes and not mes:
+            planejadas_select_cols.append(HorasPlanejadas.mes)
+            planejadas_group_by_cols.append(HorasPlanejadas.mes)
+
         planejadas_query = (
-            select(
-                AlocacaoRecursoProjeto.recurso_id,
-                func.sum(HorasPlanejadas.horas_planejadas).label("total_horas_planejadas")
-            )
+            select(*planejadas_select_cols)
             .join(recursos_cte, AlocacaoRecursoProjeto.recurso_id == recursos_cte.c.id)
             .join(HorasPlanejadas, HorasPlanejadas.alocacao_id == AlocacaoRecursoProjeto.id)
             .filter(HorasPlanejadas.ano == ano)
         )
         if mes:
             planejadas_query = planejadas_query.filter(HorasPlanejadas.mes == mes)
-        planejadas_query = planejadas_query.group_by(AlocacaoRecursoProjeto.recurso_id).cte("planejadas_cte")
+        planejadas_query = planejadas_query.group_by(*planejadas_group_by_cols).cte("planejadas_cte")
 
         # 3. CTE para horas realizadas (apontadas), também filtrando pelos recursos
+        realizadas_select_cols = [
+            Apontamento.recurso_id,
+            func.sum(Apontamento.horas_apontadas).label("total_horas_realizadas")
+        ]
+        realizadas_group_by_cols = [Apontamento.recurso_id]
+
+        if agrupar_por_mes and not mes:
+            realizadas_select_cols.append(extract("month", Apontamento.data_apontamento).label("mes"))
+            realizadas_group_by_cols.append(extract("month", Apontamento.data_apontamento))
+
         realizadas_query = (
-            select(
-                Apontamento.recurso_id,
-                func.sum(Apontamento.horas_apontadas).label("total_horas_realizadas")
-            )
+            select(*realizadas_select_cols)
             .join(recursos_cte, Apontamento.recurso_id == recursos_cte.c.id)
             .filter(extract("year", Apontamento.data_apontamento) == ano)
         )
         if mes:
             realizadas_query = realizadas_query.filter(extract("month", Apontamento.data_apontamento) == mes)
-        realizadas_query = realizadas_query.group_by(Apontamento.recurso_id).cte("realizadas_cte")
+        realizadas_query = realizadas_query.group_by(*realizadas_group_by_cols).cte("realizadas_cte")
 
         # 4. Consulta principal que junta os dados de RH com os agregados
         final_query = (
@@ -355,15 +370,30 @@ class RelatorioService:
                 func.coalesce(realizadas_query.c.total_horas_realizadas, 0).label("horas_realizadas")
             )
             .join(HorasDisponiveisRH, recursos_cte.c.id == HorasDisponiveisRH.recurso_id)
-            .outerjoin(planejadas_query, recursos_cte.c.id == planejadas_query.c.recurso_id)
-            .outerjoin(realizadas_query, recursos_cte.c.id == realizadas_query.c.recurso_id)
+            .outerjoin(
+                planejadas_query, 
+                and_(
+                    recursos_cte.c.id == planejadas_query.c.recurso_id,
+                    (HorasDisponiveisRH.mes == planejadas_query.c.mes) if (agrupar_por_mes and not mes) else text('1=1')
+                )
+            )
+            .outerjoin(
+                realizadas_query, 
+                and_(
+                    recursos_cte.c.id == realizadas_query.c.recurso_id,
+                    (HorasDisponiveisRH.mes == realizadas_query.c.mes) if (agrupar_por_mes and not mes) else text('1=1')
+                )
+            )
             .filter(HorasDisponiveisRH.ano == ano)
         )
 
         if mes:
             final_query = final_query.filter(HorasDisponiveisRH.mes == mes)
 
-        final_query = final_query.order_by(recursos_cte.c.nome)
+        if agrupar_por_mes and not mes:
+            final_query = final_query.order_by(recursos_cte.c.nome, HorasDisponiveisRH.mes)
+        else:
+            final_query = final_query.order_by(recursos_cte.c.nome)
 
         result = await self.db.execute(final_query)
         rows = result.mappings().all()
@@ -375,7 +405,6 @@ class RelatorioService:
             planejadas = float(row.horas_planejadas or 0)
             realizadas = float(row.horas_realizadas or 0)
 
-            # Cálculo de horas livres corrigido para refletir a capacidade real vs. o realizado
             horas_livres = disponiveis - realizadas
 
             percentual_alocacao_rh = (planejadas / disponiveis * 100) if disponiveis > 0 else 0
