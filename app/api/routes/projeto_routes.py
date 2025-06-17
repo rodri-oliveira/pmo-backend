@@ -18,11 +18,7 @@ from app.core.security import get_current_admin_user
 router = APIRouter()
 
 from sqlalchemy.future import select
-<<<<<<< HEAD
-from sqlalchemy import or_, and_
-=======
 from sqlalchemy import or_
->>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
 
 @router.get("/autocomplete", response_model=dict)
 async def autocomplete_projetos(
@@ -83,44 +79,6 @@ async def filtrar_projetos(
 ):
     """
     Filtra projetos com base na existência de apontamentos que correspondam
-<<<<<<< HEAD
-    aos critérios de seção, equipe e recurso, de forma cumulativa.
-    Retorna apenas projetos que possuem horas apontadas (> 0) que satisfaçam os filtros.
-    """
-    # Base da consulta: Projetos distintos.
-    query = select(Projeto).distinct()
-
-    # Estrutura de JOINs para suportar todos os filtros possíveis.
-    # O caminho é: Projeto -> Apontamento -> Recurso -> Equipe
-    query = query.join(Apontamento, Projeto.id == Apontamento.projeto_id)
-    query = query.join(Recurso, Apontamento.recurso_id == Recurso.id)
-    query = query.join(Equipe, Recurso.equipe_principal_id == Equipe.id)
-
-    # Coleta todas as condições de filtro.
-    conditions = [Apontamento.horas_apontadas > 0]
-
-    if secao_id is not None:
-        conditions.append(Equipe.secao_id == secao_id)
-    if equipe_id is not None:
-        conditions.append(Equipe.id == equipe_id)
-    if recurso_id is not None:
-        conditions.append(Recurso.id == recurso_id)
-
-    # Filtros de data.
-    if data_inicio:
-        conditions.append(Apontamento.data_apontamento >= data_inicio)
-    if data_fim:
-        conditions.append(Apontamento.data_apontamento <= data_fim)
-
-    # Filtro de status do projeto.
-    if ativo is not None:
-        conditions.append(Projeto.ativo == ativo)
-
-    # Aplica todas as condições de uma vez.
-    query = query.where(and_(*conditions))
-
-    # Ordena e executa.
-=======
     aos critérios de seção, equipe e recurso, em cascata.
     Permite filtrar adicionalmente por projetos ativos ou inativos.
     Retorna apenas projetos que possuem horas apontadas que satisfaçam os filtros.
@@ -155,7 +113,6 @@ async def filtrar_projetos(
     if ativo is not None:
         query = query.where(Projeto.ativo == ativo)
 
->>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
     query = query.order_by(Projeto.nome)
     result = await db.execute(query)
     return result.scalars().all()

@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 
 from app.core.security import get_current_admin_user
 from app.db.session import get_async_db

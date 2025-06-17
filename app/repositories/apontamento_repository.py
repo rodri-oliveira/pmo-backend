@@ -231,93 +231,6 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         agrupar_por_projeto: bool = False,
         agrupar_por_data: bool = False,
         agrupar_por_mes: bool = True,
-<<<<<<< HEAD
-        aggregate: bool = False # Parâmetro mantido por compatibilidade de assinatura
-    ) -> List[Dict[str, Any]]:
-        """ 
-        Busca e agrega os apontamentos com base em filtros dinâmicos, usando a lógica de consulta corrigida
-        que realiza a agregação diretamente no banco de dados para garantir consistência e performance.
-        """
-        try:
-            # Cláusulas de seleção e agrupamento dinâmicas
-            select_clauses = [
-                func.sum(Apontamento.horas_apontadas).label("horas"),
-                func.count(Apontamento.id).label("qtd_lancamentos")
-            ]
-            group_by_clauses = []
-
-            # Lógica de agrupamento dinâmico (define as colunas a serem selecionadas)
-            if agrupar_por_recurso:
-                select_clauses.extend([
-                    Recurso.id.label("recurso_id"),
-                    Recurso.nome.label("recurso_nome")
-                ])
-                group_by_clauses.extend([Recurso.id, Recurso.nome])
-
-            if agrupar_por_projeto:
-                select_clauses.extend([
-                    Projeto.id.label("projeto_id"),
-                    Projeto.nome.label("projeto_nome")
-                ])
-                group_by_clauses.extend([Projeto.id, Projeto.nome])
-
-            if agrupar_por_data:
-                select_clauses.append(Apontamento.data_apontamento.label("data"))
-                group_by_clauses.append(Apontamento.data_apontamento)
-
-            if agrupar_por_mes:
-                # Usar date_trunc para agrupar por mês de forma robusta, evitando GroupingError no PostgreSQL
-                month_trunc = func.date_trunc('month', Apontamento.data_apontamento)
-                select_clauses.extend([
-                    extract('year', month_trunc).label('ano'),
-                    extract('month', month_trunc).label('mes'),
-                    func.to_char(month_trunc, 'Month').label('mes_nome')
-                ])
-                # Agrupar pelo resultado da função date_trunc
-                group_by_clauses.append(month_trunc)
-
-            # Constrói a query base já com as colunas de seleção
-            query = select(*select_clauses)
-
-            # Adiciona os JOINs necessários
-            query = query.select_from(Apontamento).join(Recurso, Apontamento.recurso_id == Recurso.id)
-            query = query.join(Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True)
-            query = query.join(Secao, Equipe.secao_id == Secao.id, isouter=True)
-
-            if projeto_id or agrupar_por_projeto:
-                query = query.join(Projeto, Apontamento.projeto_id == Projeto.id)
-
-            # Filtros (cláusula WHERE)
-            conditions = []
-            if data_inicio:
-                conditions.append(Apontamento.data_apontamento >= data_inicio)
-            if data_fim:
-                conditions.append(Apontamento.data_apontamento <= data_fim)
-            if recurso_id:
-                conditions.append(Apontamento.recurso_id == recurso_id)
-            if projeto_id:
-                conditions.append(Apontamento.projeto_id == projeto_id)
-            if equipe_id:
-                conditions.append(Recurso.equipe_principal_id == equipe_id)
-            if secao_id:
-                conditions.append(Equipe.secao_id == secao_id)
-            if fonte_apontamento:
-                conditions.append(Apontamento.fonte_apontamento == fonte_apontamento)
-            if jira_issue_key:
-                conditions.append(Apontamento.jira_issue_key == jira_issue_key)
-
-            if conditions:
-                query = query.where(and_(*conditions))
-            
-            # Adiciona o agrupamento
-            if group_by_clauses:
-                query = query.group_by(*group_by_clauses)
-
-            # Executa a consulta
-            result = await self.db.execute(query)
-            return result.mappings().all()
-
-=======
         aggregate: bool = False
     ) -> Dict[str, Any]:
         """
@@ -502,7 +415,6 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
             elif agrupar_por_mes:
                 resultado_agrupado.sort(key=lambda x: (x.get("ano", 0), x.get("mes", 0)))
             
->>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
             # Ajuste de tipos e nomenclatura para exibição
             month_names = {i: calendar.month_name[i] for i in range(1,13)}
             for grupo in resultado_agrupado:
