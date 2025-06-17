@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    # Allowed origins for CORS – include frontend dev servers
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:8000"]
     
     # Configurações do Jira
     JIRA_BASE_URL: str = "https://jiracloudweg.atlassian.net"  # URL base do Jira Cloud

@@ -18,6 +18,7 @@ class RelatorioService:
     """
     Serviço para geração de relatórios e análises do sistema.
     """
+
     def __init__(self, db: AsyncSession):
         """
         Inicializa o serviço com uma sessão do banco de dados.
@@ -26,6 +27,7 @@ class RelatorioService:
             db: Sessão do banco de dados assíncrona
         """
         self.db = db
+
     async def get_horas_por_projeto(
         self, 
         data_inicio: Optional[date] = None, 
@@ -77,6 +79,7 @@ class RelatorioService:
             }
             for row in rows
         ]
+
     async def get_horas_por_recurso(
         self, 
         data_inicio: Optional[date] = None, 
@@ -152,23 +155,17 @@ class RelatorioService:
         com filtros e opção de agrupamento.
         """
         # 1. Consulta para Horas Planejadas
-        planejado_query = select[
+        planejado_query = select(
             AlocacaoRecursoProjeto.recurso_id,
+            AlocacaoRecursoProjeto.projeto_id,
             HorasPlanejadas.ano,
             HorasPlanejadas.mes,
+            Recurso.nome.label("recurso_nome"),
+            Projeto.nome.label("projeto_nome"),
+            Equipe.nome.label("equipe_nome"),
+            Secao.nome.label("secao_nome"),
             func.sum(HorasPlanejadas.horas_planejadas).label("horas_planejadas")
-        ]
-        planejado_group_by_cols = [
-            AlocacaoRecursoProjeto.recurso_id,
-            HorasPlanejadas.ano,
-            HorasPlanejadas.mes
-        ]
-
-        if agrupar_por_projeto:
-            planejado_select_cols.insert(1, AlocacaoRecursoProjeto.projeto_id)
-            planejado_group_by_cols.insert(1, AlocacaoRecursoProjeto.projeto_id)
-
-        planejado_query = select(*planejado_select_cols).join(
+        ).join(
             HorasPlanejadas, HorasPlanejadas.alocacao_id == AlocacaoRecursoProjeto.id
         ).join(
             Recurso, AlocacaoRecursoProjeto.recurso_id == Recurso.id
@@ -194,8 +191,9 @@ class RelatorioService:
         # 2. Consulta para Horas Realizadas
         realizado_query = select(
             Apontamento.recurso_id,
-            extract("year", Apontamento.data_apontamento).label("ano"),
-            extract("month", Apontamento.data_apontamento).label("mes"),
+            Apontamento.projeto_id,
+            extract('year', Apontamento.data_apontamento).label('ano'),
+            extract('month', Apontamento.data_apontamento).label('mes'),
             func.sum(Apontamento.horas_apontadas).label("horas_realizadas")
         ).filter(extract('year', Apontamento.data_apontamento) == ano)
 
@@ -297,8 +295,7 @@ class RelatorioService:
         mes: Optional[int] = None,
         recurso_id: Optional[int] = None,
         equipe_id: Optional[int] = None,
-        secao_id: Optional[int] = None,
-        agrupar_por_mes: bool = False
+        secao_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         Calcula e retorna a disponibilidade dos recursos, incluindo horas disponíveis,

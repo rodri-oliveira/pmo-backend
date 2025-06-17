@@ -2,7 +2,6 @@ from typing import List, Dict, Any, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 
 from app.core.security import get_current_admin_user
 from app.db.session import get_async_db
@@ -12,7 +11,6 @@ from app.models.usuario import UsuarioInDB
 from app.services.relatorio_service import RelatorioService
 from app.utils.date_utils import parse_date_flex
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/relatorios", tags=["Relatórios"])
 
 
@@ -73,15 +71,7 @@ async def relatorio_horas_apontadas(
         agrupar_por_data=agrupar_por_data,
         agrupar_por_mes=agrupar_por_mes
     )
-    
-    # Calcular o total de horas a partir dos resultados agregados.
-    # A consulta agregada pode retornar Decimal, então convertemos para float.
-    total_horas = sum(float(item.get('horas') or 0) for item in resultados)
 
-    return {
-        "items": resultados,
-        "total_horas": total_horas
-    }
 
 @router.get("/horas-por-projeto")
 async def get_horas_por_projeto(
@@ -93,17 +83,14 @@ async def get_horas_por_projeto(
     current_user: UsuarioInDB = Depends(get_current_admin_user)
 ):
     """
-    Obtém o relatório de horas apontadas, agrupando por projeto. O agrupamento por mês é opcional.
-
-    - **data_inicio**: Data inicial (formato `YYYY-MM-DD` ou `DD/MM/YYYY`).
-    - **data_fim**: Data final (formato `YYYY-MM-DD` ou `DD/MM/YYYY`).
-    - **secao_id**: (Opcional) ID da seção para filtrar.
-    - **equipe_id**: (Opcional) ID da equipe para filtrar.
-    - **agrupar_por_mes**: (Opcional) `True` para agrupar por mês. Padrão: `True`.
-
-    **Retorna**:
-    - `items`: Lista com os dados agregados.
-    - `total_horas`: Soma total de horas.
+    Obter relatório de horas apontadas por projeto.
+    
+    - **data_inicio**: Data inicial do período de análise
+    - **data_fim**: Data final do período de análise
+    - **secao_id**: Filtrar por seção específica
+    - **equipe_id**: Filtrar por equipe específica
+    
+    Retorna uma lista de projetos com o total de horas apontadas.
     """
     relatorio_service = RelatorioService(db)
     
