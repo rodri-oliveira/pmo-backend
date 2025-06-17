@@ -9,6 +9,7 @@ from app.repositories.apontamento_repository import ApontamentoRepository, equip
 from app.db.orm_models import FonteApontamento
 from app.models.usuario import UsuarioInDB
 from app.services.relatorio_service import RelatorioService
+from app.models.schemas import PlanejadoVsRealizadoRequest, PlanejadoVsRealizadoResponse
 from app.utils.date_utils import parse_date_flex
 
 router = APIRouter(prefix="/relatorios", tags=["Relatórios"])
@@ -217,6 +218,22 @@ async def get_planejado_vs_realizado(
         agrupar_por_projeto=agrupar_por_projeto
     )
     return {"items": result}
+
+@router.post("/planejado-vs-realizado2", response_model=PlanejadoVsRealizadoResponse, summary="Planejado vs Realizado 2")
+async def post_planejado_vs_realizado_v2(
+    payload: PlanejadoVsRealizadoRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UsuarioInDB = Depends(get_current_admin_user)
+):
+    """Relatório Planejado vs Realizado 2 (customizado)."""
+    service = RelatorioService(db)
+    data = await service.get_planejado_vs_realizado_v2(
+        recurso_id=payload.recurso_id,
+        status=payload.status,
+        mes_inicio=payload.mes_inicio,
+        mes_fim=payload.mes_fim,
+    )
+    return data
 
 @router.get("/disponibilidade-recursos")
 async def get_disponibilidade_recursos_endpoint(

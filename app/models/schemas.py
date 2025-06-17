@@ -194,6 +194,39 @@ class SincronizacaoJiraBase(BaseSchema):
 class SincronizacaoJiraOut(SincronizacaoJiraBase):
     id: int
 
+# Esquemas para Planejado vs Realizado 2
+from typing import Dict
+
+class MesPlanejadoRealizado(BaseSchema):
+    planejado: Optional[float] = None
+    realizado: Optional[float] = None
+
+class ProjetoPlanejadoRealizado(BaseSchema):
+    id: int
+    nome: str
+    status: str
+    esforco_estimado: Optional[float] = None
+    esforco_planejado: Optional[float] = None
+    meses: Dict[str, MesPlanejadoRealizado]
+
+class LinhaResumo(BaseSchema):
+    label: str
+    esforco_planejado: float
+    meses: Dict[str, MesPlanejadoRealizado]
+
+class PlanejadoVsRealizadoResponse(BaseSchema):
+    linhas_resumo: List[LinhaResumo]
+    projetos: List[ProjetoPlanejadoRealizado]
+
+class PlanejadoVsRealizadoRequest(BaseSchema):
+    """Payload do endpoint Planejado vs Realizado 2.
+    Somente recurso_id é obrigatório; demais filtros são opcionais.
+    """
+    recurso_id: int
+    status: Optional[str] = None
+    mes_inicio: Optional[str] = None  # YYYY-MM
+    mes_fim: Optional[str] = None  # YYYY-MM
+
 # Esquemas para agregações
 class ApontamentoAgregado(BaseSchema):
     total_horas: Decimal
