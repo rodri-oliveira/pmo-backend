@@ -212,6 +212,7 @@ class ProjetoPlanejadoRealizado(BaseSchema):
 class LinhaResumo(BaseSchema):
     label: str
     esforco_planejado: float
+    esforco_realizado: Optional[float] = None
     meses: Dict[str, MesPlanejadoRealizado]
 
 class PlanejadoVsRealizadoResponse(BaseSchema):

@@ -1,6 +1,7 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date
-from sqlalchemy import func, and_, or_, text, extract, select, literal
+from sqlalchemy import select, func, case, and_, or_, cast, String, extract, literal
+from app.infrastructure.database.dim_tempo_sql_model import DimTempoSQL as DimTempo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.orm_models import (
@@ -169,8 +170,60 @@ class RelatorioService:
                 # Se formato inválido, retorna None para tratar como não informado
                 return None
 
-        dt_inicio = parse_mes(mes_inicio) or datetime.utcnow().replace(day=1)
-        dt_fim = parse_mes(mes_fim) or dt_inicio
+        dt_inicio = parse_mes(mes_inicio)
+        dt_fim = parse_mes(mes_fim)
+
+        # Se as datas não forem totalmente especificadas, consulte o banco de dados para o intervalo completo
+        if not dt_inicio or not dt_fim:
+            from sqlalchemy import String, union_all
+
+            # Subconsulta para datas planejadas
+            planned_dates_q = (
+                select(
+                    func.to_date(
+                        HorasPlanejadas.ano.cast(String) + '-' + HorasPlanejadas.mes.cast(String),
+                        'YYYY-MM'
+                    ).label("data")
+                )
+                .join(AlocacaoRecursoProjeto, AlocacaoRecursoProjeto.id == HorasPlanejadas.alocacao_id)
+                .where(AlocacaoRecursoProjeto.recurso_id == recurso_id)
+            )
+
+            # Subconsulta para datas realizadas
+            realized_dates_q = (
+                select(func.date_trunc('month', Apontamento.data_apontamento).label("data"))
+                .where(Apontamento.recurso_id == recurso_id)
+            )
+            
+            # União de ambas as fontes de data
+            all_dates_q = union_all(planned_dates_q, realized_dates_q).alias("all_dates")
+
+            # Consulta para datas mínimas e máximas da união
+            min_max_q = select(
+                func.min(all_dates_q.c.data).label("min_date"),
+                func.max(all_dates_q.c.data).label("max_date")
+            ).select_from(all_dates_q)
+            
+            date_range_result = await self.db.execute(min_max_q)
+            min_max = date_range_result.one_or_none()
+
+            db_min_date = min_max.min_date if min_max and min_max.min_date else None
+            db_max_date = min_max.max_date if min_max and min_max.max_date else None
+            
+            if not dt_inicio:
+                dt_inicio = db_min_date
+            if not dt_fim:
+                dt_fim = db_max_date
+
+        # Fallback se nenhuma data puder ser determinada
+        if not dt_inicio and not dt_fim:
+            dt_inicio = datetime.utcnow().replace(day=1)
+            dt_fim = dt_inicio
+        elif not dt_inicio:
+            dt_inicio = dt_fim
+        elif not dt_fim:
+            dt_fim = dt_inicio
+        
         if dt_fim < dt_inicio:
             raise ValueError("mes_fim não pode ser anterior ao mes_inicio")
 
@@ -223,10 +276,18 @@ class RelatorioService:
         )
 
         # 4. Disponibilidade RH
+        start_date_filter = date(dt_inicio.year, dt_inicio.month, 1)
+        end_date_filter = date(dt_fim.year, dt_fim.month, 1)
+
         disp_q = (
             select(HD.ano, HD.mes, HD.horas_disponiveis_mes)
             .where(HD.recurso_id == recurso_id)
-            .filter(HD.ano.between(ano_inicio, ano_fim))
+            .where(
+                func.to_date(
+                    func.concat(cast(HD.ano, String), '-', cast(HD.mes, String)),
+                    'YYYY-MM'
+                ).between(start_date_filter, end_date_filter)
+            )
         )
 
         # Executar consultas
@@ -277,32 +338,76 @@ class RelatorioService:
 
         # 7. Linhas de resumo
         # Total planejado por mês
-        resumo_total = {m: 0.0 for m in meses_intervalo}
+        resumo_total_planejado = {m: 0.0 for m in meses_intervalo}
         for proj in projetos_dict.values():
             for m in meses_intervalo:
                 val = proj["meses"][m]["planejado"]
                 if val is not None:
-                    resumo_total[m] += val
+                    resumo_total_planejado[m] += val
+
+        # Total realizado por mês
+        resumo_total_realizado = {m: 0.0 for m in meses_intervalo}
+        for proj in projetos_dict.values():
+            for m in meses_intervalo:
+                val = proj["meses"][m]["realizado"]
+                if val is not None:
+                    resumo_total_realizado[m] += val
+
         # Disponíveis
         resumo_disp = {m: None for m in meses_intervalo}
         for row in disp_rows:
             ym = f"{int(row.ano):04d}-{int(row.mes):02d}"
             if ym in resumo_disp:
                 resumo_disp[ym] = float(row.horas_disponiveis_mes)
-        # GAP = disponivel - planejado
-        resumo_gap = {m: (resumo_disp[m] - resumo_total[m]) if resumo_disp[m] is not None else None for m in meses_intervalo}
 
-        def build_line(label: str, valores: Dict[str, Optional[float]]):
-            return {
-                "label": label,
-                "esforco_planejado": sum(v for v in valores.values() if v is not None),
-                "meses": {m: {"planejado": v, "realizado": None} for m, v in valores.items()},
-            }
+        # preencher meses sem registro usando dias úteis da dim_tempo
+        meses_sem_rh = [m for m in meses_intervalo if resumo_disp[m] is None]
+        if meses_sem_rh:
+            dias_uteis_q = (
+                select(
+                    DimTempo.ano,
+                    DimTempo.mes,
+                    func.count().label("dias_uteis")
+                )
+                .where(DimTempo.is_dia_util == True)
+                .where(func.to_char(DimTempo.data, 'YYYY-MM').in_(meses_sem_rh))
+                .group_by(DimTempo.ano, DimTempo.mes)
+            )
+            dias_uteis_rows = (await self.db.execute(dias_uteis_q)).fetchall()
 
+            for row in dias_uteis_rows:
+                ym = f"{int(row.ano):04d}-{int(row.mes):02d}"
+                if ym in resumo_disp:
+                    resumo_disp[ym] = row.dias_uteis * 8
+
+        # GAP
+        resumo_gap = {m: None for m in meses_intervalo}
+        for m in meses_intervalo:
+            disp = resumo_disp.get(m)
+            plan = resumo_total_planejado.get(m)
+            if disp is not None and plan is not None:
+                resumo_gap[m] = disp - plan
+
+        # Montar resposta final
         linhas_resumo = [
-            build_line("GAP", resumo_gap),
-            build_line("Horas Disponíveis", resumo_disp),
-            build_line("Total de esforço (hrs)", resumo_total),
+            {
+                "label": "GAP",
+                "esforco_planejado": sum(filter(None, resumo_gap.values())),
+                "esforco_realizado": None,  # GAP não tem realizado
+                "meses": {m: {"planejado": resumo_gap.get(m), "realizado": None} for m in meses_intervalo},
+            },
+            {
+                "label": "Horas Disponíveis",
+                "esforco_planejado": sum(filter(None, resumo_disp.values())),
+                "esforco_realizado": None, # Disponibilidade não tem realizado
+                "meses": {m: {"planejado": resumo_disp.get(m), "realizado": None} for m in meses_intervalo},
+            },
+            {
+                "label": "Total de esforço (hrs)",
+                "esforco_planejado": sum(filter(None, resumo_total_planejado.values())),
+                "esforco_realizado": sum(filter(None, resumo_total_realizado.values())),
+                "meses": {m: {"planejado": resumo_total_planejado.get(m), "realizado": resumo_total_realizado.get(m) if resumo_total_realizado.get(m, 0) > 0 else None} for m in meses_intervalo},
+            },
         ]
 
         return {
