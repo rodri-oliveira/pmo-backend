@@ -18,7 +18,11 @@ from app.core.security import get_current_admin_user
 router = APIRouter()
 
 from sqlalchemy.future import select
+<<<<<<< HEAD
 from sqlalchemy import or_, and_
+=======
+from sqlalchemy import or_
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
 
 @router.get("/autocomplete", response_model=dict)
 async def autocomplete_projetos(
@@ -79,6 +83,7 @@ async def filtrar_projetos(
 ):
     """
     Filtra projetos com base na existência de apontamentos que correspondam
+<<<<<<< HEAD
     aos critérios de seção, equipe e recurso, de forma cumulativa.
     Retorna apenas projetos que possuem horas apontadas (> 0) que satisfaçam os filtros.
     """
@@ -115,6 +120,42 @@ async def filtrar_projetos(
     query = query.where(and_(*conditions))
 
     # Ordena e executa.
+=======
+    aos critérios de seção, equipe e recurso, em cascata.
+    Permite filtrar adicionalmente por projetos ativos ou inativos.
+    Retorna apenas projetos que possuem horas apontadas que satisfaçam os filtros.
+    """
+    # A query base seleciona projetos distintos que possuem pelo menos um apontamento.
+    query = select(Projeto).distinct().join(Apontamento)
+
+    # CORREÇÃO: Usamos outerjoin para não excluir apontamentos de recursos 
+    # que não tenham uma equipe principal definida.
+    if secao_id is not None or equipe_id is not None:
+        query = query.outerjoin(Recurso, Apontamento.recurso_id == Recurso.id).outerjoin(Equipe, Recurso.equipe_principal_id == Equipe.id)
+    elif recurso_id is not None:
+        query = query.outerjoin(Recurso, Apontamento.recurso_id == Recurso.id)
+
+    # Aplica os filtros de cascata
+    if secao_id is not None:
+        query = query.where(Equipe.secao_id == secao_id)
+    
+    if equipe_id is not None:
+        query = query.where(Equipe.id == equipe_id)
+        
+    if recurso_id is not None:
+        query = query.where(Recurso.id == recurso_id)
+
+    # Aplica o filtro de período nos apontamentos
+    if data_inicio:
+        query = query.where(Apontamento.data_apontamento >= data_inicio)
+    if data_fim:
+        query = query.where(Apontamento.data_apontamento <= data_fim)
+
+    # Filtra por projetos ativos, se especificado
+    if ativo is not None:
+        query = query.where(Projeto.ativo == ativo)
+
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
     query = query.order_by(Projeto.nome)
     result = await db.execute(query)
     return result.scalars().all()

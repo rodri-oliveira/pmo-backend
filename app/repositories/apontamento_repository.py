@@ -231,6 +231,7 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
         agrupar_por_projeto: bool = False,
         agrupar_por_data: bool = False,
         agrupar_por_mes: bool = True,
+<<<<<<< HEAD
         aggregate: bool = False # Parâmetro mantido por compatibilidade de assinatura
     ) -> List[Dict[str, Any]]:
         """ 
@@ -316,6 +317,192 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
             result = await self.db.execute(query)
             return result.mappings().all()
 
+=======
+        aggregate: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Busca apontamentos com filtros avançados e opcionalmente agrega horas.
+        Corrigido para evitar JOIN duplo em recurso/equipe.
+        
+        Args:
+            recurso_id: Filtro por recurso
+            projeto_id: Filtro por projeto
+            equipe_id: Filtro por equipe do recurso
+            secao_id: Filtro por seção do recurso
+            data_inicio: Data inicial do período
+            data_fim: Data final do período
+            fonte_apontamento: Filtro por fonte (MANUAL ou JIRA)
+            jira_issue_key: Filtro por chave de issue no Jira
+            aggregate: Se True, inclui agregações de horas
+            
+        Returns:
+            Dicionário com resultados e agregações
+        """
+        query = select(self.model)
+        
+        # joinedload para agrupamento
+        if agrupar_por_recurso:
+            query = query.options(joinedload(self.model.recurso))
+        if agrupar_por_projeto:
+            query = query.options(joinedload(self.model.projeto))
+        
+        # Flags para controlar se join já foi feito
+        recurso_joined = False
+        equipe_joined = False
+        projeto_joined = False
+
+        # JOIN em Recurso se necessário para qualquer filtro relacional
+        if any([equipe_id, secao_id]):
+            query = query.join(Recurso, self.model.recurso_id == Recurso.id, isouter=False)
+            recurso_joined = True
+        
+        # JOIN em Equipe se necessário para filtro de seção
+        if secao_id:
+            query = query.join(Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=False)
+            equipe_joined = True
+
+        # Filtros diretos
+        if recurso_id:
+            query = query.filter(self.model.recurso_id == recurso_id)
+        if projeto_id:
+            query = query.filter(self.model.projeto_id == projeto_id)
+        if equipe_id:
+            # Filtrar por projetos associados à equipe via N:N
+            if not projeto_joined:
+                query = query.join(Projeto, self.model.projeto_id == Projeto.id, isouter=False)
+                projeto_joined = True
+            query = query.join(
+                equipe_projeto_association,
+                equipe_projeto_association.c.projeto_id == Projeto.id,
+                isouter=False
+            )
+            query = query.filter(equipe_projeto_association.c.equipe_id == equipe_id)
+        if secao_id:
+            # Se já fez join em Equipe, só filtra
+            query = query.filter(Equipe.secao_id == secao_id)
+        if data_inicio:
+            query = query.filter(self.model.data_apontamento >= data_inicio)
+        if data_fim:
+            query = query.filter(self.model.data_apontamento <= data_fim)
+        if fonte_apontamento:
+            query = query.filter(self.model.fonte_apontamento == fonte_apontamento)
+        if jira_issue_key:
+            query = query.filter(self.model.jira_issue_key == jira_issue_key)
+            
+        try:
+            result = await self.db.execute(query)
+            apontamentos = result.scalars().all()
+            
+            # Se não há apontamentos, retornar estrutura vazia
+            if not apontamentos:
+                return {
+                    "items": [],
+                    "total": 0,
+                    "total_horas": 0
+                }
+            
+            # Se não há opções de agrupamento, retorna os apontamentos diretamente
+            if not any([agrupar_por_recurso, agrupar_por_projeto, agrupar_por_data, agrupar_por_mes]):
+                # Converter apontamentos para dicionários para evitar problemas de serialização
+                apontamentos_dict = []
+                for a in apontamentos:
+                    apontamento_dict = {
+                        "id": a.id,
+                        "recurso_id": a.recurso_id,
+                        "projeto_id": a.projeto_id,
+                        "data_apontamento": a.data_apontamento.isoformat() if a.data_apontamento else None,
+                        "horas_apontadas": float(a.horas_apontadas) if a.horas_apontadas else 0,
+                        "descricao": a.descricao,
+                        "fonte_apontamento": a.fonte_apontamento
+                    }
+                    apontamentos_dict.append(apontamento_dict)
+                
+                return {
+                    "items": apontamentos_dict,
+                    "total": len(apontamentos_dict),
+                    "total_horas": sum(a["horas_apontadas"] for a in apontamentos_dict)
+                }
+            
+            # Processar agrupamentos
+            resultado_agrupado = []
+            
+            # Agrupar apontamentos
+            grupos = {}
+            for apontamento in apontamentos:
+                try:
+                    # Definir a chave de agrupamento
+                    key_parts = []
+                    
+                    if agrupar_por_recurso and apontamento.recurso_id is not None:
+                        key_parts.append(f"recurso_{apontamento.recurso_id}")
+                    
+                    if agrupar_por_projeto and apontamento.projeto_id is not None:
+                        key_parts.append(f"projeto_{apontamento.projeto_id}")
+                    
+                    if agrupar_por_data and apontamento.data_apontamento is not None:
+                        key_parts.append(f"data_{apontamento.data_apontamento.isoformat()}")
+                    
+                    if agrupar_por_mes and not agrupar_por_data and apontamento.data_apontamento is not None:
+                        key_parts.append(f"ano_mes_{apontamento.data_apontamento.year}_{apontamento.data_apontamento.month}")
+                    
+                    # Se não há chave de agrupamento, usar "todos"
+                    if not key_parts:
+                        key = "todos"
+                    else:
+                        key = "_".join(key_parts)
+                    
+                    # Inicializar grupo se não existir
+                    if key not in grupos:
+                        grupo = {
+                            "horas": 0,
+                            "quantidade": 0
+                        }
+                        
+                        # Adicionar informações de agrupamento
+                        if agrupar_por_recurso and apontamento.recurso_id is not None:
+                            grupo["recurso_id"] = apontamento.recurso_id
+                            # Tentar obter o nome do recurso se disponível
+                            if hasattr(apontamento, "recurso") and apontamento.recurso is not None:
+                                grupo["recurso_nome"] = apontamento.recurso.nome
+                        
+                        if agrupar_por_projeto and apontamento.projeto_id is not None:
+                            grupo["projeto_id"] = apontamento.projeto_id
+                            # Tentar obter o nome do projeto se disponível
+                            if hasattr(apontamento, "projeto") and apontamento.projeto is not None:
+                                grupo["projeto_nome"] = apontamento.projeto.nome
+                        
+                        if agrupar_por_data and apontamento.data_apontamento is not None:
+                            grupo["data"] = apontamento.data_apontamento.isoformat()
+                        
+                        if agrupar_por_mes and not agrupar_por_data and apontamento.data_apontamento is not None:
+                            grupo["ano"] = apontamento.data_apontamento.year
+                            grupo["mes"] = apontamento.data_apontamento.month
+                        
+                        grupos[key] = grupo
+                    
+                    # Atualizar horas e quantidade
+                    if apontamento.horas_apontadas is not None:
+                        grupos[key]["horas"] += float(apontamento.horas_apontadas)
+                    grupos[key]["quantidade"] += 1
+                    
+                except Exception as e:
+                    # Log do erro e continua
+                    print(f"Erro ao processar apontamento {apontamento.id if hasattr(apontamento, 'id') else 'desconhecido'}: {str(e)}")
+                    continue
+            
+            # Converter grupos para lista
+            for grupo in grupos.values():
+                resultado_agrupado.append(grupo)
+            
+            # Ordenar resultado
+            if agrupar_por_recurso:
+                resultado_agrupado.sort(key=lambda x: x.get("recurso_nome", "") if "recurso_nome" in x else x.get("recurso_id", 0))
+            elif agrupar_por_projeto:
+                resultado_agrupado.sort(key=lambda x: x.get("projeto_nome", "") if "projeto_nome" in x else x.get("projeto_id", 0))
+            elif agrupar_por_mes:
+                resultado_agrupado.sort(key=lambda x: (x.get("ano", 0), x.get("mes", 0)))
+            
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
             # Ajuste de tipos e nomenclatura para exibição
             month_names = {i: calendar.month_name[i] for i in range(1,13)}
             for grupo in resultado_agrupado:

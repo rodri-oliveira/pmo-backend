@@ -1,7 +1,11 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date
+<<<<<<< HEAD
 from sqlalchemy import func, and_, or_, text, extract, select, join
 
+=======
+from sqlalchemy import func, and_, or_, text, extract, select
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.orm_models import (
@@ -19,7 +23,11 @@ class RelatorioService:
     """
     Serviço para geração de relatórios e análises do sistema.
     """
+<<<<<<< HEAD
     
+=======
+
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
     def __init__(self, db: AsyncSession):
         """
         Inicializa o serviço com uma sessão do banco de dados.
@@ -28,7 +36,11 @@ class RelatorioService:
             db: Sessão do banco de dados assíncrona
         """
         self.db = db
+<<<<<<< HEAD
     
+=======
+
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
     async def get_horas_por_projeto(
         self, 
         data_inicio: Optional[date] = None, 
@@ -38,15 +50,6 @@ class RelatorioService:
     ) -> List[Dict[str, Any]]:
         """
         Obtém o total de horas apontadas por projeto.
-        
-        Args:
-            data_inicio: Data inicial do período
-            data_fim: Data final do período
-            secao_id: Filtrar por seção
-            equipe_id: Filtrar por equipe
-            
-        Returns:
-            Lista de dicionários com informações de horas por projeto
         """
         query = select(
             Projeto.id.label("projeto_id"),
@@ -89,7 +92,11 @@ class RelatorioService:
             }
             for row in rows
         ]
+<<<<<<< HEAD
     
+=======
+
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
     async def get_horas_por_recurso(
         self, 
         data_inicio: Optional[date] = None, 
@@ -100,16 +107,6 @@ class RelatorioService:
     ) -> List[Dict[str, Any]]:
         """
         Obtém o total de horas apontadas por recurso.
-        
-        Args:
-            data_inicio: Data inicial do período
-            data_fim: Data final do período
-            projeto_id: Filtrar por projeto
-            equipe_id: Filtrar por equipe
-            secao_id: Filtrar por seção
-            
-        Returns:
-            Lista de dicionários com informações de horas por recurso
         """
         query = select(
             Recurso.id.label("recurso_id"),
@@ -142,7 +139,10 @@ class RelatorioService:
         if secao_id:
             query = query.filter(Equipe.secao_id == secao_id)
         
+<<<<<<< HEAD
         import logging
+=======
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
         try:
             result = await self.db.execute(query)
             rows = result.fetchall()
@@ -157,9 +157,16 @@ class RelatorioService:
                 for row in rows
             ]
         except Exception as e:
+<<<<<<< HEAD
             logging.exception("Erro ao executar query de horas por recurso")
             raise
     
+=======
+            import logging
+            logging.exception("Erro ao executar query de horas por recurso")
+            raise
+
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
     async def get_analise_planejado_vs_realizado(
         self,
         ano: int,
@@ -171,12 +178,20 @@ class RelatorioService:
         agrupar_por_projeto: bool = True
     ) -> List[Dict[str, Any]]:
         """
+<<<<<<< HEAD
         Obtém análise comparativa entre horas planejadas e horas efetivamente apontadas.
         Opcionalmente agrupa os resultados por projeto.
         """
 
         # --- CTE para Horas Planejadas ---
         planejado_select_cols = [
+=======
+        Obtém análise comparativa entre horas planejadas e horas efetivamente apontadas,
+        com filtros e opção de agrupamento.
+        """
+        # 1. Consulta para Horas Planejadas
+        planejado_query = select(
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
             AlocacaoRecursoProjeto.recurso_id,
             HorasPlanejadas.ano,
             HorasPlanejadas.mes,
@@ -194,6 +209,7 @@ class RelatorioService:
 
         planejado_query = select(*planejado_select_cols).join(
             HorasPlanejadas, HorasPlanejadas.alocacao_id == AlocacaoRecursoProjeto.id
+<<<<<<< HEAD
         ).filter(HorasPlanejadas.ano == ano)
 
         if mes:
@@ -215,10 +231,36 @@ class RelatorioService:
 
         # --- CTE para Horas Realizadas (Apontadas) ---
         realizado_select_cols = [
+=======
+        ).join(
+            Recurso, AlocacaoRecursoProjeto.recurso_id == Recurso.id
+        ).join(
+            Projeto, AlocacaoRecursoProjeto.projeto_id == Projeto.id
+        ).join(
+            Equipe, Recurso.equipe_principal_id == Equipe.id, isouter=True
+        ).join(
+            Secao, Equipe.secao_id == Secao.id, isouter=True
+        ).filter(HorasPlanejadas.ano == ano)
+
+        if mes: planejado_query = planejado_query.filter(HorasPlanejadas.mes == mes)
+        if projeto_id: planejado_query = planejado_query.filter(AlocacaoRecursoProjeto.projeto_id == projeto_id)
+        if recurso_id: planejado_query = planejado_query.filter(AlocacaoRecursoProjeto.recurso_id == recurso_id)
+        if equipe_id: planejado_query = planejado_query.filter(Recurso.equipe_principal_id == equipe_id)
+        if secao_id: planejado_query = planejado_query.filter(Equipe.secao_id == secao_id)
+
+        planejado_query = planejado_query.group_by(
+            AlocacaoRecursoProjeto.recurso_id, AlocacaoRecursoProjeto.projeto_id, HorasPlanejadas.ano, 
+            HorasPlanejadas.mes, Recurso.nome, Projeto.nome, Equipe.nome, Secao.nome
+        )
+
+        # 2. Consulta para Horas Realizadas
+        realizado_query = select(
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
             Apontamento.recurso_id,
             extract("year", Apontamento.data_apontamento).label("ano"),
             extract("month", Apontamento.data_apontamento).label("mes"),
             func.sum(Apontamento.horas_apontadas).label("horas_realizadas")
+<<<<<<< HEAD
         ]
         realizado_group_by_cols = [
             Apontamento.recurso_id,
@@ -316,6 +358,101 @@ class RelatorioService:
             response_data.append(row_dict)
             
         return response_data
+=======
+        ).filter(extract('year', Apontamento.data_apontamento) == ano)
+
+        realizado_query = realizado_query.join(Recurso, Recurso.id == Apontamento.recurso_id, isouter=True)
+        realizado_query = realizado_query.join(Equipe, Equipe.id == Recurso.equipe_principal_id, isouter=True)
+        realizado_query = realizado_query.join(Secao, Secao.id == Equipe.secao_id, isouter=True)
+
+        if mes: realizado_query = realizado_query.filter(extract('month', Apontamento.data_apontamento) == mes)
+        if projeto_id: realizado_query = realizado_query.filter(Apontamento.projeto_id == projeto_id)
+        if recurso_id: realizado_query = realizado_query.filter(Apontamento.recurso_id == recurso_id)
+        if equipe_id: realizado_query = realizado_query.filter(Recurso.equipe_principal_id == equipe_id)
+        if secao_id: realizado_query = realizado_query.filter(Equipe.secao_id == secao_id)
+
+        realizado_query = realizado_query.group_by(Apontamento.recurso_id, Apontamento.projeto_id, 'ano', 'mes')
+
+        # 3. Executar consultas e combinar resultados
+        planejado_result = await self.db.execute(planejado_query)
+        realizado_result = await self.db.execute(realizado_query)
+
+        combined_dict = {}
+        for row in planejado_result.mappings().all():
+            key = (row.recurso_id, row.projeto_id, row.ano, row.mes)
+            combined_dict[key] = {
+                **row,
+                "horas_planejadas": float(row.get("horas_planejadas", 0) or 0),
+                "horas_realizadas": 0
+            }
+
+        for row in realizado_result.mappings().all():
+            key = (row.recurso_id, row.projeto_id, row.ano, row.mes)
+            if key in combined_dict:
+                combined_dict[key]["horas_realizadas"] = float(row.get("horas_realizadas", 0) or 0)
+            else:
+                info_recurso_q = select(
+                    Recurso.nome.label("recurso_nome"), 
+                    Equipe.nome.label("equipe_nome"), 
+                    Secao.nome.label("secao_nome")
+                ).select_from(Recurso).join(
+                    Equipe, Equipe.id == Recurso.equipe_principal_id, isouter=True
+                ).join(
+                    Secao, Secao.id == Equipe.secao_id, isouter=True
+                ).where(Recurso.id == row.recurso_id)
+                
+                info_projeto_q = select(Projeto.nome.label("projeto_nome")).where(Projeto.id == row.projeto_id)
+                
+                info_recurso_res = (await self.db.execute(info_recurso_q)).mappings().first()
+                info_projeto_res = (await self.db.execute(info_projeto_q)).mappings().first()
+
+                combined_dict[key] = {
+                    "recurso_id": row.recurso_id, 
+                    "recurso_nome": info_recurso_res.get("recurso_nome") if info_recurso_res else 'N/A',
+                    "projeto_id": row.projeto_id, 
+                    "projeto_nome": info_projeto_res.get("projeto_nome") if info_projeto_res else 'N/A',
+                    "equipe_nome": info_recurso_res.get("equipe_nome") if info_recurso_res else 'N/A', 
+                    "secao_nome": info_recurso_res.get("secao_nome") if info_recurso_res else 'N/A',
+                    "ano": row.ano, "mes": row.mes,
+                    "horas_planejadas": 0,
+                    "horas_realizadas": float(row.get("horas_realizadas", 0) or 0)
+                }
+
+        # 4. Consolidar se agrupar_por_projeto for False
+        if not agrupar_por_projeto:
+            consolidado_dict = {}
+            for item in combined_dict.values():
+                key_consolidado = (item['recurso_id'], item['ano'], item['mes'])
+                if key_consolidado not in consolidado_dict:
+                    consolidado_dict[key_consolidado] = {
+                        "recurso_id": item['recurso_id'],
+                        "recurso_nome": item['recurso_nome'],
+                        "projeto_id": None,
+                        "projeto_nome": "Todos os Projetos",
+                        "equipe_nome": item['equipe_nome'],
+                        "secao_nome": item['secao_nome'],
+                        "ano": item['ano'],
+                        "mes": item['mes'],
+                        "horas_planejadas": 0,
+                        "horas_realizadas": 0
+                    }
+                consolidado_dict[key_consolidado]["horas_planejadas"] += item["horas_planejadas"]
+                consolidado_dict[key_consolidado]["horas_realizadas"] += item["horas_realizadas"]
+            
+            final_list = list(consolidado_dict.values())
+        else:
+            final_list = list(combined_dict.values())
+
+        # 5. Calcular diferença e percentual para a lista final
+        for item in final_list:
+            item["diferenca"] = item["horas_planejadas"] - item["horas_realizadas"]
+            if item["horas_planejadas"] > 0:
+                item["percentual_realizado"] = round((item["horas_realizadas"] / item["horas_planejadas"]) * 100, 2)
+            else:
+                item["percentual_realizado"] = 100 if item["horas_realizadas"] > 0 else 0
+
+        return sorted(final_list, key=lambda x: (x['recurso_nome'], x.get('projeto_nome', ''), x['ano'], x['mes']))
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
     
     async def get_disponibilidade_recursos(
         self,
@@ -329,6 +466,7 @@ class RelatorioService:
         """
         Calcula e retorna a disponibilidade dos recursos, incluindo horas disponíveis,
         planejadas, realizadas, e métricas de utilização.
+<<<<<<< HEAD
         """
         # 1. CTE para pré-filtrar os recursos com base nos filtros de equipe e seção
         recursos_query = select(Recurso.id, Recurso.nome, Recurso.equipe_principal_id)
@@ -436,12 +574,111 @@ class RelatorioService:
             percentual_alocacao_rh = (planejadas / disponiveis * 100) if disponiveis > 0 else 0
             percentual_utilizacao_sobre_planejado = (realizadas / planejadas * 100) if planejadas > 0 else 0
             percentual_utilizacao_sobre_disponivel_rh = (realizadas / disponiveis * 100) if disponiveis > 0 else 0
+=======
+
+        Args:
+            ano: Ano de referência.
+            mes: Mês de referência (opcional, se não fornecido, retorna para o ano todo).
+            recurso_id: ID do recurso específico (opcional).
+
+        Returns:
+            Lista de dicionários com os dados de disponibilidade por recurso e mês.
+        """
+        # Subconsulta para agregar horas planejadas por recurso, ano e mês
+        subquery_planejadas = (
+            select(
+                AlocacaoRecursoProjeto.recurso_id,
+                HorasPlanejadas.ano,
+                HorasPlanejadas.mes,
+                func.sum(HorasPlanejadas.horas_planejadas).label("total_horas_planejadas")
+            )
+            .join(HorasPlanejadas, HorasPlanejadas.alocacao_id == AlocacaoRecursoProjeto.id)
+            .group_by(AlocacaoRecursoProjeto.recurso_id, HorasPlanejadas.ano, HorasPlanejadas.mes)
+            .filter(HorasPlanejadas.ano == ano)
+        )
+        if mes:
+            subquery_planejadas = subquery_planejadas.filter(HorasPlanejadas.mes == mes)
+        if recurso_id:
+            subquery_planejadas = subquery_planejadas.filter(AlocacaoRecursoProjeto.recurso_id == recurso_id)
+        subquery_planejadas = subquery_planejadas.cte("planejadas_cte")
+
+        # Subconsulta para agregar horas apontadas por recurso, ano e mês
+        subquery_apontadas = (
+            select(
+                Apontamento.recurso_id,
+                extract("year", Apontamento.data_apontamento).label("ano"),
+                extract("month", Apontamento.data_apontamento).label("mes"),
+                func.sum(Apontamento.horas_apontadas).label("total_horas_realizadas")
+            )
+            .group_by(Apontamento.recurso_id, extract("year", Apontamento.data_apontamento), extract("month", Apontamento.data_apontamento))
+            .filter(extract("year", Apontamento.data_apontamento) == ano)
+        )
+        if mes:
+            subquery_apontadas = subquery_apontadas.filter(extract("month", Apontamento.data_apontamento) == mes)
+        if recurso_id:
+            subquery_apontadas = subquery_apontadas.filter(Apontamento.recurso_id == recurso_id)
+        subquery_apontadas = subquery_apontadas.cte("apontadas_cte")
+
+        # Consulta principal
+        query = (
+            select(
+                Recurso.id.label("recurso_id"),
+                Recurso.nome.label("recurso_nome"),
+                HorasDisponiveisRH.ano,
+                HorasDisponiveisRH.mes,
+                HorasDisponiveisRH.horas_disponiveis_mes,
+                func.coalesce(subquery_planejadas.c.total_horas_planejadas, 0).label("total_horas_planejadas"),
+                func.coalesce(subquery_apontadas.c.total_horas_realizadas, 0).label("total_horas_realizadas")
+            )
+            .join(Recurso, Recurso.id == HorasDisponiveisRH.recurso_id)
+            .outerjoin(
+                subquery_planejadas,
+                and_(
+                    subquery_planejadas.c.recurso_id == HorasDisponiveisRH.recurso_id,
+                    subquery_planejadas.c.ano == HorasDisponiveisRH.ano,
+                    subquery_planejadas.c.mes == HorasDisponiveisRH.mes
+                )
+            )
+            .outerjoin(
+                subquery_apontadas,
+                and_(
+                    subquery_apontadas.c.recurso_id == HorasDisponiveisRH.recurso_id,
+                    subquery_apontadas.c.ano == HorasDisponiveisRH.ano,
+                    subquery_apontadas.c.mes == HorasDisponiveisRH.mes
+                )
+            )
+            .filter(HorasDisponiveisRH.ano == ano)
+        )
+
+        if mes:
+            query = query.filter(HorasDisponiveisRH.mes == mes)
+        if recurso_id:
+            query = query.filter(HorasDisponiveisRH.recurso_id == recurso_id)
+
+        query = query.order_by(Recurso.nome, HorasDisponiveisRH.mes)
+        
+        result = await self.db.execute(query)
+        rows = result.fetchall()
+
+        response_data = []
+        for row in rows:
+            horas_disponiveis = row.horas_disponiveis_mes if row.horas_disponiveis_mes else 0
+            horas_planejadas = row.total_horas_planejadas if row.total_horas_planejadas else 0
+            horas_realizadas = row.total_horas_realizadas if row.total_horas_realizadas else 0
+
+            horas_livres = horas_disponiveis - horas_planejadas
+            
+            percentual_alocacao = (horas_planejadas / horas_disponiveis * 100) if horas_disponiveis > 0 else 0
+            percentual_utilizacao_planejado = (horas_realizadas / horas_planejadas * 100) if horas_planejadas > 0 else 0
+            percentual_utilizacao_disponivel = (horas_realizadas / horas_disponiveis * 100) if horas_disponiveis > 0 else 0
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
 
             response_data.append({
                 "recurso_id": row.recurso_id,
                 "recurso_nome": row.recurso_nome,
                 "ano": row.ano,
                 "mes": row.mes,
+<<<<<<< HEAD
                 "horas_disponiveis_rh": round(disponiveis, 2),
                 "horas_planejadas": round(planejadas, 2),
                 "horas_realizadas": round(realizadas, 2),
@@ -451,4 +688,15 @@ class RelatorioService:
                 "percentual_utilizacao_sobre_disponivel_rh": round(percentual_utilizacao_sobre_disponivel_rh, 2),
             })
 
+=======
+                "horas_disponiveis_rh": horas_disponiveis,
+                "horas_planejadas": horas_planejadas,
+                "horas_realizadas": horas_realizadas,
+                "horas_livres": horas_livres,
+                "percentual_alocacao_rh": round(percentual_alocacao, 2),
+                "percentual_utilizacao_sobre_planejado": round(percentual_utilizacao_planejado, 2),
+                "percentual_utilizacao_sobre_disponivel_rh": round(percentual_utilizacao_disponivel, 2)
+            })
+            
+>>>>>>> c9e1834dd2b2c6b86f7cc859e8672b6d2c7220c6
         return response_data
