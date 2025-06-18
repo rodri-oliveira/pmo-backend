@@ -127,7 +127,7 @@ async def get_all_projetos(
     service: ProjetoService = Depends(get_projeto_service)
 ):
     logger = logging.getLogger("app.api.routes.projeto_routes")
-    logger.info(f"[get_all_projetos] Início - skip={skip}, limit={limit}, status_projeto={status_projeto}")
+    logger.info(f"[get_all_projetos] Início - skip={skip}, limit={limit}, status_projeto={status_projeto}, search='{search}'")
     try:
         # O frontend envia 'include_inactive', o backend usa 'apenas_ativos'.
         # A lógica é invertida: include_inactive=false significa apenas_ativos=true.

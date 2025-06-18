@@ -1,8 +1,10 @@
+import logging
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_
 from sqlalchemy.orm import selectinload
+from sqlalchemy.dialects import postgresql
 from datetime import datetime, timezone
 from sqlalchemy.orm import class_mapper
 from app.domain.models.projeto_model import Projeto as DomainProjeto
@@ -50,13 +52,16 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
         return None
 
     async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto: Optional[int] = None, search: Optional[str] = None) -> List[DomainProjeto]:
+        logger = logging.getLogger("app.repositories.sqlalchemy_projeto_repository")
         try:
-            # Usar selectinload para carregar o relacionamento status_projeto
             query = select(Projeto).options(selectinload(Projeto.status))
+
+            logger.info(f"Repository get_all received: search='{search}', apenas_ativos={apenas_ativos}")
 
             if search:
                 search_term = f"%{search}%"
                 query = query.filter(Projeto.nome.ilike(search_term))
+                logger.info(f"Applying search filter with term: '{search_term}'")
 
             if apenas_ativos:
                 query = query.filter(Projeto.ativo == True)
@@ -65,16 +70,20 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
                 query = query.filter(Projeto.status_projeto_id == status_projeto)
             
             query = query.order_by(Projeto.nome).offset(skip).limit(limit)
+            
+            try:
+                compiled_query = query.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+                logger.info(f"Executing query: {compiled_query}")
+            except Exception as compilation_error:
+                logger.error(f"Error compiling query: {compilation_error}")
+
             result = await self.db_session.execute(query)
             projetos_sql = result.scalars().all()
             
-            # Converter para lista de objetos de domínio
             return [DomainProjeto.model_validate(self._to_dict(p)) for p in projetos_sql]
         except Exception as e:
-            # Log do erro para diagnóstico
-            error_msg = str(e)
-            print(f"Erro ao listar projetos: {error_msg}")
-            raise HTTPException(status_code=500, detail=f"Erro ao listar projetos: {error_msg}")
+            logger.error(f"Erro ao listar projetos: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Erro ao listar projetos: {str(e)}")
 
     async def create(self, projeto_create_dto: ProjetoCreateDTO) -> DomainProjeto:
         try:
