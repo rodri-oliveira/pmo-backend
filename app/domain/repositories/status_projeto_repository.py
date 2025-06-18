@@ -28,3 +28,7 @@ class StatusProjetoRepository(ABC):
     async def delete(self, status_id: int) -> Optional[StatusProjeto]: # Or just return bool
         pass
 
+    @abstractmethod
+    async def get_max_ordem_exibicao(self) -> Optional[int]:
+        pass
+

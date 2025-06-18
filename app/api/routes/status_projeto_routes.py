@@ -4,7 +4,7 @@ from starlette import status
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.dtos.status_projeto_dtos import StatusProjetoDTO, StatusProjetoCreateDTO, StatusProjetoUpdateDTO
+from app.application.dtos.status_projeto_dtos import StatusProjetoDTO, StatusProjetoCreateDTO, StatusProjetoUpdateDTO, StatusProjetoCreateRequestDTO
 from app.application.services.status_projeto_service import StatusProjetoService
 from app.infrastructure.repositories.sqlalchemy_status_projeto_repository import SQLAlchemyStatusProjetoRepository
 from app.db.session import get_async_db
@@ -17,10 +17,12 @@ async def get_status_projeto_service(db: AsyncSession = Depends(get_async_db)) -
     return StatusProjetoService(status_projeto_repository=status_projeto_repository)
 
 @router.post("/", response_model=StatusProjetoDTO, status_code=status.HTTP_201_CREATED)
-async def create_status_projeto(status_create_dto: StatusProjetoCreateDTO, service: StatusProjetoService = Depends(get_status_projeto_service)):
+async def create_status_projeto(status_request_dto: StatusProjetoCreateRequestDTO, service: StatusProjetoService = Depends(get_status_projeto_service)):
     logger = logging.getLogger("app.api.routes.status_projeto_routes")
     logger.info("[create_status_projeto] Início")
     try:
+        # Converte o DTO da requisição para o DTO de criação interno, garantindo que a ordem de exibição não seja passada
+        status_create_dto = StatusProjetoCreateDTO(**status_request_dto.model_dump(), ordem_exibicao=None)
         status_projeto = await service.create_status_projeto(status_create_dto)
         logger.info("[create_status_projeto] Sucesso")
         return status_projeto

@@ -24,14 +24,14 @@ class StatusProjetoService:
         if status_existente:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Já existe um status de projeto com o nome \'{status_create_dto.nome}\"."
+                detail=f"Já existe um status de projeto com o nome '{status_create_dto.nome}'."
             )
-        # Check if ordem_exibicao is unique if provided
-        # This logic might be better in the repository or DB constraint if possible
-        if status_create_dto.ordem_exibicao is not None:
-            # Query for existing status with the same ordem_exibicao
-            # For simplicity, this check is omitted here but should be considered
-            pass 
+
+        # If ordem_exibicao is not provided, set it to the next available order
+        if status_create_dto.ordem_exibicao is None:
+            max_order = await self.status_projeto_repository.get_max_ordem_exibicao()
+            status_create_dto.ordem_exibicao = (max_order or 0) + 1
+        # TODO: Adicionar validação para garantir que a ordem de exibição, se fornecida, não está em uso.
 
         status_projeto = await self.status_projeto_repository.create(status_create_dto)
         return StatusProjetoDTO.from_orm(status_projeto)

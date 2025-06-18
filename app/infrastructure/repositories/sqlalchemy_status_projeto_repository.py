@@ -1,7 +1,7 @@
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete
+from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, func
 from datetime import datetime, timezone
 from sqlalchemy.orm import class_mapper
 from fastapi import HTTPException
@@ -67,66 +67,23 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
 
     async def create(self, status_create_dto: StatusProjetoCreateDTO) -> DomainStatusProjeto:
         try:
-            # Verificar se já existe um status com o mesmo nome
-            existing_status = await self.get_by_nome(status_create_dto.nome)
-            if existing_status:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Já existe um status de projeto com o nome '{status_create_dto.nome}'."
-                )
-            
-            # Verificar se a ordem_exibicao já existe, se fornecida
-            if status_create_dto.ordem_exibicao is not None:
-                # Consultar se já existe um status com a mesma ordem_exibicao
-                query = select(StatusProjetoSQL).filter(StatusProjetoSQL.ordem_exibicao == status_create_dto.ordem_exibicao)
-                result = await self.db_session.execute(query)
-                existing_order = result.scalars().first()
-                
-                if existing_order:
-                    # Opção 1: Encontrar a próxima ordem disponível
-                    # Buscar a maior ordem_exibicao atual
-                    max_order_query = select(StatusProjetoSQL).order_by(StatusProjetoSQL.ordem_exibicao.desc())
-                    max_order_result = await self.db_session.execute(max_order_query)
-                    max_order_status = max_order_result.scalars().first()
-                    
-                    next_order = 1
-                    if max_order_status and max_order_status.ordem_exibicao:
-                        next_order = max_order_status.ordem_exibicao + 1
-                    
-                    # Atualizar o DTO com a nova ordem
-                    status_create_dto.ordem_exibicao = next_order
-                    
-                    # Opção 2: Lançar um erro informativo (descomente se preferir esta abordagem)
-                    # raise HTTPException(
-                    #     status_code=400,
-                    #     detail=f"Já existe um status de projeto com a ordem de exibição {status_create_dto.ordem_exibicao}. Próxima ordem disponível: {next_order}."
-                    # )
-            
-            # Extrair dados do DTO
-            data = status_create_dto.model_dump()
-            
-            # Adicionar manualmente as datas
             agora = datetime.now(timezone.utc)
-            data["data_criacao"] = agora
-            data["data_atualizacao"] = agora
-            
-            # Criar o objeto SQL e salvá-lo
-            new_status_sql = StatusProjetoSQL(**data)
+            new_status_sql = StatusProjetoSQL(
+                **status_create_dto.model_dump(),
+                data_criacao=agora,
+                data_atualizacao=agora
+            )
             self.db_session.add(new_status_sql)
             await self.db_session.commit()
             await self.db_session.refresh(new_status_sql)
-            
-            # Converter para dicionário antes de validar
-            status_dict = self._to_dict(new_status_sql)
-            return DomainStatusProjeto.model_validate(status_dict)
-        except HTTPException:
-            # Repassar exceções HTTP
-            raise
+            return DomainStatusProjeto.model_validate(self._to_dict(new_status_sql))
+        except HTTPException as e:
+            await self.db_session.rollback()
+            raise e
         except Exception as e:
+            await self.db_session.rollback()
             # Log the error
             print(f"Erro ao criar status: {str(e)}")
-            # Rollback da transação em caso de erro
-            await self.db_session.rollback()
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro ao criar status de projeto: {str(e)}"
@@ -193,6 +150,18 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro ao atualizar status de projeto: {str(e)}"
+            )
+
+    async def get_max_ordem_exibicao(self) -> Optional[int]:
+        try:
+            result = await self.db_session.execute(select(func.max(StatusProjetoSQL.ordem_exibicao)))
+            max_order = result.scalar_one_or_none()
+            return max_order
+        except Exception as e:
+            print(f"Erro ao buscar a ordem de exibição máxima: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao buscar a ordem de exibição máxima: {str(e)}"
             )
 
     async def delete(self, status_id: int) -> Optional[DomainStatusProjeto]:

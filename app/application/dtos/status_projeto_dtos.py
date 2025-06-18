@@ -8,6 +8,11 @@ class StatusProjetoBaseDTO(BaseModel):
     is_final: bool = False
     ordem_exibicao: Optional[int] = None
 
+class StatusProjetoCreateRequestDTO(BaseModel):
+    nome: str
+    descricao: Optional[str] = None
+    is_final: bool = False
+
 class StatusProjetoCreateDTO(StatusProjetoBaseDTO):
     pass
 
