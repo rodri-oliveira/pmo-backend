@@ -10,4 +10,5 @@ class StatusProjeto(BaseModel):
     ordem_exibicao: Optional[int] = None
     data_criacao: datetime
     data_atualizacao: datetime
+    ativo: bool
 

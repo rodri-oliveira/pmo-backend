@@ -55,12 +55,13 @@ async def get_status_projeto(status_id: int, service: StatusProjetoService = Dep
 async def get_all_status_projeto(
     skip: int = 0,
     limit: int = Query(default=100, ge=1, le=1000),
+    ativo: Optional[bool] = None,
     service: StatusProjetoService = Depends(get_status_projeto_service)
 ):
     logger = logging.getLogger("app.api.routes.status_projeto_routes")
     logger.info("[get_all_status_projeto] Início")
     try:
-        status_projeto_list = await service.get_all_status_projeto(skip=skip, limit=limit)
+        status_projeto_list = await service.get_all_status_projetos(skip=skip, limit=limit, ativo=ativo)
         logger.info("[get_all_status_projeto] Sucesso")
         return {"items": status_projeto_list}
     except HTTPException as e:
@@ -105,5 +106,3 @@ async def delete_status_projeto(status_id: int, service: StatusProjetoService = 
     except Exception as e:
         logger.error(f"[delete_status_projeto] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Status de Projeto não encontrado para exclusão")
-    return status_projeto

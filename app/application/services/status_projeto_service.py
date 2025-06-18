@@ -14,24 +14,54 @@ class StatusProjetoService:
             return StatusProjetoDTO.from_orm(status_projeto)
         return None
 
-    async def get_all_status_projeto(self, skip: int = 0, limit: int = 100) -> List[StatusProjetoDTO]:
-        status_projetos = await self.status_projeto_repository.get_all(skip=skip, limit=limit)
+    async def get_all_status_projetos(self, skip: int = 0, limit: int = 100, ativo: Optional[bool] = None) -> List[StatusProjetoDTO]:
+        status_projetos = await self.status_projeto_repository.get_all(skip=skip, limit=limit, ativo=ativo)
         return [StatusProjetoDTO.from_orm(sp) for sp in status_projetos]
 
     async def create_status_projeto(self, status_create_dto: StatusProjetoCreateDTO) -> StatusProjetoDTO:
-        # Check if status with the same name already exists
-        status_existente = await self.status_projeto_repository.get_by_nome(status_create_dto.nome)
-        if status_existente:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Já existe um status de projeto com o nome '{status_create_dto.nome}'."
-            )
+        # 1. Checar por nome (para possível reativação)
+        status_existente_por_nome = await self.status_projeto_repository.get_by_nome_including_inactive(status_create_dto.nome)
 
-        # If ordem_exibicao is not provided, set it to the next available order
+        # 2. Checar por ordem de exibição, se fornecida
+        if status_create_dto.ordem_exibicao is not None:
+            status_existente_por_ordem = await self.status_projeto_repository.get_by_ordem_exibicao_including_inactive(status_create_dto.ordem_exibicao)
+            # Se a ordem já existe E pertence a um status DIFERENTE do que estamos tentando reativar pelo nome
+            if status_existente_por_ordem and (status_existente_por_nome is None or status_existente_por_ordem.id != status_existente_por_nome.id):
+                    raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"A ordem de exibição '{status_create_dto.ordem_exibicao}' já está em uso por outro status."
+                )
+
+        # 3. Lógica de reativação ou criação
+        if status_existente_por_nome:
+            if not status_existente_por_nome.ativo:
+                # Reativar
+                update_dto = StatusProjetoUpdateDTO(
+                    nome=status_create_dto.nome,
+                    descricao=status_create_dto.descricao,
+                    is_final=status_create_dto.is_final,
+                    # Usa a nova ordem se fornecida, senão mantém a antiga. A validação já foi feita.
+                    ordem_exibicao=status_create_dto.ordem_exibicao or status_existente_por_nome.ordem_exibicao,
+                    ativo=True
+                )
+                status_atualizado = await self.status_projeto_repository.update(status_existente_por_nome.id, update_dto)
+                return StatusProjetoDTO.from_orm(status_atualizado)
+            else:
+                # Nome duplicado em status ativo
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Já existe um status de projeto ativo com o nome '{status_create_dto.nome}'."
+                )
+
+        # 4. Se chegou aqui, é uma criação nova.
+        # Se a ordem não foi fornecida, calcular uma que esteja vaga.
         if status_create_dto.ordem_exibicao is None:
             max_order = await self.status_projeto_repository.get_max_ordem_exibicao()
-            status_create_dto.ordem_exibicao = (max_order or 0) + 1
-        # TODO: Adicionar validação para garantir que a ordem de exibição, se fornecida, não está em uso.
+            new_order = (max_order or 0) + 1
+            # Loop para garantir que a nova ordem não colida com um item inativo
+            while await self.status_projeto_repository.get_by_ordem_exibicao_including_inactive(new_order):
+                new_order += 1
+            status_create_dto.ordem_exibicao = new_order
 
         status_projeto = await self.status_projeto_repository.create(status_create_dto)
         return StatusProjetoDTO.from_orm(status_projeto)

@@ -12,4 +12,5 @@ class StatusProjetoSQL(Base):
     ordem_exibicao = Column(SmallInteger, unique=True, nullable=True)  # Usando SmallInteger em vez de TinyInt
     data_criacao = Column(DateTime(timezone=True), nullable=False)
     data_atualizacao = Column(DateTime(timezone=True), nullable=False)
+    ativo = Column(Boolean, nullable=False, default=True)
 

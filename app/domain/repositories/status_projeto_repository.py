@@ -13,7 +13,7 @@ class StatusProjetoRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_all(self, skip: int = 0, limit: int = 100) -> List[StatusProjeto]:
+    async def get_all(self, skip: int = 0, limit: int = 100, ativo: Optional[bool] = None) -> List[StatusProjeto]:
         pass
 
     @abstractmethod
@@ -30,5 +30,13 @@ class StatusProjetoRepository(ABC):
 
     @abstractmethod
     async def get_max_ordem_exibicao(self) -> Optional[int]:
+        pass
+
+    @abstractmethod
+    async def get_by_nome_including_inactive(self, nome: str) -> Optional[StatusProjeto]:
+        pass
+
+    @abstractmethod
+    async def get_by_ordem_exibicao_including_inactive(self, ordem_exibicao: int) -> Optional[StatusProjeto]:
         pass
 

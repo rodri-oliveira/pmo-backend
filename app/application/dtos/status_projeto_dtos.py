@@ -21,11 +21,13 @@ class StatusProjetoUpdateDTO(BaseModel):
     descricao: Optional[str] = None
     is_final: Optional[bool] = None
     ordem_exibicao: Optional[int] = None
+    ativo: Optional[bool] = None
 
 class StatusProjetoDTO(StatusProjetoBaseDTO):
     id: int
     data_criacao: datetime
     data_atualizacao: datetime
+    ativo: bool
 
     model_config = {'from_attributes': True}
 

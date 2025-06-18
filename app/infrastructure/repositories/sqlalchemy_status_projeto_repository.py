@@ -23,7 +23,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
 
     async def get_by_id(self, status_id: int) -> Optional[DomainStatusProjeto]:
         try:
-            result = await self.db_session.execute(select(StatusProjetoSQL).filter(StatusProjetoSQL.id == status_id))
+            result = await self.db_session.execute(select(StatusProjetoSQL).filter(StatusProjetoSQL.id == status_id, StatusProjetoSQL.ativo == True))
             status_sql = result.scalars().first()
             if status_sql:
                 return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
@@ -38,7 +38,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
 
     async def get_by_nome(self, nome: str) -> Optional[DomainStatusProjeto]:
         try:
-            result = await self.db_session.execute(select(StatusProjetoSQL).filter(StatusProjetoSQL.nome == nome))
+            result = await self.db_session.execute(select(StatusProjetoSQL).filter(StatusProjetoSQL.nome == nome, StatusProjetoSQL.ativo == True))
             status_sql = result.scalars().first()
             if status_sql:
                 return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
@@ -51,9 +51,14 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
                 detail=f"Erro ao buscar status de projeto por nome: {str(e)}"
             )
 
-    async def get_all(self, skip: int = 0, limit: int = 100) -> List[DomainStatusProjeto]:
+    async def get_all(self, skip: int = 0, limit: int = 100, ativo: Optional[bool] = None) -> List[DomainStatusProjeto]:
         try:
-            query = select(StatusProjetoSQL).order_by(StatusProjetoSQL.ordem_exibicao, StatusProjetoSQL.nome).offset(skip).limit(limit)
+            query = select(StatusProjetoSQL)
+
+            if ativo is not None:
+                query = query.filter(StatusProjetoSQL.ativo == ativo)
+
+            query = query.order_by(StatusProjetoSQL.ordem_exibicao, StatusProjetoSQL.nome).offset(skip).limit(limit)
             result = await self.db_session.execute(query)
             status_sql = result.scalars().all()
             return [DomainStatusProjeto.model_validate(self._to_dict(s)) for s in status_sql]
@@ -108,7 +113,8 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
             if status_update_dto.ordem_exibicao is not None and status_update_dto.ordem_exibicao != status_sql.ordem_exibicao:
                 query = select(StatusProjetoSQL).filter(
                     StatusProjetoSQL.ordem_exibicao == status_update_dto.ordem_exibicao,
-                    StatusProjetoSQL.id != status_id
+                    StatusProjetoSQL.id != status_id,
+                    StatusProjetoSQL.ativo == True
                 )
                 result = await self.db_session.execute(query)
                 existing_order = result.scalars().first()
@@ -154,7 +160,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
 
     async def get_max_ordem_exibicao(self) -> Optional[int]:
         try:
-            result = await self.db_session.execute(select(func.max(StatusProjetoSQL.ordem_exibicao)))
+            result = await self.db_session.execute(select(func.max(StatusProjetoSQL.ordem_exibicao)).where(StatusProjetoSQL.ativo == True))
             max_order = result.scalar_one_or_none()
             return max_order
         except Exception as e:
@@ -164,41 +170,75 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
                 detail=f"Erro ao buscar a ordem de exibição máxima: {str(e)}"
             )
 
+    async def get_by_nome_including_inactive(self, nome: str) -> Optional[DomainStatusProjeto]:
+        try:
+            result = await self.db_session.execute(select(StatusProjetoSQL).filter(StatusProjetoSQL.nome == nome))
+            status_sql = result.scalars().first()
+            if status_sql:
+                return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
+            return None
+        except Exception as e:
+            print(f"Erro ao buscar status por nome (incluindo inativos): {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao buscar status de projeto por nome: {str(e)}"
+            )
+
+    async def get_by_ordem_exibicao_including_inactive(self, ordem_exibicao: int) -> Optional[DomainStatusProjeto]:
+        try:
+            result = await self.db_session.execute(select(StatusProjetoSQL).filter(StatusProjetoSQL.ordem_exibicao == ordem_exibicao))
+            status_sql = result.scalars().first()
+            if status_sql:
+                return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
+            return None
+        except Exception as e:
+            print(f"Erro ao buscar status por ordem_exibicao (incluindo inativos): {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao buscar status de projeto por ordem de exibição: {str(e)}"
+            )
+
     async def delete(self, status_id: int) -> Optional[DomainStatusProjeto]:
         try:
             # Importar ProjetoSQL aqui para evitar importação circular
             from app.infrastructure.database.projeto_sql_model import ProjetoSQL
-            
-            # Verificar dependências antes de excluir
+
+            # Opcional: Verificar dependências. Com soft delete, isso pode ser um aviso em vez de um bloqueio.
             await check_dependents(
-                self.db_session, 
-                ProjetoSQL, 
-                "status_projeto_id", 
-                status_id, 
+                self.db_session,
+                ProjetoSQL,
+                "status_projeto_id",
+                status_id,
                 "projetos vinculados a este status"
             )
-            
-            # Buscar o status pelo ID
-            status_sql = await self.db_session.get(StatusProjetoSQL, status_id)
-            if not status_sql:
+
+            # Buscar o status ativo pelo ID
+            result = await self.db_session.execute(
+                select(StatusProjetoSQL).filter(StatusProjetoSQL.id == status_id)
+            )
+            status_sql = result.scalars().first()
+
+            if not status_sql or not status_sql.ativo:
                 return None
-                
-            # Salvar uma cópia dos dados antes de deletar
-            status_dict = self._to_dict(status_sql)
-            
-            # Remover o status do banco de dados (hard delete)
-            await self.db_session.delete(status_sql)
+
+            # Marcar como inativo (soft delete)
+            status_sql.ativo = False
+            status_sql.data_atualizacao = datetime.now(timezone.utc)
+
             await self.db_session.commit()
-            
-            # Retornar o objeto de domínio do status que foi deletado
-            return DomainStatusProjeto.model_validate(status_dict)
+            await self.db_session.refresh(status_sql)
+
+            return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
         except HTTPException:
-            # Repassar exceções HTTP
+            await self.db_session.rollback()
             raise
         except Exception as e:
-            # Log the error
+            await self.db_session.rollback()
             print(f"Erro ao excluir status: {str(e)}")
-            # Rollback da transação em caso de erro
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao excluir status de projeto: {str(e)}"
+            )
             await self.db_session.rollback()
             raise HTTPException(
                 status_code=500,

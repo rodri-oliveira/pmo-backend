@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Date, ForeignKey, func
 from sqlalchemy.orm import relationship
 from app.infrastructure.database.database_config import Base
+from app.infrastructure.database.secao_sql_model import SecaoSQL  # Importação adicionada
 from sqlalchemy import Column, DateTime
 
 class ProjetoSQL(Base):
@@ -20,5 +21,5 @@ class ProjetoSQL(Base):
     ativo = Column(Boolean, nullable=False, default=True)
 
     status_projeto = relationship("StatusProjetoSQL")
-    secao = relationship("Secao")
+    secao = relationship("SecaoSQL")
 
