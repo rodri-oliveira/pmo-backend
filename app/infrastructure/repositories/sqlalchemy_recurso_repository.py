@@ -72,7 +72,7 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
         return None
 
     async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, equipe_id: Optional[int] = None) -> List[DomainRecurso]:
-        query = select(Recurso)
+        query = select(Recurso).filter(Recurso.equipe_principal_id.isnot(None)).order_by(Recurso.nome)
         if apenas_ativos:
             query = query.filter(Recurso.ativo == True)
         if equipe_id is not None:
