@@ -122,12 +122,17 @@ async def get_all_projetos(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=1000),
     status_projeto: Optional[int] = None,
+    search: Optional[str] = None,
+    include_inactive: bool = False,  # Parâmetro alinhado com o frontend
     service: ProjetoService = Depends(get_projeto_service)
 ):
     logger = logging.getLogger("app.api.routes.projeto_routes")
     logger.info(f"[get_all_projetos] Início - skip={skip}, limit={limit}, status_projeto={status_projeto}")
     try:
-        result = await service.get_all_projetos(skip=skip, limit=limit, status_projeto=status_projeto)
+        # O frontend envia 'include_inactive', o backend usa 'apenas_ativos'.
+        # A lógica é invertida: include_inactive=false significa apenas_ativos=true.
+        apenas_ativos = not include_inactive
+        result = await service.get_all_projetos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, status_projeto=status_projeto, search=search)
         logger.info(f"[get_all_projetos] Sucesso - {len(result)} registros retornados")
         return {"items": result}
     except HTTPException as e:
@@ -177,6 +182,9 @@ async def delete_projeto(projeto_id: int, service: ProjetoService = Depends(get_
     logger.info(f"[delete_projeto] Início - projeto_id: {projeto_id}")
     try:
         result = await service.delete_projeto(projeto_id)
+        if not result:
+            logger.warning(f"[delete_projeto] Projeto não encontrado para exclusão - projeto_id: {projeto_id}")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto não encontrado para exclusão")
         logger.info(f"[delete_projeto] Sucesso - projeto_id: {projeto_id}")
         return result
     except HTTPException as e:

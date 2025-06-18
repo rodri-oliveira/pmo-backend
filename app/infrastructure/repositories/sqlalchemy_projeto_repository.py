@@ -49,13 +49,18 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             return DomainProjeto.model_validate(self._to_dict(projeto_sql))
         return None
 
-    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto: Optional[int] = None) -> List[DomainProjeto]:
+    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto: Optional[int] = None, search: Optional[str] = None) -> List[DomainProjeto]:
         try:
-            # Usar selectinload para carregar o relacionamento status
+            # Usar selectinload para carregar o relacionamento status_projeto
             query = select(Projeto).options(selectinload(Projeto.status))
-            
+
+            if search:
+                search_term = f"%{search}%"
+                query = query.filter(Projeto.nome.ilike(search_term))
+
             if apenas_ativos:
                 query = query.filter(Projeto.ativo == True)
+
             if status_projeto is not None:
                 query = query.filter(Projeto.status_projeto_id == status_projeto)
             
@@ -104,6 +109,7 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             
             self.db_session.add(new_projeto_sql)
             await self.db_session.flush()
+            await self.db_session.commit()
             await self.db_session.refresh(new_projeto_sql)
             
             return DomainProjeto.model_validate(self._to_dict(new_projeto_sql))
