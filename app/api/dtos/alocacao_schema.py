@@ -11,11 +11,6 @@ class AlocacaoBase(BaseModel):
     data_inicio_alocacao: date = Field(..., description="Data de início da alocação")
     data_fim_alocacao: Optional[date] = Field(None, description="Data de fim da alocação (opcional)")
     status_alocacao_id: Optional[int] = Field(None, description="ID do status da alocação (opcional)")
-    observacao: Optional[str] = Field(None, description="Observação da alocação (opcional)")
-    status_alocacao_id: Optional[int] = Field(None, description="ID do status da alocação (opcional)")
-    observacao: Optional[str] = Field(None, description="Observação da alocação (opcional)")
-    status_alocacao_id: Optional[int] = Field(None, description="ID do status da alocação (opcional)")
-    observacao: Optional[str] = Field(None, description="Observação da alocação (opcional)")
 
 class AlocacaoCreate(AlocacaoBase):
     """Esquema para criação de alocação."""
@@ -30,11 +25,6 @@ class AlocacaoUpdate(BaseModel):
     data_inicio_alocacao: Optional[date] = Field(None, description="Data de início da alocação")
     data_fim_alocacao: Optional[date] = Field(None, description="Data de fim da alocação")
     status_alocacao_id: Optional[int] = Field(None, description="ID do status da alocação (opcional)")
-    observacao: Optional[str] = Field(None, description="Observação da alocação (opcional)")
-    status_alocacao_id: Optional[int] = Field(None, description="ID do status da alocação (opcional)")
-    observacao: Optional[str] = Field(None, description="Observação da alocação (opcional)")
-    status_alocacao_id: Optional[int] = Field(None, description="ID do status da alocação (opcional)")
-    observacao: Optional[str] = Field(None, description="Observação da alocação (opcional)")
 
 class AlocacaoResponse(AlocacaoBase):
     """
@@ -50,8 +40,8 @@ class AlocacaoResponse(AlocacaoBase):
     equipe_nome: Optional[str] = None
     data_criacao: datetime
     data_atualizacao: datetime
-    status_alocacao_id: Optional[int] = None
-    observacao: Optional[str] = None
+    # Informações adicionais do status
+    status_alocacao_nome: Optional[str] = None
     # Informações adicionais do recurso
     recurso_nome: Optional[str] = None
     # Informações adicionais do projeto

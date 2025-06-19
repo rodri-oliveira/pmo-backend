@@ -113,14 +113,14 @@ class AlocacaoService:
             .options(
                 joinedload(AlocacaoRecursoProjeto.equipe).joinedload(Equipe.secao),
                 joinedload(AlocacaoRecursoProjeto.recurso),
-                joinedload(AlocacaoRecursoProjeto.projeto)
+                joinedload(AlocacaoRecursoProjeto.projeto),
+                joinedload(AlocacaoRecursoProjeto.status_alocacao)  # Adicionado
             )
             .filter(AlocacaoRecursoProjeto.id == alocacao.id)
         )
         result = await self.db.execute(query)
         alocacao_completa = result.scalars().first()
 
-        # Formatar a resposta
         return self._format_response(alocacao_completa)
     
     async def get(self, alocacao_id: int) -> Optional[Dict[str, Any]]:
@@ -142,7 +142,8 @@ class AlocacaoService:
             .options(
                 joinedload(AlocacaoRecursoProjeto.equipe).joinedload(Equipe.secao),
                 joinedload(AlocacaoRecursoProjeto.recurso),
-                joinedload(AlocacaoRecursoProjeto.projeto)
+                joinedload(AlocacaoRecursoProjeto.projeto),
+                joinedload(AlocacaoRecursoProjeto.status_alocacao)
             )
             .filter(AlocacaoRecursoProjeto.id == alocacao_id)
         )
@@ -260,14 +261,14 @@ class AlocacaoService:
             .options(
                 joinedload(AlocacaoRecursoProjeto.equipe).joinedload(Equipe.secao),
                 joinedload(AlocacaoRecursoProjeto.recurso),
-                joinedload(AlocacaoRecursoProjeto.projeto)
+                joinedload(AlocacaoRecursoProjeto.projeto),
+                joinedload(AlocacaoRecursoProjeto.status_alocacao)
             )
             .filter(AlocacaoRecursoProjeto.id == alocacao_id)
         )
         result = await self.db.execute(query)
         alocacao_completa = result.scalars().first()
 
-        # Formatar a resposta
         return self._format_response(alocacao_completa)
 
     async def delete(self, alocacao_id: int) -> None:
@@ -301,6 +302,8 @@ class AlocacaoService:
             "equipe_nome": getattr(alocacao.equipe, "nome", None) if hasattr(alocacao, "equipe") and alocacao.equipe else None,
             "data_inicio_alocacao": alocacao.data_inicio_alocacao,
             "data_fim_alocacao": alocacao.data_fim_alocacao,
+            "status_alocacao_id": alocacao.status_alocacao_id,
+            "status_alocacao_nome": getattr(alocacao.status_alocacao, "nome", None) if hasattr(alocacao, "status_alocacao") and alocacao.status_alocacao else None,
             "data_criacao": alocacao.data_criacao,
             "data_atualizacao": alocacao.data_atualizacao,
             "recurso_nome": getattr(alocacao.recurso, "nome", None) if hasattr(alocacao, "recurso") and alocacao.recurso else None,

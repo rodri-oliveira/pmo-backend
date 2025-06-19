@@ -27,7 +27,8 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
         query = select(AlocacaoRecursoProjeto).options(
             joinedload(AlocacaoRecursoProjeto.equipe),
             joinedload(AlocacaoRecursoProjeto.recurso),
-            joinedload(AlocacaoRecursoProjeto.projeto)
+            joinedload(AlocacaoRecursoProjeto.projeto),
+            joinedload(AlocacaoRecursoProjeto.status_alocacao)
         ).filter(
             AlocacaoRecursoProjeto.recurso_id == recurso_id
         )
@@ -39,7 +40,8 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
         query = select(AlocacaoRecursoProjeto).options(
             joinedload(AlocacaoRecursoProjeto.equipe),
             joinedload(AlocacaoRecursoProjeto.recurso),
-            joinedload(AlocacaoRecursoProjeto.projeto)
+            joinedload(AlocacaoRecursoProjeto.projeto),
+            joinedload(AlocacaoRecursoProjeto.status_alocacao)
         ).filter(
             AlocacaoRecursoProjeto.projeto_id == projeto_id
         )
@@ -54,7 +56,8 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
         query = select(AlocacaoRecursoProjeto).options(
             joinedload(AlocacaoRecursoProjeto.equipe),
             joinedload(AlocacaoRecursoProjeto.recurso),
-            joinedload(AlocacaoRecursoProjeto.projeto)
+            joinedload(AlocacaoRecursoProjeto.projeto),
+            joinedload(AlocacaoRecursoProjeto.status_alocacao)
         )
         
         if data_inicio is not None and data_fim is not None:
@@ -103,7 +106,8 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
         query = select(AlocacaoRecursoProjeto).options(
             joinedload(AlocacaoRecursoProjeto.equipe),
             joinedload(AlocacaoRecursoProjeto.recurso),
-            joinedload(AlocacaoRecursoProjeto.projeto)
+            joinedload(AlocacaoRecursoProjeto.projeto),
+            joinedload(AlocacaoRecursoProjeto.status_alocacao)
         ).filter(
             or_(
                 AlocacaoRecursoProjeto.data_fim_alocacao == None,
