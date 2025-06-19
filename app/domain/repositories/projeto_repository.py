@@ -21,7 +21,7 @@ class ProjetoRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto: Optional[int] = None, search: Optional[str] = None) -> List[Projeto]:
+    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = True, status_projeto: Optional[int] = None, search: Optional[str] = None, include_inactive: Optional[bool] = None) -> List[Projeto]:
         pass
 
     @abstractmethod

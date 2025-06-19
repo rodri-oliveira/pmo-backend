@@ -123,16 +123,13 @@ async def get_all_projetos(
     limit: int = Query(default=100, ge=1, le=1000),
     status_projeto: Optional[int] = None,
     search: Optional[str] = None,
-    include_inactive: bool = False,  # Parâmetro alinhado com o frontend
+    include_inactive: bool = False,  
     service: ProjetoService = Depends(get_projeto_service)
 ):
     logger = logging.getLogger("app.api.routes.projeto_routes")
     logger.info(f"[get_all_projetos] Início - skip={skip}, limit={limit}, status_projeto={status_projeto}, search='{search}'")
     try:
-        # O frontend envia 'include_inactive', o backend usa 'apenas_ativos'.
-        # A lógica é invertida: include_inactive=false significa apenas_ativos=true.
-        apenas_ativos = not include_inactive
-        result = await service.get_all_projetos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, status_projeto=status_projeto, search=search)
+        result = await service.get_all_projetos(skip=skip, limit=limit, include_inactive=include_inactive, status_projeto=status_projeto, search=search)
         logger.info(f"[get_all_projetos] Sucesso - {len(result)} registros retornados")
         return {"items": result}
     except HTTPException as e:

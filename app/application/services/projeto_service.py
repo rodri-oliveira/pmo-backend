@@ -16,11 +16,15 @@ class ProjetoService:
             return ProjetoDTO.model_validate(projeto)
         return None
 
-    async def get_all_projetos(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = True, status_projeto: Optional[int] = None, search: Optional[str] = None) -> List[ProjetoDTO]:
-        projetos = await self.projeto_repository.get_all(skip=skip, limit=limit, apenas_ativos=apenas_ativos, status_projeto=status_projeto, search=search)
+    async def get_all_projetos(self, skip: int = 0, limit: int = 100, include_inactive: bool = False, status_projeto: Optional[int] = None, search: Optional[str] = None) -> List[ProjetoDTO]:
+        projetos = await self.projeto_repository.get_all(skip=skip, limit=limit, include_inactive=include_inactive, status_projeto=status_projeto, search=search)
         return [ProjetoDTO.model_validate(p) for p in projetos]
 
     async def create_projeto(self, projeto_create_dto: ProjetoBaseDTO) -> ProjetoDTO:
+        # Regra de negócio: secao_id agora é obrigatório
+        if projeto_create_dto.secao_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campo 'secao_id' é obrigatório.")
+
         # Check if status_projeto_id exists
         status_projeto = await self.status_projeto_repository.get_by_id(projeto_create_dto.status_projeto_id)
         if not status_projeto:

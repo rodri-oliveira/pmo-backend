@@ -51,7 +51,11 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             return DomainProjeto.model_validate(self._to_dict(projeto_sql))
         return None
 
-    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, status_projeto: Optional[int] = None, search: Optional[str] = None) -> List[DomainProjeto]:
+    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = True, status_projeto: Optional[int] = None, search: Optional[str] = None, **kwargs) -> List[DomainProjeto]:
+        # Compatibilidade: se a camada superior ainda enviar 'include_inactive', convertemos.
+        if "include_inactive" in kwargs and kwargs["include_inactive"] is not None:
+            # include_inactive=True significa queremos TODOS (apenas_ativos=False)
+            apenas_ativos = not kwargs["include_inactive"]
         logger = logging.getLogger("app.repositories.sqlalchemy_projeto_repository")
         try:
             query = select(Projeto).options(selectinload(Projeto.status))
@@ -62,8 +66,10 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
                 query = query.filter(Projeto.nome.ilike(func.concat('%', search, '%')))
                 logger.info(f"Applying search filter for term: '{search}'")
 
+            # Por padrão (apenas_ativos=True), busca apenas projetos ativos.
+            # Se apenas_ativos=False, a cláusula não é adicionada, retornando todos.
             if apenas_ativos:
-                query = query.filter(Projeto.ativo == True)
+                query = query.filter(Projeto.ativo.is_(True))
 
             if status_projeto is not None:
                 query = query.filter(Projeto.status_projeto_id == status_projeto)
