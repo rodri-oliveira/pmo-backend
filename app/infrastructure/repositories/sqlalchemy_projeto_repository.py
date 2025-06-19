@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_
+from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.dialects import postgresql
 from datetime import datetime, timezone
@@ -59,9 +59,8 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             logger.info(f"Repository get_all received: search='{search}', apenas_ativos={apenas_ativos}")
 
             if search:
-                search_term = f"%{search}%"
-                query = query.filter(Projeto.nome.ilike(search_term))
-                logger.info(f"Applying search filter with term: '{search_term}'")
+                query = query.filter(Projeto.nome.ilike(func.concat('%', search, '%')))
+                logger.info(f"Applying search filter for term: '{search}'")
 
             if apenas_ativos:
                 query = query.filter(Projeto.ativo == True)
@@ -131,69 +130,51 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
 
     async def update(self, projeto_id: int, projeto_update_dto: ProjetoUpdateDTO) -> Optional[DomainProjeto]:
         try:
-            projeto_sql = await self.db_session.get(Projeto, projeto_id)
-            if not projeto_sql:
-                return None
-
             update_data = projeto_update_dto.model_dump(exclude_unset=True)
-            update_data["data_atualizacao"] = datetime.now()
+            if not update_data:
+                return await self.get_by_id(projeto_id)
+
+            query = (
+                sqlalchemy_update(Projeto)
+                .where(Projeto.id == projeto_id)
+                .values(**update_data)
+                .returning(Projeto)
+            )
             
-            for key, value in update_data.items():
-                setattr(projeto_sql, key, value)
-                
+            result = await self.db_session.execute(query)
             await self.db_session.commit()
-            await self.db_session.refresh(projeto_sql)
+            updated_projeto_sql = result.scalar_one_or_none()
+
+            if updated_projeto_sql:
+                return DomainProjeto.model_validate(self._to_dict(updated_projeto_sql))
             
-            projeto_dict = self._to_dict(projeto_sql)
-            return DomainProjeto.model_validate(projeto_dict)
+            return None
         except Exception as e:
-            # Rollback em caso de erro
             await self.db_session.rollback()
-            
-            # Identificar tipos específicos de erros
             error_msg = str(e)
-            if "violates unique constraint" in error_msg:
-                if "projeto_nome_key" in error_msg:
-                    raise HTTPException(status_code=400, detail=f"Já existe um projeto com este nome.")
-                elif "projeto_codigo_empresa_key" in error_msg:
-                    raise HTTPException(status_code=400, detail=f"Já existe um projeto com este código de empresa.")
-                elif "projeto_jira_project_key_key" in error_msg:
-                    raise HTTPException(status_code=400, detail=f"Já existe um projeto com esta chave de projeto Jira.")
-                else:
-                    raise HTTPException(status_code=400, detail=f"Violação de restrição única: {error_msg}")
-            elif "violates foreign key constraint" in error_msg and "status_projeto_id" in error_msg:
-                raise HTTPException(status_code=400, detail=f"O status de projeto informado não existe.")
-            else:
-                # Log do erro para diagnóstico
-                print(f"Erro ao criar projeto: {error_msg}")
-                raise HTTPException(status_code=500, detail=f"Erro ao criar projeto: {error_msg}")
+            # Adicionar tratamento de erro mais específico se necessário
+            logger.error(f"Erro ao atualizar projeto: {error_msg}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Erro ao atualizar projeto: {error_msg}")
 
     async def delete(self, projeto_id: int) -> Optional[DomainProjeto]:
         try:
-            projeto_to_delete_sql = await self.db_session.get(Projeto, projeto_id)
-            if not projeto_to_delete_sql:
-                return None
-            
-            # Exclusão lógica - apenas marca como inativo
-            projeto_to_delete_sql.ativo = False
-            projeto_to_delete_sql.data_atualizacao = datetime.now(timezone.utc)
-            
+            query = (
+                sqlalchemy_update(Projeto)
+                .where(Projeto.id == projeto_id)
+                .values(ativo=False)  # data_atualizacao é gerenciada pelo DB
+                .returning(Projeto)
+            )
+            result = await self.db_session.execute(query)
             await self.db_session.commit()
-            await self.db_session.refresh(projeto_to_delete_sql)
             
-            projeto_dict = self._to_dict(projeto_to_delete_sql)
-            return DomainProjeto.model_validate(projeto_dict)
+            deleted_projeto_sql = result.scalar_one_or_none()
+
+            if deleted_projeto_sql:
+                return DomainProjeto.model_validate(self._to_dict(deleted_projeto_sql))
+
+            return None
         except Exception as e:
-            # Rollback em caso de erro
             await self.db_session.rollback()
-            
-            # Identificar tipos específicos de erros
             error_msg = str(e)
-            if "violates unique constraint" in error_msg:
-                raise HTTPException(status_code=400, detail=f"Violação de restrição única: {error_msg}")
-            elif "violates foreign key constraint" in error_msg:
-                raise HTTPException(status_code=400, detail=f"Violação de restrição de chave estrangeira: {error_msg}")
-            else:
-                # Log do erro para diagnóstico
-                print(f"Erro ao excluir projeto: {error_msg}")
-                raise HTTPException(status_code=500, detail=f"Erro ao excluir projeto: {error_msg}")
+            logger.error(f"Erro ao excluir projeto: {error_msg}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Erro ao excluir projeto: {error_msg}")

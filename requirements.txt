@@ -3,7 +3,7 @@ pydantic-settings==2.3.3
 uvicorn
 sqlalchemy
 asyncpg # Adicionado para SQLAlchemy assíncrono com PostgreSQL
-# psycopg2-binary # Comentado/Removido se não houver mais uso síncrono direto
+psycopg2-binary # Driver para SQLAlchemy síncrono com PostgreSQL
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart

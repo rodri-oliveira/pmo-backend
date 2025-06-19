@@ -165,6 +165,7 @@ async def get_projeto(projeto_id: int, service: ProjetoService = Depends(get_pro
 async def update_projeto(projeto_id: int, projeto_update: ProjetoUpdateDTO, service: ProjetoService = Depends(get_projeto_service)):
     logger = logging.getLogger("app.api.routes.projeto_routes")
     logger.info(f"[update_projeto] Início - projeto_id: {projeto_id}")
+    logger.info(f"[update_projeto] Payload recebido: {projeto_update.model_dump(exclude_unset=True)}")
     try:
         result = await service.update_projeto(projeto_id, projeto_update)
         logger.info(f"[update_projeto] Sucesso - projeto_id: {projeto_id}")
