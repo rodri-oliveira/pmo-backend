@@ -28,7 +28,7 @@ class PlanejamentoHorasResponse(BaseModel):
     class Config:
         from_attributes = True
 
-router = APIRouter(prefix="/planejamento-horas", tags=["Planejamento de Horas"])
+router = APIRouter(tags=["Planejamento de Horas"])
 
 @router.post("/", response_model=PlanejamentoHorasResponse, status_code=status.HTTP_201_CREATED)
 async def create_or_update_planejamento(

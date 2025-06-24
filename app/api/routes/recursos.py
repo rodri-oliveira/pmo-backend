@@ -76,6 +76,7 @@ def create_recurso(
 def list_recursos(
     skip: int = 0,
     limit: int = 100,
+    search: Optional[str] = None,
     nome: Optional[str] = None,
     email: Optional[str] = None,
     matricula: Optional[str] = None,
@@ -86,12 +87,21 @@ def list_recursos(
 ):
     logger = logging.getLogger("app.api.routes.recursos")
     logger.info(
-        f"[list_recursos] Início - filtros: nome={nome}, email={email}, matricula={matricula}, "
+        f"[list_recursos] Início - filtros: search={search}, nome={nome}, email={email}, matricula={matricula}, "
         f"equipe_id={equipe_id}, ativo={ativo}, skip={skip}, limit={limit}"
     )
 
     try:
         query = db.query(Recurso)
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Recurso.nome.ilike(search_pattern),
+                    Recurso.email.ilike(search_pattern),
+                    Recurso.matricula.ilike(search_pattern)
+                )
+            )
         if nome:
             query = query.filter(Recurso.nome.ilike(f"%{nome}%"))
         if email:
@@ -103,13 +113,20 @@ def list_recursos(
         if ativo is not None:
             query = query.filter(Recurso.ativo == ativo)
 
-        total = query.count()
-        recursos = (
-            query.order_by(Recurso.nome.asc())
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
+        total_query = query.count()
+
+        # Quando filtros de busca são aplicados (search ou campos específicos), podemos precisar paginar em memória
+        if search or nome or email or matricula or equipe_id is not None or ativo is not None:
+            recursos_full = query.order_by(Recurso.nome.asc()).all()
+            recursos = recursos_full[skip: skip + limit]
+        else:
+            recursos = (
+                query.order_by(Recurso.nome.asc())
+                .offset(skip)
+                .limit(limit)
+                .all()
+            )
+        total = total_query
 
         logger.info(f"[list_recursos] Sucesso - {len(recursos)} registros retornados / total={total}")
         return {"items": recursos, "total": total}
