@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, date
 
 class ProjetoBaseDTO(BaseModel):
@@ -13,9 +13,25 @@ class ProjetoBaseDTO(BaseModel):
     data_fim_prevista: Optional[date] = None
 
 class ProjetoCreateDTO(ProjetoBaseDTO):
-    data_criacao: Optional[datetime] = None
-    data_atualizacao: Optional[datetime] = None
-    ativo: bool = True
+    pass
+
+
+class HorasPlanejadasCreateDTO(BaseModel):
+    ano: int
+    mes: int
+    horas_planejadas: float
+
+
+class AlocacaoCreateDTO(BaseModel):
+    recurso_id: int
+    data_inicio_alocacao: date
+    data_fim_alocacao: Optional[date] = None
+    horas_planejadas: List[HorasPlanejadasCreateDTO] = []
+
+
+class ProjetoComAlocacoesCreateDTO(BaseModel):
+    projeto: ProjetoCreateDTO
+    alocacoes: List[AlocacaoCreateDTO] = []
 
 class ProjetoUpdateDTO(BaseModel):
     nome: Optional[str] = None

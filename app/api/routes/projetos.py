@@ -1,23 +1,36 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
-from app.models import Equipe, Projeto, Recurso
-from app.schemas.projeto import Projeto as ProjetoSchema
-from app.services.projeto_service import ProjetoService
-from app.utils.security import get_current_admin_user
+from app.db.session import get_async_db
+from app.domain.models.projeto_model import Projeto
+from app.application.dtos.projeto_dtos import ProjetoDTO, ProjetoComAlocacoesCreateDTO, ProjetoUpdateDTO
+from app.application.services.projeto_service import ProjetoService
+from app.infrastructure.repositories.sqlalchemy_projeto_repository import SQLAlchemyProjetoRepository
+from app.infrastructure.repositories.sqlalchemy_status_projeto_repository import SQLAlchemyStatusProjetoRepository
+from app.infrastructure.repositories.sqlalchemy_alocacao_repository import SQLAlchemyAlocacaoRepository
+from app.infrastructure.repositories.sqlalchemy_horas_planejadas_repository import SQLAlchemyHorasPlanejadasRepository
+from app.infrastructure.repositories.sqlalchemy_recurso_repository import SQLAlchemyRecursoRepository
+
+# TODO: Substituir pela dependência de usuário autenticado quando implementado
+async def get_current_user_mock():
+    return {"username": "user_mock"}
 
 router = APIRouter(prefix="/projetos", tags=["Projetos"])
 
 class ProjetoResponse(BaseModel):
-    items: List[ProjetoSchema]
+    items: List[ProjetoDTO]
     total: int
 
-    class Config:
-        from_attributes = True
+def get_projeto_service(db: AsyncSession = Depends(get_async_db)) -> ProjetoService:
+    return ProjetoService(
+        projeto_repository=SQLAlchemyProjetoRepository(db),
+        status_projeto_repository=SQLAlchemyStatusProjetoRepository(db),
+        alocacao_repository=SQLAlchemyAlocacaoRepository(db),
+        horas_planejadas_repository=SQLAlchemyHorasPlanejadasRepository(db),
+        recurso_repository=SQLAlchemyRecursoRepository(db)
+    )
 
 @router.get("/autocomplete", response_model=dict)
 def autocomplete_projetos(
@@ -46,19 +59,20 @@ def autocomplete_projetos(
     return {"items": items}
 
 
-@router.post("/", response_model=ProjetoResponseSchema, status_code=status.HTTP_201_CREATED)
-def create_projeto(
-    projeto: ProjetoCreateSchema,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_admin_user)
+@router.post("/", response_model=ProjetoDTO, status_code=status.HTTP_201_CREATED)
+async def create_projeto_with_allocations(
+    data: ProjetoComAlocacoesCreateDTO,
+    service: ProjetoService = Depends(get_projeto_service),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user_mock) # Substituir pela autenticação real
 ):
-    service = ProjetoService(db)
     try:
-        result = service.create(projeto)
-        print("DEBUG RETORNO POST:", result)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return await service.create_projeto_com_alocacoes(data, db)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        # Idealmente, logar o erro aqui
+        raise HTTPException(status_code=500, detail=f"Ocorreu um erro inesperado: {e}")
 
 @router.get("/", response_model=ProjetoResponse)
 def list_projetos(

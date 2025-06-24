@@ -1,14 +1,26 @@
 from typing import List, Optional
-from app.domain.models.projeto_model import Projeto
-from app.application.dtos.projeto_dtos import ProjetoBaseDTO, ProjetoUpdateDTO, ProjetoDTO
-from app.domain.repositories.projeto_repository import ProjetoRepository
-from app.domain.repositories.status_projeto_repository import StatusProjetoRepository
+from app.db.orm_models import Projeto, AlocacaoRecursoProjeto, HorasPlanejadas
+from app.application.dtos.projeto_dtos import ProjetoBaseDTO, ProjetoUpdateDTO, ProjetoDTO, ProjetoComAlocacoesCreateDTO
+from app.repositories.projeto_repository import ProjetoRepository
+from app.repositories.status_projeto_repository import StatusProjetoRepository
+from app.repositories.alocacao_repository import AlocacaoRepository
+from app.repositories.planejamento_horas_repository import PlanejamentoHorasRepository as HorasPlanejadasRepository
+from app.repositories.recurso_repository import RecursoRepository
 from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 class ProjetoService:
-    def __init__(self, projeto_repository: ProjetoRepository, status_projeto_repository: StatusProjetoRepository):
+    def __init__(self,
+                 projeto_repository: ProjetoRepository,
+                 status_projeto_repository: StatusProjetoRepository,
+                 alocacao_repository: AlocacaoRepository,
+                 horas_planejadas_repository: HorasPlanejadasRepository,
+                 recurso_repository: RecursoRepository):
         self.projeto_repository = projeto_repository
         self.status_projeto_repository = status_projeto_repository
+        self.alocacao_repository = alocacao_repository
+        self.horas_planejadas_repository = horas_planejadas_repository
+        self.recurso_repository = recurso_repository
 
     async def get_projeto_by_id(self, projeto_id: int) -> Optional[ProjetoDTO]:
         projeto = await self.projeto_repository.get_by_id(projeto_id)
@@ -23,6 +35,45 @@ class ProjetoService:
     async def count_projetos(self, include_inactive: bool = False, status_projeto: Optional[int] = None, search: Optional[str] = None) -> int:
         """Retorna a contagem total de projetos aplicando os mesmos filtros da listagem."""
         return await self.projeto_repository.count(include_inactive=include_inactive, status_projeto=status_projeto, search=search)
+
+    async def create_projeto_com_alocacoes(self, data: ProjetoComAlocacoesCreateDTO, db_session: AsyncSession) -> ProjetoDTO:
+        async with db_session.begin():
+            projeto_data = data.projeto
+
+            # Validações
+            if not await self.status_projeto_repository.get_by_id(projeto_data.status_projeto_id, db_session):
+                raise HTTPException(status_code=400, detail=f"Status de projeto com ID {projeto_data.status_projeto_id} não encontrado.")
+            if await self.projeto_repository.get_by_nome(projeto_data.nome, db_session):
+                raise HTTPException(status_code=400, detail=f"Projeto com nome '{projeto_data.nome}' já existe.")
+
+            # 1. Criar Projeto
+            projeto_obj = Projeto(**projeto_data.model_dump())
+            created_projeto = await self.projeto_repository.create(projeto_obj, db_session)
+
+            # 2. Criar Alocações e Horas
+            for aloc_dto in data.alocacoes:
+                if not await self.recurso_repository.get_by_id(aloc_dto.recurso_id, db_session):
+                    raise HTTPException(status_code=400, detail=f"Recurso com ID {aloc_dto.recurso_id} não encontrado.")
+
+                alocacao_obj = AlocacaoRecursoProjeto(
+                    recurso_id=aloc_dto.recurso_id,
+                    projeto_id=created_projeto.id,
+                    data_inicio_alocacao=aloc_dto.data_inicio_alocacao,
+                    data_fim_alocacao=aloc_dto.data_fim_alocacao
+                )
+                created_alocacao = await self.alocacao_repository.create(alocacao_obj, db_session)
+
+                for horas_dto in aloc_dto.horas_planejadas:
+                    horas_obj = HorasPlanejadas(
+                        alocacao_id=created_alocacao.id,
+                        ano=horas_dto.ano,
+                        mes=horas_dto.mes,
+                        horas_planejadas=horas_dto.horas_planejadas
+                    )
+                    await self.horas_planejadas_repository.create(horas_obj, db_session)
+            
+            await db_session.refresh(created_projeto)
+            return ProjetoDTO.model_validate(created_projeto)
 
     async def create_projeto(self, projeto_create_dto: ProjetoBaseDTO) -> ProjetoDTO:
         # Regra de negócio: secao_id agora é obrigatório

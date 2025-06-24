@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dtos.projeto_schema import ProjetoCreateSchema
 from app.application.dtos.projeto_dtos import ProjetoDTO, ProjetoCreateDTO, ProjetoUpdateDTO
 from app.application.services.projeto_service import ProjetoService
+from app.repositories.alocacao_repository import AlocacaoRepository
+from app.repositories.planejamento_horas_repository import PlanejamentoHorasRepository
+from app.repositories.recurso_repository import RecursoRepository
 from app.application.services.status_projeto_service import StatusProjetoService 
 from app.infrastructure.repositories.sqlalchemy_projeto_repository import SQLAlchemyProjetoRepository
 from app.infrastructure.repositories.sqlalchemy_status_projeto_repository import SQLAlchemyStatusProjetoRepository 
@@ -49,8 +52,17 @@ async def autocomplete_projetos(
 # Dependency for ProjetoService
 async def get_projeto_service(db: AsyncSession = Depends(get_async_db)) -> ProjetoService:
     projeto_repository = SQLAlchemyProjetoRepository(db_session=db)
-    status_projeto_repository = SQLAlchemyStatusProjetoRepository(db_session=db) 
-    return ProjetoService(projeto_repository=projeto_repository, status_projeto_repository=status_projeto_repository)
+    status_projeto_repository = SQLAlchemyStatusProjetoRepository(db_session=db)
+    alocacao_repository = AlocacaoRepository(db)
+    horas_planejadas_repository = PlanejamentoHorasRepository(db)
+    recurso_repository = RecursoRepository(db)
+    return ProjetoService(
+        projeto_repository=projeto_repository,
+        status_projeto_repository=status_projeto_repository,
+        alocacao_repository=alocacao_repository,
+        horas_planejadas_repository=horas_planejadas_repository,
+        recurso_repository=recurso_repository
+    )
 
 @router.post("/", response_model=ProjetoDTO, status_code=status.HTTP_201_CREATED)
 async def create_projeto(projeto_create: ProjetoCreateSchema, service: ProjetoService = Depends(get_projeto_service)):
