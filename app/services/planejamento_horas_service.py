@@ -91,7 +91,7 @@ class PlanejamentoHorasService:
         """
         return await self.repository.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
     
-    async def list_by_alocacao(self, alocacao_id: int) -> List[Dict[str, Any]]:
+    async def list_by_alocacao(self, alocacao_id: int, ano: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Lista todos os planejamentos de uma alocação.
         """
@@ -103,7 +103,7 @@ class PlanejamentoHorasService:
             if not alocacao:
                 logger.warning(f"[list_by_alocacao] Alocação com ID {alocacao_id} não encontrada")
                 raise ValueError(f"Alocação com ID {alocacao_id} não encontrada")
-            planejamentos = await self.repository.list_by_alocacao(alocacao_id)
+            planejamentos = await self.repository.list_by_alocacao(alocacao_id, ano)
             logger.info(f"[list_by_alocacao] {len(planejamentos)} planejamentos encontrados para alocacao_id={alocacao_id}")
             result = [
                 {

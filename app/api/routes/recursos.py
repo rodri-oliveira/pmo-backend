@@ -85,20 +85,34 @@ def list_recursos(
     current_user: dict = Depends(get_current_admin_user)
 ):
     logger = logging.getLogger("app.api.routes.recursos")
-    logger.info(f"[list_recursos] Início - filtros: nome={nome}, email={email}, matricula={matricula}, equipe_id={equipe_id}, ativo={ativo}")
-    service = RecursoService(db)
+    logger.info(
+        f"[list_recursos] Início - filtros: nome={nome}, email={email}, matricula={matricula}, "
+        f"equipe_id={equipe_id}, ativo={ativo}, skip={skip}, limit={limit}"
+    )
+
     try:
-        result = service.list(
-            skip=skip, 
-            limit=limit, 
-            nome=nome, 
-            email=email, 
-            matricula=matricula,
-            equipe_id=equipe_id,
-            ativo=ativo
+        query = db.query(Recurso)
+        if nome:
+            query = query.filter(Recurso.nome.ilike(f"%{nome}%"))
+        if email:
+            query = query.filter(Recurso.email.ilike(f"%{email}%"))
+        if matricula:
+            query = query.filter(Recurso.matricula.ilike(f"%{matricula}%"))
+        if equipe_id is not None:
+            query = query.filter(Recurso.equipe_principal_id == equipe_id)
+        if ativo is not None:
+            query = query.filter(Recurso.ativo == ativo)
+
+        total = query.count()
+        recursos = (
+            query.order_by(Recurso.nome.asc())
+            .offset(skip)
+            .limit(limit)
+            .all()
         )
-        logger.info(f"[list_recursos] Sucesso - {len(result)} registros retornados")
-        return {"items": result}
+
+        logger.info(f"[list_recursos] Sucesso - {len(recursos)} registros retornados / total={total}")
+        return {"items": recursos, "total": total}
     except Exception as e:
         logger.error(f"[list_recursos] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar recursos: {str(e)}")

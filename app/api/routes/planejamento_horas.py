@@ -62,6 +62,8 @@ async def create_or_update_planejamento(
 @router.get("/alocacao/{alocacao_id}", response_model=dict)
 async def list_planejamento_by_alocacao(
     alocacao_id: int = Path(..., gt=0),
+    ano: Optional[int] = Query(None, gt=0),
+    
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_admin_user)
 ):
@@ -80,7 +82,7 @@ async def list_planejamento_by_alocacao(
     logger.info(f"[list_planejamento_by_alocacao] Início: alocacao_id={alocacao_id}")
     try:
         service = PlanejamentoHorasService(db)
-        result = await service.list_by_alocacao(alocacao_id)
+        result = await service.list_by_alocacao(alocacao_id, ano)
         logger.info(f"[list_planejamento_by_alocacao] Sucesso: {len(result)} registros retornados para alocacao_id={alocacao_id}")
         return {"items": result}
     except ValueError as e:

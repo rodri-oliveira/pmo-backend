@@ -40,11 +40,14 @@ class PlanejamentoHorasRepository(BaseRepository[HorasPlanejadas]):
                 "horas_planejadas": horas_planejadas
             })
     
-    async def list_by_alocacao(self, alocacao_id: int) -> List[HorasPlanejadas]:
+    async def list_by_alocacao(self, alocacao_id: int, ano: Optional[int] = None) -> List[HorasPlanejadas]:
         """Lista todos os planejamentos de uma alocação."""
         query = select(HorasPlanejadas).filter(
             HorasPlanejadas.alocacao_id == alocacao_id
-        ).order_by(HorasPlanejadas.ano, HorasPlanejadas.mes)
+        )
+        if ano is not None:
+            query = query.filter(HorasPlanejadas.ano == ano)
+        query = query.order_by(HorasPlanejadas.ano, HorasPlanejadas.mes)
         result = await self.db.execute(query)
         return result.scalars().all()
     
