@@ -123,12 +123,16 @@ async def get_all_projetos(
     limit: int = Query(default=100, ge=1, le=1000),
     status_projeto: Optional[int] = None,
     search: Optional[str] = None,
+    nome: Optional[str] = Query(None),
     include_inactive: bool = False,  
     service: ProjetoService = Depends(get_projeto_service)
 ):
     logger = logging.getLogger("app.api.routes.projeto_routes")
     logger.info(f"[get_all_projetos] Início - skip={skip}, limit={limit}, status_projeto={status_projeto}, search='{search}'")
     try:
+        # Frontend antigo envia parâmetro "nome"; convertemos se "search" não veio.
+        if not search and nome:
+            search = nome
         items = await service.get_all_projetos(skip=skip, limit=limit, include_inactive=include_inactive, status_projeto=status_projeto, search=search)
         total = await service.count_projetos(include_inactive=include_inactive, status_projeto=status_projeto, search=search)
         logger.info(f"[get_all_projetos] Sucesso - {len(items)} registros retornados de {total} total")

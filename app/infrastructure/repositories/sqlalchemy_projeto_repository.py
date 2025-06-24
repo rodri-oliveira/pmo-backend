@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_, func
+from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_, or_, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.dialects import postgresql
 from datetime import datetime, timezone
@@ -60,7 +60,11 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
         query = select(func.count()).select_from(Projeto)
 
         if search:
-            query = query.where(Projeto.nome.ilike(func.concat('%', search, '%')))
+            query = query.where(or_(
+                Projeto.nome.ilike(func.concat('%', search, '%')),
+                Projeto.codigo_empresa.ilike(func.concat('%', search, '%')),
+                Projeto.descricao.ilike(func.concat('%', search, '%'))
+            ))
         if apenas_ativos:
             query = query.where(Projeto.ativo.is_(True))
         if status_projeto is not None:
@@ -81,7 +85,11 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             logger.info(f"Repository get_all received: search='{search}', apenas_ativos={apenas_ativos}")
 
             if search:
-                query = query.filter(Projeto.nome.ilike(func.concat('%', search, '%')))
+                query = query.filter(or_(
+                    Projeto.nome.ilike(func.concat('%', search, '%')),
+                    Projeto.codigo_empresa.ilike(func.concat('%', search, '%')),
+                    Projeto.descricao.ilike(func.concat('%', search, '%'))
+                ))
                 logger.info(f"Applying search filter for term: '{search}'")
 
             # Por padrão (apenas_ativos=True), busca apenas projetos ativos.
