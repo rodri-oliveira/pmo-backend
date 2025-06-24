@@ -76,7 +76,7 @@ def create_recurso(
 def list_recursos(
     skip: int = 0,
     limit: int = 100,
-    search: Optional[str] = None,
+
     nome: Optional[str] = None,
     email: Optional[str] = None,
     matricula: Optional[str] = None,
@@ -87,14 +87,14 @@ def list_recursos(
 ):
     logger = logging.getLogger("app.api.routes.recursos")
     logger.info(
-        f"[list_recursos] Início - filtros: search={search}, nome={nome}, email={email}, matricula={matricula}, "
+        f"[list_recursos] Início - filtros: nome={nome}, email={email}, matricula={matricula}, "
         f"equipe_id={equipe_id}, ativo={ativo}, skip={skip}, limit={limit}"
     )
 
     try:
         query = db.query(Recurso)
-        if search:
-            search_pattern = f"%{search}%"
+        if nome:
+            search_pattern = f"%{nome}%"
             query = query.filter(
                 or_(
                     Recurso.nome.ilike(search_pattern),
@@ -102,7 +102,7 @@ def list_recursos(
                     Recurso.matricula.ilike(search_pattern)
                 )
             )
-        if nome:
+        # filtros específicos abaixo
             query = query.filter(Recurso.nome.ilike(f"%{nome}%"))
         if email:
             query = query.filter(Recurso.email.ilike(f"%{email}%"))

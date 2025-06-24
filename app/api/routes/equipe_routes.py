@@ -64,16 +64,38 @@ async def get_equipe(equipe_id: int, service: EquipeService = Depends(get_equipe
 @router.get("/", response_model=dict)
 async def get_all_equipes(
     skip: int = 0,
+    nome: Optional[str] = Query(default=None, description="Busca por nome da equipe"),
     limit: int = Query(default=100, ge=1, le=1000),
     apenas_ativos: bool = False,
     secao_id: Optional[int] = Query(default=None, description="Filtrar equipes por ID da seção"),
-    service: EquipeService = Depends(get_equipe_service)
+    db: AsyncSession = Depends(get_async_db)
 ):
+    from sqlalchemy import func, or_
+    # monta query
+    base_query = select(Equipe)
+    if nome:
+        base_query = base_query.where(Equipe.nome.ilike(f"%{nome}%"))
     if secao_id is not None:
-        equipes = await service.get_equipes_by_secao_id(secao_id=secao_id, skip=skip, limit=limit, apenas_ativos=apenas_ativos)
+        base_query = base_query.where(Equipe.secao_id == secao_id)
+    if apenas_ativos:
+        base_query = base_query.where(Equipe.ativo == True)
+
+    # total antes da paginação
+    count_query = select(func.count()).select_from(base_query.subquery())
+    total = (await db.execute(count_query)).scalar_one()
+
+    # resultados
+    if nome or secao_id is not None or apenas_ativos:
+        result = await db.execute(base_query.order_by(Equipe.nome))
+        equipes_full = result.scalars().all()
+        equipes = equipes_full[skip: skip + limit]
     else:
-        equipes = await service.get_all_equipes(skip=skip, limit=limit, apenas_ativos=apenas_ativos)
-    return {"items": equipes}
+        paginated = base_query.order_by(Equipe.nome).offset(skip).limit(limit)
+        result = await db.execute(paginated)
+        equipes = result.scalars().all()
+
+    items = [EquipeDTO.model_validate(e) for e in equipes]
+    return {"items": items, "total": total}
 
 
 @router.put("/{equipe_id}", response_model=EquipeDTO)
