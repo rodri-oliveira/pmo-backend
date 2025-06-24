@@ -85,16 +85,25 @@ class AlocacaoService:
         if not projeto:
             raise ValueError(f"Projeto com ID {alocacao_data['projeto_id']} não encontrado")
         
-        # Verificar se já existe uma alocação para o mesmo recurso, projeto e data de início
-        alocacao_existente = await self.repository.get_by_recurso_projeto_data(
-            alocacao_data["recurso_id"],
-            alocacao_data["projeto_id"],
-            alocacao_data["data_inicio_alocacao"]
+        # Verificar sobreposição de alocações para o mesmo recurso
+        data_inicio = alocacao_data["data_inicio_alocacao"]
+        # Se a data fim não for fornecida, a alocação é considerada contínua.
+        # Para a verificação, podemos usar uma data muito no futuro.
+        data_fim = alocacao_data.get("data_fim_alocacao")
+
+        # A lógica de verificação de sobreposição agora é mais robusta.
+        # Não verificamos mais apenas por projeto, mas sim se o RECURSO está ocupado.
+        conflitos = await self.repository.find_overlapping_allocations(
+            recurso_id=alocacao_data["recurso_id"],
+            data_inicio=data_inicio,
+            data_fim=data_fim if data_fim else date(9999, 12, 31) # Usa data máxima se não houver data de fim
         )
-        
-        if alocacao_existente:
-            raise ValueError(f"Já existe uma alocação para este recurso neste projeto com a mesma data de início")
-        
+
+        if conflitos:
+            # Detalha os projetos conflitantes na mensagem de erro
+            nomes_projetos = [c.projeto.nome for c in conflitos if c.projeto]
+            raise ValueError(f"O recurso já está alocado no(s) projeto(s): {', '.join(nomes_projetos)} durante o período solicitado.")
+
         # Preencher equipe_id automaticamente (snapshot do momento)
         alocacao_data = dict(alocacao_data)
         # Use apenas o campo direto, nunca relacionamento

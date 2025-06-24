@@ -22,6 +22,33 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
         result = await self.db.execute(query)
         return result.scalars().first()
     
+    async def find_overlapping_allocations(
+        self, recurso_id: int, data_inicio: date, data_fim: date, exclude_alocacao_id: Optional[int] = None
+    ) -> List[AlocacaoRecursoProjeto]:
+        """Encontra alocações para um recurso que se sobrepõem a um determinado período."""
+        # Condição base: a nova alocação começa antes que a existente termine,
+        # E a nova alocação termina depois que a existente começa.
+        # Isso cobre todos os casos de sobreposição.
+        query = select(self.model).filter(
+            self.model.recurso_id == recurso_id,
+            # A nova alocação deve começar antes do fim da existente.
+            # Se a existente não tem data de fim (NULL), ela é contínua.
+            self.model.data_inicio_alocacao <= data_fim,
+            # A nova alocação deve terminar após o início da existente.
+            or_(
+                self.model.data_fim_alocacao == None,
+                self.model.data_fim_alocacao >= data_inicio
+            )
+        )
+
+        # Se estivermos atualizando uma alocação, devemos excluí-la da verificação
+        # para não conflitar com ela mesma.
+        if exclude_alocacao_id is not None:
+            query = query.filter(self.model.id != exclude_alocacao_id)
+
+        result = await self.db.execute(query)
+        return result.scalars().all()
+    
     async def list_by_recurso(self, recurso_id: int) -> List[AlocacaoRecursoProjeto]:
         """Lista alocações de um recurso."""
         query = select(AlocacaoRecursoProjeto).options(

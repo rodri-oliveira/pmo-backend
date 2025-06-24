@@ -1,21 +1,29 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from app.api.dtos.projeto_schema import ProjetoCreateSchema, ProjetoUpdateSchema, ProjetoResponseSchema
-from app.core.security import get_current_admin_user
 from app.db.session import get_db
+from app.models import Equipe, Projeto, Recurso
+from app.schemas.projeto import Projeto as ProjetoSchema
 from app.services.projeto_service import ProjetoService
-from app.models import Projeto, Recurso, Equipe
+from app.utils.security import get_current_admin_user
 
 router = APIRouter(prefix="/projetos", tags=["Projetos"])
+
+class ProjetoResponse(BaseModel):
+    items: List[ProjetoSchema]
+    total: int
+
+    class Config:
+        from_attributes = True
 
 @router.get("/autocomplete", response_model=dict)
 def autocomplete_projetos(
     search: str = Query(..., min_length=1, description="Termo a ser buscado (nome ou código da empresa)"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(0, ge=0),
     apenas_ativos: bool = Query(False),
     status_projeto: int = Query(None),
     db: Session = Depends(get_db),
@@ -25,7 +33,7 @@ def autocomplete_projetos(
     Endpoint para autocomplete de projetos por nome ou código da empresa.
     """
     query = db.query(Projeto)
-    query = query.filter(or_(Projeto.nome.ilike(f"%{search}%"), Projeto.codigo_empresa.ilike(f"%{search}%")))
+    query = query.filter(Projeto.nome.ilike(f"%{search}%"))
     if apenas_ativos:
         query = query.filter(Projeto.ativo == True)
     if status_projeto:
@@ -52,7 +60,7 @@ def create_projeto(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/", response_model=dict)
+@router.get("/", response_model=ProjetoResponse)
 def list_projetos(
     skip: int = 0,
     limit: int = 100,
@@ -66,17 +74,17 @@ def list_projetos(
     current_user: dict = Depends(get_current_admin_user)
 ):
     service = ProjetoService(db)
-    query = service.model.query
+    query = db.query(Projeto)
     if nome:
-        query = query.filter(service.model.nome.ilike(f"%{nome}%"))
+        query = query.filter(Projeto.nome.ilike(f"%{nome}%"))
     if codigo_empresa:
-        query = query.filter(service.model.codigo_empresa.ilike(f"%{codigo_empresa}%"))
+        query = query.filter(Projeto.codigo_empresa.ilike(f"%{codigo_empresa}%"))
     if status_projeto is not None:
-        query = query.filter(service.model.status_projeto_id == status_projeto)
+        query = query.filter(Projeto.status_projeto_id == status_projeto)
     if ativo is not None:
-        query = query.filter(service.model.ativo == ativo)
+        query = query.filter(Projeto.ativo == ativo)
     if equipe_id or secao_id:
-        query = query.join(Recurso, service.model.recurso_id == Recurso.id, isouter=False)
+        query = query.join(Recurso, Projeto.recurso_id == Recurso.id, isouter=False)
     if equipe_id:
         query = query.filter(Recurso.equipe_principal_id == equipe_id)
     if secao_id:

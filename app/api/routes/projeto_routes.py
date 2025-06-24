@@ -18,7 +18,7 @@ from app.core.security import get_current_admin_user
 router = APIRouter()
 
 from sqlalchemy.future import select
-from sqlalchemy import or_
+from sqlalchemy import or_, func, select
 
 @router.get("/autocomplete", response_model=dict)
 async def autocomplete_projetos(
@@ -129,9 +129,10 @@ async def get_all_projetos(
     logger = logging.getLogger("app.api.routes.projeto_routes")
     logger.info(f"[get_all_projetos] Início - skip={skip}, limit={limit}, status_projeto={status_projeto}, search='{search}'")
     try:
-        result = await service.get_all_projetos(skip=skip, limit=limit, include_inactive=include_inactive, status_projeto=status_projeto, search=search)
-        logger.info(f"[get_all_projetos] Sucesso - {len(result)} registros retornados")
-        return {"items": result}
+        items = await service.get_all_projetos(skip=skip, limit=limit, include_inactive=include_inactive, status_projeto=status_projeto, search=search)
+        total = await service.count_projetos(include_inactive=include_inactive, status_projeto=status_projeto, search=search)
+        logger.info(f"[get_all_projetos] Sucesso - {len(items)} registros retornados de {total} total")
+        return {"items": items, "total": total}
     except HTTPException as e:
         logger.warning(f"[get_all_projetos] HTTPException: {str(e.detail)}")
         raise e

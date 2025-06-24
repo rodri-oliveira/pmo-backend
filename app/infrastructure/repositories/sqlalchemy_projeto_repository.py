@@ -51,6 +51,24 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             return DomainProjeto.model_validate(self._to_dict(projeto_sql))
         return None
 
+    async def count(self, apenas_ativos: bool = True, status_projeto: Optional[int] = None, search: Optional[str] = None, **kwargs) -> int:
+        """Conta o total de projetos após aplicar os mesmos filtros da listagem."""
+        # Compatibilidade com include_inactive
+        if "include_inactive" in kwargs and kwargs["include_inactive"] is not None:
+            apenas_ativos = not kwargs["include_inactive"]
+
+        query = select(func.count()).select_from(Projeto)
+
+        if search:
+            query = query.where(Projeto.nome.ilike(func.concat('%', search, '%')))
+        if apenas_ativos:
+            query = query.where(Projeto.ativo.is_(True))
+        if status_projeto is not None:
+            query = query.where(Projeto.status_projeto_id == status_projeto)
+
+        result = await self.db_session.execute(query)
+        return result.scalar_one()
+
     async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = True, status_projeto: Optional[int] = None, search: Optional[str] = None, **kwargs) -> List[DomainProjeto]:
         # Compatibilidade: se a camada superior ainda enviar 'include_inactive', convertemos.
         if "include_inactive" in kwargs and kwargs["include_inactive"] is not None:

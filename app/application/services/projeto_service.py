@@ -20,6 +20,10 @@ class ProjetoService:
         projetos = await self.projeto_repository.get_all(skip=skip, limit=limit, include_inactive=include_inactive, status_projeto=status_projeto, search=search)
         return [ProjetoDTO.model_validate(p) for p in projetos]
 
+    async def count_projetos(self, include_inactive: bool = False, status_projeto: Optional[int] = None, search: Optional[str] = None) -> int:
+        """Retorna a contagem total de projetos aplicando os mesmos filtros da listagem."""
+        return await self.projeto_repository.count(include_inactive=include_inactive, status_projeto=status_projeto, search=search)
+
     async def create_projeto(self, projeto_create_dto: ProjetoBaseDTO) -> ProjetoDTO:
         # Regra de negócio: secao_id agora é obrigatório
         if projeto_create_dto.secao_id is None:
