@@ -7,6 +7,16 @@ from app.repositories.projeto_repository import ProjetoRepository
 from app.db.orm_models import AlocacaoRecursoProjeto
 
 class AlocacaoService:
+    async def get_all_alocacoes(self, skip: int = 0, limit: int = 100, include_inactive: bool = False):
+        apenas_ativos = not include_inactive
+        alocacoes = await self.repository.get_all(skip=skip, limit=limit, apenas_ativos=apenas_ativos)
+        return [self._format_response(a) for a in alocacoes]
+
+    async def count_alocacoes(self, include_inactive: bool = False):
+        apenas_ativos = not include_inactive
+        return await self.repository.count(apenas_ativos=apenas_ativos)
+
+
     """Serviço para gerenciamento de alocações de recursos em projetos."""
 
     async def list(

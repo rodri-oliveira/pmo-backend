@@ -75,8 +75,11 @@ async def create_alocacao_duplicated_path(
 
 from typing import List
 ...
-@router.get("/", response_model=List[AlocacaoResponse])
+@router.get("/", response_model=dict)
 async def list_alocacoes(
+    skip: int = Query(0, ge=0, description="Número de registros a pular"),
+    limit: int = Query(10, ge=1, le=1000, description="Quantidade máxima de registros"),
+    include_inactive: bool = Query(False, description="Incluir alocações inativas (data_fim passada)"),
     recurso_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do recurso"),
     projeto_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do projeto"),
     data_inicio: Optional[str] = Query(None, description="Filtrar por data inicial do período (formatos: YYYY-MM-DD ou DD/MM/YYYY)"),
@@ -84,17 +87,27 @@ async def list_alocacoes(
     db: AsyncSession = Depends(get_async_db)
 ):
     logger = logging.getLogger("app.api.routes.alocacao_routes")
-    logger.info(f"[list_alocacoes] Início - filtros: recurso_id={recurso_id}, projeto_id={projeto_id}, data_inicio={data_inicio}, data_fim={data_fim}")
+    logger.info(f"[list_alocacoes] Início - skip={skip}, limit={limit}, include_inactive={include_inactive}, filtros recurso_id={recurso_id}, projeto_id={projeto_id}, data_inicio={data_inicio}, data_fim={data_fim}")
     try:
         service = AlocacaoService(db)
+
+        # Caso nenhum filtro específico seja fornecido, usar consulta paginada direta
+        if not any([recurso_id, projeto_id, data_inicio, data_fim]):
+            items = await service.get_all_alocacoes(skip=skip, limit=limit, include_inactive=include_inactive)
+            total = await service.count_alocacoes(include_inactive=include_inactive)
+            return {"items": items, "total": total}
+
+        # Caso haja filtros, usar service.list (sem paginação interna).
         result = await service.list(
             recurso_id=recurso_id,
             projeto_id=projeto_id,
             data_inicio=data_inicio,
             data_fim=data_fim
         )
-        logger.info(f"[list_alocacoes] Sucesso - {len(result)} alocações encontradas")
-        return result
+        total = len(result)
+        # Aplicar paginação no resultado filtrado
+        paginated = result[skip: skip + limit]
+        return {"items": paginated, "total": total}
     except ValueError as e:
         logger.warning(f"[list_alocacoes] ValueError: {str(e)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

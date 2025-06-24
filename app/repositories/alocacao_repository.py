@@ -1,12 +1,42 @@
 from typing import List, Optional
 from datetime import date
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from app.db.orm_models import AlocacaoRecursoProjeto, Recurso, Projeto
 from app.repositories.base_repository import BaseRepository
 
 class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
+    """Repositório para operações com a entidade AlocacaoRecursoProjeto."""
+
+    async def count(self, apenas_ativos: bool = True):
+        """Conta alocações com opção de apenas ativos (data_fim >= hoje ou NULL)."""
+        query = select(func.count()).select_from(AlocacaoRecursoProjeto)
+        if apenas_ativos:
+            query = query.filter(or_(
+                AlocacaoRecursoProjeto.data_fim_alocacao == None,
+                AlocacaoRecursoProjeto.data_fim_alocacao >= date.today()
+            ))
+        result = await self.db.execute(query)
+        return result.scalar_one()
+
+    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = True):
+        """Retorna lista paginada de alocações."""
+        query = select(AlocacaoRecursoProjeto).options(
+            joinedload(AlocacaoRecursoProjeto.equipe),
+            joinedload(AlocacaoRecursoProjeto.recurso),
+            joinedload(AlocacaoRecursoProjeto.projeto),
+            joinedload(AlocacaoRecursoProjeto.status_alocacao)
+        )
+        if apenas_ativos:
+            query = query.filter(or_(
+                AlocacaoRecursoProjeto.data_fim_alocacao == None,
+                AlocacaoRecursoProjeto.data_fim_alocacao >= date.today()
+            ))
+        query = query.order_by(AlocacaoRecursoProjeto.data_inicio_alocacao.desc()).offset(skip).limit(limit)
+        result = await self.db.execute(query)
+        return result.scalars().all()
+
     """Repositório para operações com a entidade AlocacaoRecursoProjeto."""
     
     def __init__(self, db: AsyncSession):
