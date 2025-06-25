@@ -23,7 +23,8 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
         skip: int = 0,
         limit: int = 20,
         apenas_ativos: bool = False,
-        equipe_id: Optional[int] = None
+        equipe_id: Optional[int] = None,
+        secao_id: Optional[int] = None
     ):
         from sqlalchemy import or_
         query = select(Recurso)
@@ -71,7 +72,7 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
             return DomainRecurso.model_validate(recurso_sql)
         return None
 
-    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, equipe_id: Optional[int] = None) -> List[DomainRecurso]:
+    async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, equipe_id: Optional[int] = None, secao_id: Optional[int] = None) -> List[DomainRecurso]:
         query = select(Recurso).filter(Recurso.equipe_principal_id.isnot(None)).order_by(Recurso.nome)
         if apenas_ativos:
             query = query.filter(Recurso.ativo == True)

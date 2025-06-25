@@ -25,6 +25,7 @@ async def autocomplete_recursos(
     limit: int = Query(20, ge=1, le=100),
     apenas_ativos: bool = Query(False),
     equipe_id: Optional[int] = Query(None),
+    secao_id: Optional[int] = Query(None),
     service: RecursoService = Depends(get_recurso_service)
 ):
     """
@@ -35,7 +36,8 @@ async def autocomplete_recursos(
         skip=skip,
         limit=limit,
         apenas_ativos=apenas_ativos,
-        equipe_id=equipe_id
+        equipe_id=equipe_id,
+        secao_id=secao_id
     )
     # Retornar apenas campos essenciais
     items = [
@@ -73,10 +75,11 @@ async def get_all_recursos(
     limit: int = Query(default=100, ge=1, le=1000),
     apenas_ativos: bool = False,
     equipe_id: Optional[int] = Query(default=None, description="Filtrar recursos por ID da equipe principal"),
+    secao_id: Optional[int] = Query(default=None, description="Filtrar recursos por ID da seção"),
     service: RecursoService = Depends(get_recurso_service)
 ):
     try:
-        recursos = await service.get_all_recursos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, equipe_id=equipe_id)
+        recursos = await service.get_all_recursos(skip=skip, limit=limit, apenas_ativos=apenas_ativos, equipe_id=equipe_id, secao_id=secao_id)
         return {"items": recursos}
     except HTTPException as e:
         raise e

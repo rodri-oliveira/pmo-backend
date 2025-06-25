@@ -16,7 +16,8 @@ class RecursoService:
         skip: int = 0,
         limit: int = 20,
         apenas_ativos: bool = False,
-        equipe_id: Optional[int] = None
+        equipe_id: Optional[int] = None,
+        secao_id: Optional[int] = None
     ):
         """
         Busca recursos por nome, email ou matrícula (case-insensitive, partial match), com paginação e filtros opcionais.
@@ -26,7 +27,8 @@ class RecursoService:
             skip=skip,
             limit=limit,
             apenas_ativos=apenas_ativos,
-            equipe_id=equipe_id
+            equipe_id=equipe_id,
+            secao_id=secao_id
         )
 
     async def get_recurso_by_id(self, recurso_id: int) -> Optional[RecursoDTO]:
@@ -35,8 +37,8 @@ class RecursoService:
             return RecursoDTO.model_validate(recurso)
         return None
 
-    async def get_all_recursos(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, equipe_id: Optional[int] = None) -> List[RecursoDTO]:
-        recursos = await self.recurso_repository.get_all(skip=skip, limit=limit, apenas_ativos=apenas_ativos, equipe_id=equipe_id)
+    async def get_all_recursos(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, equipe_id: Optional[int] = None, secao_id: Optional[int] = None) -> List[RecursoDTO]:
+        recursos = await self.recurso_repository.get_all(skip=skip, limit=limit, apenas_ativos=apenas_ativos, equipe_id=equipe_id, secao_id=secao_id)
         return [RecursoDTO.model_validate(recurso) for recurso in recursos]
 
     async def create_recurso(self, recurso_create_dto: RecursoCreateDTO) -> RecursoDTO:
