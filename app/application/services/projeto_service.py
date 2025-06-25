@@ -37,42 +37,56 @@ class ProjetoService:
         return await self.projeto_repository.count(include_inactive=include_inactive, status_projeto=status_projeto, search=search)
 
     async def create_projeto_com_alocacoes(self, data: ProjetoComAlocacoesCreateDTO, db_session: AsyncSession) -> ProjetoDTO:
+        """
+        Cria um projeto completo, incluindo suas alocações de recursos e as horas planejadas para cada alocação.
+        Este método opera dentro de uma única transação para garantir a atomicidade.
+        """
         async with db_session.begin():
-            projeto_data = data.projeto
+            projeto_data_dto = data.projeto
 
             # Validações
-            if not await self.status_projeto_repository.get_by_id(projeto_data.status_projeto_id, db_session):
-                raise HTTPException(status_code=400, detail=f"Status de projeto com ID {projeto_data.status_projeto_id} não encontrado.")
-            if await self.projeto_repository.get_by_nome(projeto_data.nome, db_session):
-                raise HTTPException(status_code=400, detail=f"Projeto com nome '{projeto_data.nome}' já existe.")
+            if not await self.status_projeto_repository.get_by_id(projeto_data_dto.status_projeto_id):
+                raise HTTPException(status_code=400, detail=f"Status de projeto com ID {projeto_data_dto.status_projeto_id} não encontrado.")
+            if await self.projeto_repository.get_by_nome(projeto_data_dto.nome):
+                raise HTTPException(status_code=400, detail=f"Projeto com nome '{projeto_data_dto.nome}' já existe.")
 
-            # 1. Criar Projeto
-            projeto_obj = Projeto(**projeto_data.model_dump())
-            created_projeto = await self.projeto_repository.create(projeto_obj, db_session)
+            # 1. Criar Projeto (aceita tanto DTO quanto dict)
+            if isinstance(projeto_data_dto, dict):
+                projeto_dict = projeto_data_dto
+            else:
+                projeto_dict = projeto_data_dto.model_dump()
+            created_projeto = await self.projeto_repository.create(projeto_dict)
 
-            # 2. Criar Alocações e Horas
-            for aloc_dto in data.alocacoes:
-                if not await self.recurso_repository.get_by_id(aloc_dto.recurso_id, db_session):
-                    raise HTTPException(status_code=400, detail=f"Recurso com ID {aloc_dto.recurso_id} não encontrado.")
+            # 2. Iterar e Criar Alocações e Horas Planejadas
+            if data.alocacoes:
+                for aloc_dto in data.alocacoes:
+                    # Converte Alocacao DTO para dict se necessário
+                    aloc_dict_src = aloc_dto if isinstance(aloc_dto, dict) else aloc_dto.model_dump()
+                    recurso_id = aloc_dict_src["recurso_id"]
+                    if not await self.recurso_repository.get_by_id(recurso_id):
+                        raise HTTPException(status_code=400, detail=f"Recurso com ID {aloc_dto.recurso_id} não encontrado.")
 
-                alocacao_obj = AlocacaoRecursoProjeto(
-                    recurso_id=aloc_dto.recurso_id,
-                    projeto_id=created_projeto.id,
-                    data_inicio_alocacao=aloc_dto.data_inicio_alocacao,
-                    data_fim_alocacao=aloc_dto.data_fim_alocacao
-                )
-                created_alocacao = await self.alocacao_repository.create(alocacao_obj, db_session)
+                    alocacao_dict = {
+                        "recurso_id": recurso_id,
+                        "projeto_id": created_projeto.id,
+                        "data_inicio_alocacao": aloc_dict_src["data_inicio_alocacao"],
+                        "data_fim_alocacao": aloc_dict_src["data_fim_alocacao"]
+                    }
+                    created_alocacao = await self.alocacao_repository.create(alocacao_dict)
 
-                for horas_dto in aloc_dto.horas_planejadas:
-                    horas_obj = HorasPlanejadas(
-                        alocacao_id=created_alocacao.id,
-                        ano=horas_dto.ano,
-                        mes=horas_dto.mes,
-                        horas_planejadas=horas_dto.horas_planejadas
-                    )
-                    await self.horas_planejadas_repository.create(horas_obj, db_session)
+                    horas_planejadas_list = aloc_dict_src.get("horas_planejadas", [])
+                    for horas_item in horas_planejadas_list:
+                        horas_dict_src = horas_item if isinstance(horas_item, dict) else horas_item.model_dump()
+                        horas_dict = {
+                            "alocacao_id": created_alocacao.id,
+                            "ano": horas_dict_src["ano"],
+                            "mes": horas_dict_src["mes"],
+                            "horas_planejadas": horas_dict_src["horas_planejadas"]
+                        }
+                        await self.horas_planejadas_repository.create(horas_dict)
             
-            await db_session.refresh(created_projeto)
+            # A chamada `refresh` foi removida pois o repositório já retorna um objeto de domínio atualizado.
+            # A validação do Pydantic na saída garante a consistência do objeto retornado.
             return ProjetoDTO.model_validate(created_projeto)
 
     async def create_projeto(self, projeto_create_dto: ProjetoBaseDTO) -> ProjetoDTO:

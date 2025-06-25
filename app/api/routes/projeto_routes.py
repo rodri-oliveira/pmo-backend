@@ -6,7 +6,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dtos.projeto_schema import ProjetoCreateSchema
-from app.application.dtos.projeto_dtos import ProjetoDTO, ProjetoCreateDTO, ProjetoUpdateDTO
+from app.application.dtos.projeto_dtos import ProjetoDTO, ProjetoUpdateDTO, ProjetoComAlocacoesCreateDTO
 from app.application.services.projeto_service import ProjetoService
 from app.repositories.alocacao_repository import AlocacaoRepository
 from app.repositories.planejamento_horas_repository import PlanejamentoHorasRepository
@@ -78,6 +78,27 @@ async def create_projeto(projeto_create: ProjetoCreateSchema, service: ProjetoSe
     except Exception as e:
         logger.error(f"[create_projeto] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao criar projeto: {str(e)}")
+
+
+# Novo endpoint completo para projeto + alocações
+@router.post("/com-alocacoes", response_model=ProjetoDTO, status_code=status.HTTP_201_CREATED)
+async def create_projeto_com_alocacoes(
+    payload: ProjetoComAlocacoesCreateDTO,
+    service: ProjetoService = Depends(get_projeto_service),
+    db: AsyncSession = Depends(get_async_db)
+):
+    logger = logging.getLogger("app.api.routes.projeto_routes")
+    logger.info("[create_projeto_com_alocacoes] Início")
+    try:
+        novo = await service.create_projeto_com_alocacoes(payload, db)
+        logger.info("[create_projeto_com_alocacoes] Sucesso")
+        return novo
+    except HTTPException as e:
+        logger.warning(f"[create_projeto_com_alocacoes] HTTPException: {e.detail}")
+        raise e
+    except Exception as e:
+        logger.error(f"[create_projeto_com_alocacoes] Erro inesperado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao criar projeto com alocações: {str(e)}")
 
 @router.get("/filtrar", response_model=List[ProjetoDTO])
 async def filtrar_projetos(

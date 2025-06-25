@@ -11,6 +11,7 @@ from app.domain.models.projeto_model import Projeto as DomainProjeto
 from app.application.dtos.projeto_dtos import ProjetoCreateDTO, ProjetoUpdateDTO
 from app.domain.repositories.projeto_repository import ProjetoRepository
 from app.db.orm_models import Projeto
+from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 
 class SQLAlchemyProjetoRepository(ProjetoRepository):
@@ -50,6 +51,18 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
         if projeto_sql:
             return DomainProjeto.model_validate(self._to_dict(projeto_sql))
         return None
+
+    async def create(self, projeto_data: dict) -> DomainProjeto:
+        try:
+            novo_projeto_sql = Projeto(**projeto_data)
+            self.db_session.add(novo_projeto_sql)
+            await self.db_session.flush() # Garante que o ID seja gerado sem commitar a transação
+            await self.db_session.refresh(novo_projeto_sql)
+            return DomainProjeto.model_validate(self._to_dict(novo_projeto_sql))
+        except SQLAlchemyError as e:
+            # O rollback é gerenciado pelo service layer com o `async with db_session.begin()`
+            logging.error(f"Erro ao criar projeto no repositório: {e}")
+            raise
 
     async def count(self, apenas_ativos: bool = True, status_projeto: Optional[int] = None, search: Optional[str] = None, **kwargs) -> int:
         """Conta o total de projetos após aplicar os mesmos filtros da listagem."""
@@ -108,59 +121,24 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             except Exception as compilation_error:
                 logger.error(f"Error compiling query: {compilation_error}")
 
+            # Executa a consulta
             result = await self.db_session.execute(query)
             projetos_sql = result.scalars().all()
-            
+
             return [DomainProjeto.model_validate(self._to_dict(p)) for p in projetos_sql]
         except Exception as e:
             logger.error(f"Erro ao listar projetos: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Erro ao listar projetos: {str(e)}")
-
-    async def create(self, projeto_create_dto: ProjetoCreateDTO) -> DomainProjeto:
-        try:
-            data = projeto_create_dto.model_dump()
-            
-            # Criar dicionário apenas com campos obrigatórios
-            projeto_data = {
-                "nome": data["nome"],
-                "status_projeto_id": data["status_projeto_id"],
-                "ativo": data.get("ativo", True)
-            }
-            
-            # Adicionar campos opcionais apenas se presentes e não nulos
-            campos_opcionais = [
-                "jira_project_key", "secao_id", "descricao", "codigo_empresa",
-                "data_inicio_prevista", "data_fim_prevista"
-            ]
-            
-            for campo in campos_opcionais:
-                if campo in data and data[campo] is not None:
-                    projeto_data[campo] = data[campo]
-            
-            # Tratar datas especiais - usar apenas se fornecidas explicitamente
-            if "data_criacao" in data and data["data_criacao"] is not None:
-                projeto_data["data_criacao"] = data["data_criacao"]
-            
-            if "data_atualizacao" in data and data["data_atualizacao"] is not None:
-                projeto_data["data_atualizacao"] = data["data_atualizacao"]
-            
-            # Criar objeto apenas com dados válidos
-            new_projeto_sql = Projeto(**projeto_data)
-            
-            self.db_session.add(new_projeto_sql)
-            await self.db_session.flush()
-            await self.db_session.commit()
-            await self.db_session.refresh(new_projeto_sql)
-            
-            return DomainProjeto.model_validate(self._to_dict(new_projeto_sql))
+            return None
         except Exception as e:
             await self.db_session.rollback()
-            raise HTTPException(
-                status_code=500,
-                detail=f"Erro ao criar projeto: {str(e)}"
-            )
+            error_msg = str(e)
+            # Adicionar tratamento de erro mais específico se necessário
+            logger.error(f"Erro ao atualizar projeto: {error_msg}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Erro ao atualizar projeto: {error_msg}")
 
     async def update(self, projeto_id: int, projeto_update_dto: ProjetoUpdateDTO) -> Optional[DomainProjeto]:
+        """Atualiza um projeto existente."""
         try:
             update_data = projeto_update_dto.model_dump(exclude_unset=True)
             if not update_data:
@@ -172,21 +150,16 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
                 .values(**update_data)
                 .returning(Projeto)
             )
-            
             result = await self.db_session.execute(query)
             await self.db_session.commit()
-            updated_projeto_sql = result.scalar_one_or_none()
-
-            if updated_projeto_sql:
-                return DomainProjeto.model_validate(self._to_dict(updated_projeto_sql))
-            
+            updated_sql = result.scalar_one_or_none()
+            if updated_sql:
+                return DomainProjeto.model_validate(self._to_dict(updated_sql))
             return None
         except Exception as e:
             await self.db_session.rollback()
-            error_msg = str(e)
-            # Adicionar tratamento de erro mais específico se necessário
-            logger.error(f"Erro ao atualizar projeto: {error_msg}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Erro ao atualizar projeto: {error_msg}")
+            logger.error(f"Erro ao atualizar projeto: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Erro ao atualizar projeto: {str(e)}")
 
     async def delete(self, projeto_id: int) -> Optional[DomainProjeto]:
         try:

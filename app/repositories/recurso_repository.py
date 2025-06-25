@@ -6,6 +6,10 @@ from app.db.orm_models import Recurso, Equipe, Secao
 from app.repositories.base_repository import BaseRepository
 
 class RecursoRepository(BaseRepository[Recurso]):
+    async def get_by_id(self, recurso_id: int) -> Optional[Recurso]:
+        """Obtém um recurso pelo ID (compatibilidade com ServiceLayer)."""
+        return await self.get(recurso_id)
+
     """
     Repositório para operações com recursos.
     """

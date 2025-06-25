@@ -61,11 +61,15 @@ class BaseRepository(Generic[T]):
         try:
             obj = self.model(**obj_in)
             self.db.add(obj)
-            await self.db.commit()
+            # Em cenários onde a transação é controlada externamente (service layer
+            # usando `async with db.begin()`), não devemos fazer commit/rollback aqui.
+            # Apenas flush para obter PK e refresh para garantir dados atualizados.
+            await self.db.flush()
             await self.db.refresh(obj)
             return obj
         except SQLAlchemyError as e:
-            await self.db.rollback()
+            # O rollback será conduzido pela camada de serviço se ela estiver
+            # gerenciando a transação.
             raise e
     
     async def update(self, id: Any, obj_in: Dict[str, Any]) -> Optional[dict]:
