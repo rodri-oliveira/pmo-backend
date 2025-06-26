@@ -147,6 +147,8 @@ class ProjetoService:
         search: Optional[str] = None,
         ativo: Optional[bool] = None,
         com_alocacoes: bool = True,
+        secao_id: Optional[int] = None,
+        recurso: Optional[str] = None,
     ) -> List[ProjetoDetalhadoDTO]:
         skip = (page - 1) * per_page
         projetos = await self.projeto_repository.list_detalhados(
@@ -155,6 +157,8 @@ class ProjetoService:
             search=search,
             ativo=ativo,
             com_alocacoes=com_alocacoes,
+            secao_id=secao_id,
+            recurso=recurso,
         )
         return [ProjetoDetalhadoDTO.model_validate(p) for p in projetos]
 

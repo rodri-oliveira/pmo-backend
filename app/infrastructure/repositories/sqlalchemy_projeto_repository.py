@@ -10,7 +10,7 @@ from sqlalchemy.orm import class_mapper
 from app.domain.models.projeto_model import Projeto as DomainProjeto
 from app.application.dtos.projeto_dtos import ProjetoCreateDTO, ProjetoUpdateDTO
 from app.domain.repositories.projeto_repository import ProjetoRepository
-from app.db.orm_models import Projeto, AlocacaoRecursoProjeto
+from app.db.orm_models import Projeto, AlocacaoRecursoProjeto, Recurso
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 
@@ -168,6 +168,8 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
         search: Optional[str] = None,
         ativo: Optional[bool] = None,
         com_alocacoes: Optional[bool] = None,
+        secao_id: Optional[int] = None,
+        recurso: Optional[str] = None,
     ) -> List[Projeto]:
         """Lista projetos com dados aninhados (alocações, horas planejadas) em única consulta."""
         logger = logging.getLogger("app.repositories.sqlalchemy_projeto_repository")
@@ -194,6 +196,18 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
 
             if com_alocacoes:
                 query = query.where(Projeto.alocacoes.any())
+
+            if secao_id is not None:
+                query = query.where(Projeto.secao_id == secao_id)
+
+            if recurso:
+                query = query.where(
+                    Projeto.alocacoes.any(
+                        AlocacaoRecursoProjeto.recurso.has(
+                            Recurso.nome.ilike(func.concat('%', recurso, '%'))
+                        )
+                    )
+                )
 
             query = query.order_by(Projeto.id.asc()).offset(skip).limit(limit)
             result = await self.db_session.execute(query)

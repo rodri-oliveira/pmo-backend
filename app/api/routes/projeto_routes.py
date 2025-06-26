@@ -185,13 +185,21 @@ async def get_projetos_detalhados(
     per_page: int = Query(10, ge=1, le=100, description="Itens por página"),
     search: Optional[str] = Query(None, description="Termo de busca para nome ou descrição"),
     ativo: Optional[bool] = Query(None, description="Filtrar por projetos ativos ou inativos"),
-    com_alocacoes: Optional[bool] = Query(None, description="Filtrar projetos que possuem alocações")
+    secao_id: Optional[int] = Query(None, description="Filtrar pela seção do projeto"),
+    recurso: Optional[str] = Query(None, description="Pesquisar pelo nome do recurso alocado"),
+    com_alocacoes: Optional[bool] = Query(True, description="Filtrar projetos que possuem alocações")
 ):
     logger = logging.getLogger("app.api.routes.projeto_routes")
     logger.info("[get_projetos_detalhados] Início")
     try:
         return await service.get_projetos_detalhados(
-            page=page, per_page=per_page, search=search, ativo=ativo, com_alocacoes=com_alocacoes
+            page=page,
+            per_page=per_page,
+            search=search,
+            ativo=ativo,
+            com_alocacoes=com_alocacoes,
+            secao_id=secao_id,
+            recurso=recurso
         )
     except HTTPException as e:
         logger.warning("[get_projetos_detalhados] HTTPException: %s", str(e.detail))
