@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dtos.projeto_schema import ProjetoCreateSchema
 from app.application.dtos.projeto_dtos import ProjetoDTO, ProjetoUpdateDTO, ProjetoComAlocacoesCreateDTO
+from app.application.dtos.projeto_detalhado_dtos import ProjetoDetalhadoDTO
 from app.application.services.projeto_service import ProjetoService
 from app.repositories.alocacao_repository import AlocacaoRepository
 from app.repositories.planejamento_horas_repository import PlanejamentoHorasRepository
@@ -176,6 +177,27 @@ async def get_all_projetos(
     except Exception as e:
         logger.error(f"[get_all_projetos] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar projetos: {str(e)}")
+
+@router.get("/detalhados", response_model=List[ProjetoDetalhadoDTO])
+async def get_projetos_detalhados(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=100),
+    search: Optional[str] = None,
+    ativo: Optional[bool] = None,
+    service: ProjetoService = Depends(get_projeto_service)
+):
+    logger = logging.getLogger("app.api.routes.projeto_routes")
+    logger.info("[get_projetos_detalhados] Início")
+    try:
+        items = await service.get_projetos_detalhados(page=page, per_page=per_page, search=search, ativo=ativo)
+        logger.info("[get_projetos_detalhados] Sucesso - %d registros", len(items))
+        return items
+    except HTTPException as e:
+        logger.warning("[get_projetos_detalhados] HTTPException: %s", str(e.detail))
+        raise e
+    except Exception as e:
+        logger.error("[get_projetos_detalhados] Erro inesperado: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro inesperado ao listar projetos detalhados")
 
 @router.get("/{projeto_id}", response_model=ProjetoDTO)
 async def get_projeto(projeto_id: int, service: ProjetoService = Depends(get_projeto_service)):

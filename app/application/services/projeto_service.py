@@ -1,6 +1,7 @@
 from typing import List, Optional
 from app.db.orm_models import Projeto, AlocacaoRecursoProjeto, HorasPlanejadas
 from app.application.dtos.projeto_dtos import ProjetoBaseDTO, ProjetoUpdateDTO, ProjetoDTO, ProjetoComAlocacoesCreateDTO
+from app.application.dtos.projeto_detalhado_dtos import ProjetoDetalhadoDTO
 from app.repositories.projeto_repository import ProjetoRepository
 from app.repositories.status_projeto_repository import StatusProjetoRepository
 from app.repositories.alocacao_repository import AlocacaoRepository
@@ -138,6 +139,22 @@ class ProjetoService:
         if projeto:
             return ProjetoDTO.model_validate(projeto)
         return None
+
+    async def get_projetos_detalhados(
+        self,
+        page: int = 1,
+        per_page: int = 10,
+        search: Optional[str] = None,
+        ativo: Optional[bool] = None,
+    ) -> List[ProjetoDetalhadoDTO]:
+        skip = (page - 1) * per_page
+        projetos = await self.projeto_repository.list_detalhados(
+            skip=skip,
+            limit=per_page,
+            search=search,
+            ativo=ativo,
+        )
+        return [ProjetoDetalhadoDTO.model_validate(p) for p in projetos]
 
     async def delete_projeto(self, projeto_id: int) -> Optional[ProjetoDTO]:
         # Add logic here to check if projeto can be deleted (e.g., no active alocacoes or apontamentos)

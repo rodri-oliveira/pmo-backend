@@ -10,7 +10,7 @@ from sqlalchemy.orm import class_mapper
 from app.domain.models.projeto_model import Projeto as DomainProjeto
 from app.application.dtos.projeto_dtos import ProjetoCreateDTO, ProjetoUpdateDTO
 from app.domain.repositories.projeto_repository import ProjetoRepository
-from app.db.orm_models import Projeto
+from app.db.orm_models import Projeto, AlocacaoRecursoProjeto
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 
@@ -160,6 +160,41 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             await self.db_session.rollback()
             logger.error(f"Erro ao atualizar projeto: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Erro ao atualizar projeto: {str(e)}")
+
+    async def list_detalhados(
+        self,
+        skip: int = 0,
+        limit: int = 10,
+        search: Optional[str] = None,
+        ativo: Optional[bool] = None,
+    ) -> List[DomainProjeto]:
+        """Lista projetos com dados aninhados (alocações, horas planejadas) em única consulta."""
+        logger = logging.getLogger("app.repositories.sqlalchemy_projeto_repository")
+        try:
+            query = select(Projeto).options(
+                selectinload(Projeto.secao),
+                selectinload(Projeto.status),
+                selectinload(Projeto.alocacoes)
+                    .selectinload(AlocacaoRecursoProjeto.recurso),
+                selectinload(Projeto.alocacoes)
+                    .selectinload(AlocacaoRecursoProjeto.horas_planejadas),
+            )
+            if search:
+                query = query.where(
+                    or_(
+                        Projeto.nome.ilike(func.concat('%', search, '%')),
+                        Projeto.descricao.ilike(func.concat('%', search, '%')),
+                    )
+                )
+            if ativo is not None:
+                query = query.where(Projeto.ativo.is_(ativo))
+            query = query.order_by(Projeto.id.asc()).offset(skip).limit(limit)
+            result = await self.db_session.execute(query)
+            projetos_sql = result.scalars().unique().all()
+            return projetos_sql
+        except Exception as e:
+            logger.error("Erro ao listar projetos detalhados: %s", str(e), exc_info=True)
+            raise HTTPException(status_code=500, detail="Erro ao listar projetos detalhados")
 
     async def delete(self, projeto_id: int) -> Optional[DomainProjeto]:
         try:
