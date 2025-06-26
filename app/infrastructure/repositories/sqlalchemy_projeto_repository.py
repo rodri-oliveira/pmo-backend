@@ -167,7 +167,8 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
         limit: int = 10,
         search: Optional[str] = None,
         ativo: Optional[bool] = None,
-    ) -> List[DomainProjeto]:
+        com_alocacoes: Optional[bool] = None,
+    ) -> List[Projeto]:
         """Lista projetos com dados aninhados (alocações, horas planejadas) em única consulta."""
         logger = logging.getLogger("app.repositories.sqlalchemy_projeto_repository")
         try:
@@ -179,6 +180,7 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
                 selectinload(Projeto.alocacoes)
                     .selectinload(AlocacaoRecursoProjeto.horas_planejadas),
             )
+
             if search:
                 query = query.where(
                     or_(
@@ -186,8 +188,13 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
                         Projeto.descricao.ilike(func.concat('%', search, '%')),
                     )
                 )
+            
             if ativo is not None:
                 query = query.where(Projeto.ativo.is_(ativo))
+
+            if com_alocacoes:
+                query = query.where(Projeto.alocacoes.any())
+
             query = query.order_by(Projeto.id.asc()).offset(skip).limit(limit)
             result = await self.db_session.execute(query)
             projetos_sql = result.scalars().unique().all()

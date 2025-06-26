@@ -178,20 +178,21 @@ async def get_all_projetos(
         logger.error(f"[get_all_projetos] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar projetos: {str(e)}")
 
-@router.get("/detalhados", response_model=List[ProjetoDetalhadoDTO])
+@router.get("/detalhados", response_model=List[ProjetoDetalhadoDTO], summary="Obter lista detalhada de projetos com alocações e horas")
 async def get_projetos_detalhados(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(10, ge=1, le=100),
-    search: Optional[str] = None,
-    ativo: Optional[bool] = None,
-    service: ProjetoService = Depends(get_projeto_service)
+    service: ProjetoService = Depends(get_projeto_service),
+    page: int = Query(1, ge=1, description="Número da página"),
+    per_page: int = Query(10, ge=1, le=100, description="Itens por página"),
+    search: Optional[str] = Query(None, description="Termo de busca para nome ou descrição"),
+    ativo: Optional[bool] = Query(None, description="Filtrar por projetos ativos ou inativos"),
+    com_alocacoes: Optional[bool] = Query(None, description="Filtrar projetos que possuem alocações")
 ):
     logger = logging.getLogger("app.api.routes.projeto_routes")
     logger.info("[get_projetos_detalhados] Início")
     try:
-        items = await service.get_projetos_detalhados(page=page, per_page=per_page, search=search, ativo=ativo)
-        logger.info("[get_projetos_detalhados] Sucesso - %d registros", len(items))
-        return items
+        return await service.get_projetos_detalhados(
+            page=page, per_page=per_page, search=search, ativo=ativo, com_alocacoes=com_alocacoes
+        )
     except HTTPException as e:
         logger.warning("[get_projetos_detalhados] HTTPException: %s", str(e.detail))
         raise e
