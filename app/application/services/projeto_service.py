@@ -162,6 +162,23 @@ class ProjetoService:
         )
         return [ProjetoDetalhadoDTO.model_validate(p) for p in projetos]
 
+    async def count_projetos_detalhados(
+        self,
+        search: Optional[str] = None,
+        ativo: Optional[bool] = None,
+        com_alocacoes: bool = True,
+        secao_id: Optional[int] = None,
+        recurso: Optional[str] = None,
+    ) -> int:
+        """Retorna a contagem total de projetos detalhados aplicando os mesmos filtros da listagem."""
+        return await self.projeto_repository.count_detalhados(
+            search=search,
+            ativo=ativo,
+            com_alocacoes=com_alocacoes,
+            secao_id=secao_id,
+            recurso=recurso,
+        )
+
     async def delete_projeto(self, projeto_id: int) -> Optional[ProjetoDTO]:
         # Add logic here to check if projeto can be deleted (e.g., no active alocacoes or apontamentos)
         projeto_deletado = await self.projeto_repository.delete(projeto_id)

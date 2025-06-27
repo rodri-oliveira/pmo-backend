@@ -178,7 +178,7 @@ async def get_all_projetos(
         logger.error(f"[get_all_projetos] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar projetos: {str(e)}")
 
-@router.get("/detalhados", response_model=List[ProjetoDetalhadoDTO], summary="Obter lista detalhada de projetos com alocações e horas")
+@router.get("/detalhados", response_model=dict, summary="Obter lista detalhada de projetos com alocações e horas")
 async def get_projetos_detalhados(
     service: ProjetoService = Depends(get_projeto_service),
     page: int = Query(1, ge=1, description="Número da página"),
@@ -192,7 +192,7 @@ async def get_projetos_detalhados(
     logger = logging.getLogger("app.api.routes.projeto_routes")
     logger.info("[get_projetos_detalhados] Início")
     try:
-        return await service.get_projetos_detalhados(
+        items = await service.get_projetos_detalhados(
             page=page,
             per_page=per_page,
             search=search,
@@ -201,6 +201,14 @@ async def get_projetos_detalhados(
             secao_id=secao_id,
             recurso=recurso
         )
+        total = await service.count_projetos_detalhados(
+            search=search,
+            ativo=ativo,
+            com_alocacoes=com_alocacoes,
+            secao_id=secao_id,
+            recurso=recurso
+        )
+        return {"items": items, "total": total}
     except HTTPException as e:
         logger.warning("[get_projetos_detalhados] HTTPException: %s", str(e.detail))
         raise e

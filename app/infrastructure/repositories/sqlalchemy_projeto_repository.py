@@ -217,6 +217,46 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             logger.error("Erro ao listar projetos detalhados: %s", str(e), exc_info=True)
             raise HTTPException(status_code=500, detail="Erro ao listar projetos detalhados")
 
+    async def count_detalhados(
+        self,
+        search: Optional[str] = None,
+        ativo: Optional[bool] = None,
+        com_alocacoes: Optional[bool] = None,
+        secao_id: Optional[int] = None,
+        recurso: Optional[str] = None,
+    ) -> int:
+        """Conta o total de projetos detalhados aplicando os mesmos filtros."""
+        try:
+            query = select(func.count()).select_from(Projeto)
+
+            if search:
+                query = query.where(
+                    or_(
+                        Projeto.nome.ilike(func.concat('%', search, '%')),
+                        Projeto.descricao.ilike(func.concat('%', search, '%')),
+                    )
+                )
+            if ativo is not None:
+                query = query.where(Projeto.ativo.is_(ativo))
+            if com_alocacoes:
+                query = query.where(Projeto.alocacoes.any())
+            if secao_id is not None:
+                query = query.where(Projeto.secao_id == secao_id)
+            if recurso:
+                query = query.where(
+                    Projeto.alocacoes.any(
+                        AlocacaoRecursoProjeto.recurso.has(
+                            Recurso.nome.ilike(func.concat('%', recurso, '%'))
+                        )
+                    )
+                )
+
+            result = await self.db_session.execute(query)
+            return result.scalar_one()
+        except Exception as e:
+            logging.getLogger("app.repositories.sqlalchemy_projeto_repository").error("Erro ao contar projetos detalhados: %s", str(e), exc_info=True)
+            raise HTTPException(status_code=500, detail="Erro ao contar projetos detalhados")
+
     async def delete(self, projeto_id: int) -> Optional[DomainProjeto]:
         try:
             query = (
