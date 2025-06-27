@@ -93,17 +93,9 @@ class BaseRepository(Generic[T]):
                     setattr(obj, key, value)
                     
             await self.db.commit()
-            # Recarrega o objeto e converte para dict simples
+            # Recarrega o objeto 
             await self.db.refresh(obj)
-            return {
-                "id": obj.id,
-                "data_inicio": obj.data_inicio.isoformat() if obj.data_inicio else None,
-                "data_fim": obj.data_fim.isoformat() if obj.data_fim else None,
-                "status": obj.status,
-                "mensagem": obj.mensagem,
-                "quantidade_apontamentos_processados": obj.quantidade_apontamentos_processados,
-                "usuario_id": obj.usuario_id
-            }
+            return obj
         except Exception as e:
             await self.db.rollback()
             raise e

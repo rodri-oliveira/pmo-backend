@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 import logging
 from starlette import status
+from decimal import Decimal
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import date
 from sqlalchemy.orm import Session
@@ -12,16 +14,28 @@ from app.application.services.projeto_service import ProjetoService
 from app.repositories.alocacao_repository import AlocacaoRepository
 from app.repositories.planejamento_horas_repository import PlanejamentoHorasRepository
 from app.repositories.recurso_repository import RecursoRepository
+from app.services.alocacao_service import AlocacaoService
+from app.application.dtos.alocacao_dtos import AlocacaoUpdateDTO, AlocacaoResponseDTO
 from app.application.services.status_projeto_service import StatusProjetoService 
 from app.infrastructure.repositories.sqlalchemy_projeto_repository import SQLAlchemyProjetoRepository
 from app.infrastructure.repositories.sqlalchemy_status_projeto_repository import SQLAlchemyStatusProjetoRepository 
 from app.db.session import get_db, get_async_db
-from app.db.orm_models import Projeto, equipe_projeto_association, Apontamento, Recurso, Equipe, StatusProjeto
+from app.db.orm_models import Projeto, equipe_projeto_association, Apontamento, Recurso, Equipe, StatusProjeto, AlocacaoRecursoProjeto, HorasPlanejadas
 from app.core.security import get_current_admin_user
 
 router = APIRouter()
 
+# DTO para entrada de horas planejadas
+class HorasPlanejadasInputDTO(BaseModel):
+    ano: int = Field(..., ge=2000, le=2100)
+    mes: int = Field(..., ge=1, le=12, description="Mês 1-12")
+    horas_planejadas: Decimal = Field(..., gt=0, description="Horas positivas")
+
+    model_config = {"from_attributes": True}
+
+
 from sqlalchemy.future import select
+from sqlalchemy import delete
 from sqlalchemy import or_, func, select
 
 @router.get("/autocomplete", response_model=dict)
@@ -268,3 +282,71 @@ async def delete_projeto(projeto_id: int, service: ProjetoService = Depends(get_
     except Exception as e:
         logger.error(f"[delete_projeto] Erro inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao excluir projeto: {str(e)}")
+
+# --------------------------
+# Alocações aninhadas em Projeto
+# --------------------------
+@router.put("/{projeto_id}/alocacoes/{alocacao_id}", response_model=AlocacaoResponseDTO, status_code=status.HTTP_200_OK)
+async def update_alocacao_projeto(
+    projeto_id: int,
+    alocacao_id: int,
+    payload: AlocacaoUpdateDTO,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Atualiza uma alocação específica dentro de um projeto."""
+    service = AlocacaoService(db)
+    alocacao = await service.get(alocacao_id)
+    if not alocacao or alocacao.projeto_id != projeto_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alocação não encontrada")
+    update_data = payload.model_dump(exclude_unset=True)
+    try:
+        return await service.update(alocacao_id, update_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{projeto_id}/alocacoes/{alocacao_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_alocacao_projeto(
+    projeto_id: int,
+    alocacao_id: int,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Remove uma alocação específica de um projeto."""
+    service = AlocacaoService(db)
+    alocacao = await service.get(alocacao_id)
+    if not alocacao or alocacao.projeto_id != projeto_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alocação não encontrada")
+    await service.delete(alocacao_id)
+
+@router.post("/{projeto_id}/alocacoes/{alocacao_id}/planejamento-horas", status_code=status.HTTP_201_CREATED)
+async def save_planejamento_horas(
+    projeto_id: int,
+    alocacao_id: int,
+    payload: List[HorasPlanejadasInputDTO],
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Substitui a lista de horas planejadas de uma alocação."""
+    # Verificar alocação
+    aloc = await db.get(AlocacaoRecursoProjeto, alocacao_id)
+    if not aloc or aloc.projeto_id != projeto_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alocação não encontrada")
+
+    # Remover horas existentes
+    await db.execute(delete(HorasPlanejadas).where(HorasPlanejadas.alocacao_id == alocacao_id))
+
+    # Inserir novas horas
+    novas = [
+        HorasPlanejadas(
+            alocacao_id=alocacao_id,
+            ano=item.ano,
+            mes=item.mes,
+            horas_planejadas=item.horas_planejadas,
+        ) for item in payload
+    ]
+    db.add_all(novas)
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Dados inválidos: " + str(e.orig))
+
+    return {"detail": "Horas planejadas salvas com sucesso", "itens_inseridos": len(novas)}
