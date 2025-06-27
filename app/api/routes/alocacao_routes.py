@@ -309,7 +309,11 @@ async def update_alocacao(
             return alocacao
         
         # Atualizar a alocação
-        return await service.update(alocacao_id, update_data)
+        try:
+            return await service.update(alocacao_id, update_data)
+        except IntegrityError as ie:
+            await db.rollback()
+            raise HTTPException(status_code=400, detail="Já existe outra alocação para este recurso neste projeto com a mesma data de início.")
     
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
