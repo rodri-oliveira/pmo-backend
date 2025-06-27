@@ -178,6 +178,7 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
                 selectinload(Projeto.secao),
                 selectinload(Projeto.status),
                 selectinload(Projeto.alocacoes).selectinload(AlocacaoRecursoProjeto.recurso),
+                selectinload(Projeto.alocacoes).selectinload(AlocacaoRecursoProjeto.status_alocacao),
                 selectinload(Projeto.alocacoes).selectinload(AlocacaoRecursoProjeto.horas_planejadas),
             )
 

@@ -41,10 +41,12 @@ class AlocacaoDetalhadaDTO(BaseModel):
     data_inicio_alocacao: date
     data_fim_alocacao: Optional[date]
     recurso: RecursoNestedDTO
+    status: Optional[StatusProjetoNestedDTO] = Field(alias="status_alocacao", default=None)
     horas_planejadas: List[HorasPlanejadasNestedDTO] = []
 
     model_config = {
-        "from_attributes": True
+        "from_attributes": True,
+        "populate_by_name": True
     }
 
 class ProjetoDetalhadoDTO(BaseModel):
