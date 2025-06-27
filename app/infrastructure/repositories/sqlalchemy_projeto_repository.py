@@ -3,7 +3,7 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_, or_, func
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, with_loader_criteria
 from sqlalchemy.dialects import postgresql
 from datetime import datetime, timezone
 from sqlalchemy.orm import class_mapper
@@ -177,10 +177,8 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             query = select(Projeto).options(
                 selectinload(Projeto.secao),
                 selectinload(Projeto.status),
-                selectinload(Projeto.alocacoes)
-                    .selectinload(AlocacaoRecursoProjeto.recurso),
-                selectinload(Projeto.alocacoes)
-                    .selectinload(AlocacaoRecursoProjeto.horas_planejadas),
+                selectinload(Projeto.alocacoes).selectinload(AlocacaoRecursoProjeto.recurso),
+                selectinload(Projeto.alocacoes).selectinload(AlocacaoRecursoProjeto.horas_planejadas),
             )
 
             if search:
@@ -201,13 +199,16 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
                 query = query.where(Projeto.secao_id == secao_id)
 
             if recurso:
-                query = query.where(
-                    Projeto.alocacoes.any(
-                        AlocacaoRecursoProjeto.recurso.has(
-                            Recurso.nome.ilike(func.concat('%', recurso, '%'))
-                        )
-                    )
-                )
+                recurso_term = recurso.strip()
+                if recurso_term and recurso_term.isdigit():
+                    recurso_id = int(recurso_term)
+                    recurso_filter = (AlocacaoRecursoProjeto.recurso_id == recurso_id)
+                    query = query.where(Projeto.alocacoes.any(recurso_filter))
+                    query = query.options(with_loader_criteria(AlocacaoRecursoProjeto, recurso_filter))
+                elif recurso_term:
+                    recurso_filter = AlocacaoRecursoProjeto.recurso.has(Recurso.nome.ilike(recurso_term + "%"))
+                    query = query.where(Projeto.alocacoes.any(recurso_filter))
+                    query = query.options(with_loader_criteria(AlocacaoRecursoProjeto, recurso_filter))
 
             query = query.order_by(Projeto.id.asc()).offset(skip).limit(limit)
             result = await self.db_session.execute(query)
@@ -243,13 +244,23 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             if secao_id is not None:
                 query = query.where(Projeto.secao_id == secao_id)
             if recurso:
-                query = query.where(
-                    Projeto.alocacoes.any(
-                        AlocacaoRecursoProjeto.recurso.has(
-                            Recurso.nome.ilike(func.concat('%', recurso, '%'))
+                recurso_term = recurso.strip()
+                if recurso_term.isdigit():
+                    # Filtro por ID
+                    query = query.where(
+                        Projeto.alocacoes.any(
+                            AlocacaoRecursoProjeto.recurso_id == int(recurso_term)
                         )
                     )
-                )
+                else:
+                    # Filtro por início do nome (case-insensitive)
+                    query = query.where(
+                        Projeto.alocacoes.any(
+                            AlocacaoRecursoProjeto.recurso.has(
+                                Recurso.nome.ilike(recurso_term + '%')
+                            )
+                        )
+                    )
 
             result = await self.db_session.execute(query)
             return result.scalar_one()
