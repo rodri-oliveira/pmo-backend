@@ -73,14 +73,16 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
         return None
 
     async def get_all(self, skip: int = 0, limit: int = 100, apenas_ativos: bool = False, equipe_id: Optional[int] = None, secao_id: Optional[int] = None) -> List[DomainRecurso]:
+        from app.db.orm_models import Equipe
         query = select(Recurso).filter(Recurso.equipe_principal_id.isnot(None)).order_by(Recurso.nome)
         if apenas_ativos:
             query = query.filter(Recurso.ativo == True)
         if equipe_id is not None:
             query = query.filter(Recurso.equipe_principal_id == equipe_id)
-        
+        if secao_id is not None:
+            subquery = select(Equipe.id).filter(Equipe.secao_id == secao_id)
+            query = query.filter(Recurso.equipe_principal_id.in_(subquery))
         query = query.offset(skip).limit(limit)
-        
         try:
             result = await self.db_session.execute(query)
             recursos_sql = result.scalars().all()

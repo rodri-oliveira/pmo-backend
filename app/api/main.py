@@ -8,6 +8,7 @@ from app.api.routes import status_projeto_routes
 from app.api.routes import projeto_routes
 from app.api.routes import planejamento_horas
 from app.api.routes import apontamentos
+from app.api.routes import filtros
 from app.api.routes import relatorios
 from app.api.routes import relatorios_dinamico
 from app.api.routes import alocacao_routes # Adicionar importação para alocacao_routes
@@ -26,6 +27,7 @@ api_router.include_router(status_projeto_routes.router, prefix="/status-projetos
 api_router.include_router(projeto_routes.router, prefix="/projetos", tags=["Projetos"])
 api_router.include_router(planejamento_horas.router, prefix="/planejamento-horas", tags=["Planejamento de Horas"])
 api_router.include_router(apontamentos.router, prefix="/apontamentos", tags=["Apontamentos"])
+api_router.include_router(filtros.router, prefix="/filtros", tags=["Filtros"])
 # Os routers de relatórios já têm os caminhos completos definidos internamente
 api_router.include_router(relatorios.router, tags=["Relatórios"])
 # Incluir o router de relatórios dinâmicos com prioridade

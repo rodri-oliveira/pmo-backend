@@ -10,7 +10,7 @@ from sqlalchemy.orm import class_mapper
 from app.domain.models.projeto_model import Projeto as DomainProjeto
 from app.application.dtos.projeto_dtos import ProjetoCreateDTO, ProjetoUpdateDTO
 from app.domain.repositories.projeto_repository import ProjetoRepository
-from app.db.orm_models import Projeto, AlocacaoRecursoProjeto, Recurso
+from app.db.orm_models import Equipe, Projeto, AlocacaoRecursoProjeto, Recurso
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 
@@ -180,6 +180,7 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
                 selectinload(Projeto.alocacoes).selectinload(AlocacaoRecursoProjeto.recurso),
                 selectinload(Projeto.alocacoes).selectinload(AlocacaoRecursoProjeto.status_alocacao),
                 selectinload(Projeto.alocacoes).selectinload(AlocacaoRecursoProjeto.horas_planejadas),
+                selectinload(Projeto.alocacoes).selectinload(AlocacaoRecursoProjeto.equipe) # Carrega a equipe associada
             )
 
             if search:
