@@ -1,39 +1,46 @@
+import logging
 from fastapi import APIRouter
-from app.api.routes import auth
-# Importar cada módulo individualmente
-from app.api.routes import secao_routes
-from app.api.routes import equipe_routes
-from app.api.routes import recurso_routes
-from app.api.routes import status_projeto_routes
-from app.api.routes import projeto_routes
-from app.api.routes import planejamento_horas
-from app.api.routes import apontamentos
-from app.api.routes import filtros
-from app.api.routes import relatorios
-from app.api.routes import relatorios_dinamico
-from app.api.routes import alocacao_routes # Adicionar importação para alocacao_routes
-import logging
-from app.api.routes import sincronizacoes_jira # Inclusão do router de integrações Jira
-import logging
+
+# Configura o logging para ser visível no uvicorn
 logging.basicConfig(level=logging.INFO)
-logging.info("api_router está sendo configurado!")
+logger = logging.getLogger(__name__)
+
+# Importação de todas as rotas da aplicação
+from app.api.routes import (
+    auth,
+    secao_routes,
+    equipe_routes,
+    recurso_routes,
+    status_projeto_routes,
+    projeto_routes,
+    planejamento_horas,
+    apontamentos,
+    filtros,
+    relatorios,
+    relatorios_dinamico,
+    alocacao_routes,
+    sincronizacoes_jira,
+    dashboard
+)
+
+logger.info("Configurando o api_router principal...")
 
 api_router = APIRouter()
-#api_router.include_router(items.router, prefix="/items", tags=["Items"])
+
+# Registro de todas as rotas no router principal
+api_router.include_router(auth.router, prefix="", tags=["Autenticação"])
 api_router.include_router(secao_routes.router, prefix="/secoes", tags=["Seções"])
 api_router.include_router(equipe_routes.router, prefix="/equipes", tags=["Equipes"])
 api_router.include_router(recurso_routes.router, prefix="/recursos", tags=["Recursos"])
 api_router.include_router(status_projeto_routes.router, prefix="/status-projetos", tags=["Status de Projetos"])
 api_router.include_router(projeto_routes.router, prefix="/projetos", tags=["Projetos"])
+api_router.include_router(alocacao_routes.router, tags=["Alocações"])
 api_router.include_router(planejamento_horas.router, prefix="/planejamento-horas", tags=["Planejamento de Horas"])
 api_router.include_router(apontamentos.router, prefix="/apontamentos", tags=["Apontamentos"])
 api_router.include_router(filtros.router, prefix="/filtros", tags=["Filtros"])
-# Os routers de relatórios já têm os caminhos completos definidos internamente
 api_router.include_router(relatorios.router, tags=["Relatórios"])
-# Incluir o router de relatórios dinâmicos com prioridade
 api_router.include_router(relatorios_dinamico.router)
-# Remover o prefixo para o router de alocações, já que ele já define internamente
-api_router.include_router(alocacao_routes.router, tags=["Alocações"]) # Incluir a rota de alocações
-api_router.include_router(auth.router, prefix="", tags=["Autenticação"])
-logging.info("[ROUTER] Registrando router de sincronizacoes_jira em /backend/v1/sincronizacoes-jira")
 api_router.include_router(sincronizacoes_jira.router, prefix="/sincronizacoes-jira", tags=["Integração Jira"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+
+logger.info("Todos os routers foram registrados com sucesso.")
