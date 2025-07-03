@@ -133,3 +133,74 @@ async def get_horas_por_secao(db: AsyncSession = Depends(get_async_db)):
             status_code=500,
             detail=f"Erro interno do servidor: {str(e)}"
         )
+
+
+@router.get("/status-projetos-por-secao", tags=["Dashboard"])
+async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)):
+    """
+    Retorna a contagem e o percentual de projetos por status para cada seção.
+    Considera apenas projetos ativos.
+    """
+    logger.info("--- EXECUTANDO ENDPOINT /status-projetos-por-secao ---")
+    try:
+        id_para_sigla = {1: "SGI", 2: "SEG", 3: "TIN"}
+        
+        result = {
+            sigla: {"total_projetos": 0, "status": {}}
+            for sigla in id_para_sigla.values()
+        }
+
+        sql_query = text("""
+            SELECT
+                p.secao_id,
+                s.nome AS status_nome,
+                COUNT(p.id) AS quantidade
+            FROM
+                projeto p
+            JOIN
+                status_projeto s ON p.status_projeto_id = s.id
+            WHERE
+                p.ativo = TRUE
+                AND p.secao_id IN (1, 2, 3)
+            GROUP BY
+                p.secao_id, s.nome
+        """)
+        
+        db_result = (await db.execute(sql_query)).mappings().all()
+        logger.info(f"[RAW SQL RESULT] Resultado do banco (status projetos): {db_result}")
+
+        # Popula os resultados e calcula o total de projetos
+        for row in db_result:
+            secao_id = row['secao_id']
+            sigla = id_para_sigla.get(secao_id)
+            if not sigla:
+                continue
+
+            status_nome = row['status_nome']
+            quantidade = row['quantidade']
+            
+            result[sigla]["status"][status_nome] = {"quantidade": quantidade}
+            result[sigla]["total_projetos"] += quantidade
+
+        # Calcula os percentuais
+        for sigla, data in result.items():
+            total_projetos = data["total_projetos"]
+            if total_projetos > 0:
+                for status_nome, status_data in data["status"].items():
+                    quantidade = status_data["quantidade"]
+                    percentual = round((quantidade / total_projetos) * 100, 2)
+                    result[sigla]["status"][status_nome]["percentual"] = percentual
+            
+            # Garante que a chave 'percentual' exista mesmo que seja 0
+            for status_data in data["status"].values():
+                status_data.setdefault("percentual", 0)
+
+        logger.info(f"[FINAL] Resultado de status de projetos por seção: {result}")
+        return result
+
+    except Exception as e:
+        logger.error(f"ERRO CRÍTICO NO ENDPOINT DE STATUS DE PROJETOS: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno do servidor: {str(e)}"
+        )
