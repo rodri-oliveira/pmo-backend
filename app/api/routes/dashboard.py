@@ -139,9 +139,10 @@ async def get_horas_por_secao(db: AsyncSession = Depends(get_async_db)):
 async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)):
     """
     Retorna a contagem e o percentual de projetos por status para cada seção.
+    Garante que todos os status ativos sejam retornados para cada seção, mesmo que com contagem zero.
     Considera apenas projetos ativos.
     """
-    logger.info("--- EXECUTANDO ENDPOINT /status-projetos-por-secao ---")
+    logger.info("--- EXECUTANDO ENDPOINT /status-projetos-por-secao (LÓGICA COMPLETA) ---")
     try:
         id_para_sigla = {1: "SGI", 2: "SEG", 3: "TIN"}
         
@@ -151,25 +152,48 @@ async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)
         }
 
         sql_query = text("""
+            WITH Secoes AS (
+                SELECT id FROM (VALUES (1), (2), (3)) AS v(id)
+            ),
+            StatusAtivos AS (
+                SELECT id, nome FROM status_projeto WHERE ativo = TRUE
+            ),
+            Combinacoes AS (
+                SELECT
+                    s.id AS secao_id,
+                    sa.id AS status_id,
+                    sa.nome AS status_nome
+                FROM Secoes s
+                CROSS JOIN StatusAtivos sa
+            ),
+            ContagemProjetos AS (
+                SELECT
+                    p.secao_id,
+                    p.status_projeto_id,
+                    COUNT(p.id) AS quantidade
+                FROM
+                    projeto p
+                WHERE
+                    p.ativo = TRUE
+                    AND p.secao_id IN (1, 2, 3)
+                GROUP BY
+                    p.secao_id, p.status_projeto_id
+            )
             SELECT
-                p.secao_id,
-                s.nome AS status_nome,
-                COUNT(p.id) AS quantidade
+                c.secao_id,
+                c.status_nome,
+                COALESCE(cp.quantidade, 0) AS quantidade
             FROM
-                projeto p
-            JOIN
-                status_projeto s ON p.status_projeto_id = s.id
-            WHERE
-                p.ativo = TRUE
-                AND p.secao_id IN (1, 2, 3)
-            GROUP BY
-                p.secao_id, s.nome
+                Combinacoes c
+            LEFT JOIN
+                ContagemProjetos cp ON c.secao_id = cp.secao_id AND c.status_id = cp.status_projeto_id
+            ORDER BY
+                c.secao_id, c.status_nome
         """)
         
         db_result = (await db.execute(sql_query)).mappings().all()
-        logger.info(f"[RAW SQL RESULT] Resultado do banco (status projetos): {db_result}")
+        logger.info(f"[RAW SQL RESULT] Resultado do banco (status projetos completo): {db_result}")
 
-        # Popula os resultados e calcula o total de projetos
         for row in db_result:
             secao_id = row['secao_id']
             sigla = id_para_sigla.get(secao_id)
@@ -177,12 +201,11 @@ async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)
                 continue
 
             status_nome = row['status_nome']
-            quantidade = row['quantidade']
+            quantidade = int(row['quantidade'])
             
             result[sigla]["status"][status_nome] = {"quantidade": quantidade}
             result[sigla]["total_projetos"] += quantidade
 
-        # Calcula os percentuais
         for sigla, data in result.items():
             total_projetos = data["total_projetos"]
             if total_projetos > 0:
@@ -190,11 +213,10 @@ async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)
                     quantidade = status_data["quantidade"]
                     percentual = round((quantidade / total_projetos) * 100, 2)
                     result[sigla]["status"][status_nome]["percentual"] = percentual
-            
-            # Garante que a chave 'percentual' exista mesmo que seja 0
-            for status_data in data["status"].values():
-                status_data.setdefault("percentual", 0)
-
+            else:
+                for status_data in data["status"].values():
+                    status_data["percentual"] = 0
+        
         logger.info(f"[FINAL] Resultado de status de projetos por seção: {result}")
         return result
 
