@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "supersecretkey"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # Auth
+    auth_keycloak_id: str = ""
+    auth_keycloak_secret: str = ""
+    auth_secret: str = ""
+    nextauth_url: str = ""
+    auth_keycloak_issuer: str = ""
+    nextauth_secret: str = ""
+    next_public_backend_url: str = ""
     
     # CORS
     # Allowed origins for CORS – include frontend dev servers
