@@ -1,11 +1,20 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from collections import defaultdict
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_async_db
 from app.db.orm_models import Projeto, Secao
+from app.models.schemas import (
+    DisponibilidadeRecursoResponse,
+    DisponibilidadeMensal,
+    DisponibilidadeProjetoDetalhe,
+    RecursoInfo,
+    ProjetoInfo,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +231,132 @@ async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)
 
     except Exception as e:
         logger.error(f"ERRO CRÍTICO NO ENDPOINT DE STATUS DE PROJETOS: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno do servidor: {str(e)}"
+        )
+
+
+@router.get(
+    "/disponibilidade-recurso",
+    response_model=DisponibilidadeRecursoResponse,
+    tags=["Dashboard"],
+    summary="Obtém a disponibilidade detalhada de um recurso por período."
+)
+async def get_disponibilidade_recurso(
+    recurso_id: int = Query(..., description="ID do recurso a ser consultado."),
+    ano: int = Query(..., description="Ano de referência para a consulta."),
+    mes_inicio: int = Query(..., ge=1, le=12, description="Mês inicial do período (inclusivo)."),
+    mes_fim: int = Query(..., ge=1, le=12, description="Mês final do período (inclusivo)."),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """
+    Retorna um relatório detalhado da disponibilidade de um recurso para um
+    intervalo de meses, mostrando a capacidade total, horas planejadas
+    (agregadas e por projeto) e horas livres.
+    """
+    logger.info(f"--- EXECUTANDO ENDPOINT /disponibilidade-recurso PARA RECURSO ID: {recurso_id} ---")
+    if mes_inicio > mes_fim:
+        raise HTTPException(status_code=400, detail="O mês de início não pode ser maior que o mês de fim.")
+
+    try:
+        # Primeiro, busca o nome do recurso
+        recurso_sql = text("SELECT id, nome FROM recurso WHERE id = :recurso_id")
+        recurso_result = (await db.execute(recurso_sql, {"recurso_id": recurso_id})).mappings().first()
+
+        if not recurso_result:
+            raise HTTPException(status_code=404, detail="Recurso não encontrado")
+
+        # Query principal para buscar dados de capacidade e planejamento
+        raw_sql = text(
+            """
+            SELECT
+                hdr.ano,
+                hdr.mes,
+                hdr.horas_disponiveis_mes AS capacidade_rh,
+                p.id AS projeto_id,
+                p.nome AS projeto_nome,
+                hpa.horas_planejadas
+            FROM
+                horas_disponiveis_rh hdr
+            LEFT JOIN
+                alocacao_recurso_projeto arp ON hdr.recurso_id = arp.recurso_id
+            LEFT JOIN
+                horas_planejadas_alocacao hpa ON arp.id = hpa.alocacao_id
+                                              AND hdr.ano = hpa.ano
+                                              AND hdr.mes = hpa.mes
+            LEFT JOIN
+                projeto p ON arp.projeto_id = p.id
+            WHERE
+                hdr.recurso_id = :recurso_id
+                AND hdr.ano = :ano
+                AND hdr.mes BETWEEN :mes_inicio AND :mes_fim
+            ORDER BY
+                hdr.ano, hdr.mes;
+        """
+        )
+
+        params = {"recurso_id": recurso_id, "ano": ano, "mes_inicio": mes_inicio, "mes_fim": mes_fim}
+        db_result = (await db.execute(raw_sql, params)).mappings().all()
+        logger.info(f"[RAW SQL RESULT] Resultado do banco: {len(db_result)} linhas")
+
+        # Estrutura para processar os dados
+        disponibilidade_por_mes = defaultdict(lambda: {
+            "capacidade_rh": 0,
+            "alocacoes_detalhadas": defaultdict(lambda: {"horas": 0.0, "nome": ""})
+        })
+
+        for row in db_result:
+            mes_key = (row['ano'], row['mes'])
+            disponibilidade_por_mes[mes_key]["capacidade_rh"] = float(row['capacidade_rh'] or 0)
+
+            if row['projeto_id'] and row['horas_planejadas'] is not None:
+                proj_id = row['projeto_id']
+                disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][proj_id]["horas"] += float(row['horas_planejadas'])
+                disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][proj_id]["nome"] = row['projeto_nome']
+
+        # Monta a resposta final no formato do schema
+        lista_mensal = []
+        for (ano_mes, mes_data) in sorted(disponibilidade_por_mes.items()):
+            ano_val, mes_val = ano_mes
+            capacidade = mes_data['capacidade_rh']
+
+            if capacidade == 0:
+                continue
+
+            detalhes_projeto = [
+                DisponibilidadeProjetoDetalhe(
+                    projeto=ProjetoInfo(id=pid, nome=pdata["nome"]),
+                    horas_planejadas=pdata["horas"]
+                ) for pid, pdata in mes_data["alocacoes_detalhadas"].items()
+            ]
+
+            total_planejado = sum(p.horas_planejadas for p in detalhes_projeto)
+            horas_livres = capacidade - total_planejado
+            percentual_alocacao = f"{(total_planejado / capacidade * 100):.1f}%" if capacidade > 0 else "0.0%"
+
+            lista_mensal.append(DisponibilidadeMensal(
+                mes=mes_val,
+                ano=ano_val,
+                capacidade_rh=capacidade,
+                total_horas_planejadas=total_planejado,
+                horas_livres=horas_livres,
+                percentual_alocacao=percentual_alocacao,
+                alocacoes_detalhadas=detalhes_projeto
+            ))
+
+        response_data = DisponibilidadeRecursoResponse(
+            recurso=RecursoInfo(id=recurso_result['id'], nome=recurso_result['nome']),
+            disponibilidade_mensal=lista_mensal
+        )
+
+        logger.info(f"[FINAL] Resultado a ser retornado: {response_data.model_dump_json(indent=2)}")
+        return response_data
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        logger.error(f"ERRO CRÍTICO NO ENDPOINT /disponibilidade-recurso: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Erro interno do servidor: {str(e)}"

@@ -201,6 +201,33 @@ class MesPlanejadoRealizado(BaseSchema):
     planejado: Optional[float] = None
     realizado: Optional[float] = None
 
+# Schemas para Dashboard de Disponibilidade de Recursos
+
+class ProjetoInfo(BaseSchema):
+    id: int
+    nome: str
+
+class DisponibilidadeProjetoDetalhe(BaseSchema):
+    projeto: ProjetoInfo
+    horas_planejadas: float
+
+class DisponibilidadeMensal(BaseSchema):
+    mes: int
+    ano: int
+    capacidade_rh: float
+    total_horas_planejadas: float
+    horas_livres: float
+    percentual_alocacao: str
+    alocacoes_detalhadas: List[DisponibilidadeProjetoDetalhe]
+
+class RecursoInfo(BaseSchema):
+    id: int
+    nome: str
+
+class DisponibilidadeRecursoResponse(BaseSchema):
+    recurso: RecursoInfo
+    disponibilidade_mensal: List[DisponibilidadeMensal]
+
 class ProjetoPlanejadoRealizado(BaseSchema):
     id: int
     nome: str
