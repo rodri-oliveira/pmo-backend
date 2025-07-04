@@ -207,9 +207,9 @@ class ProjetoInfo(BaseSchema):
     id: int
     nome: str
 
-class DisponibilidadeProjetoDetalhe(BaseSchema):
+class DisponibilidadeProjetoDetalhe(BaseModel):
     projeto: ProjetoInfo
-    horas_planejadas: float
+    horas_planejadas: int
 
 class DisponibilidadeMensal(BaseSchema):
     mes: int
@@ -263,4 +263,20 @@ class ApontamentoAgregado(BaseSchema):
     projeto_id: Optional[int] = None
     data_apontamento: Optional[date] = None
     mes: Optional[int] = None
-    ano: Optional[int] = None 
+    ano: Optional[int] = None
+
+
+# Schemas para o novo endpoint de disponibilidade por equipe
+class AlocacaoMensalEquipe(BaseModel):
+    mes: int
+    percentual_alocacao: float
+
+class RecursoAlocacaoEquipe(BaseModel):
+    recurso_id: int
+    recurso_nome: str
+    alocacoes: List[AlocacaoMensalEquipe]
+
+class DisponibilidadeEquipeResponse(BaseModel):
+    equipe_id: int
+    equipe_nome: str
+    recursos: List[RecursoAlocacaoEquipe] 

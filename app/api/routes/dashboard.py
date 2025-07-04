@@ -14,6 +14,9 @@ from app.models.schemas import (
     DisponibilidadeProjetoDetalhe,
     RecursoInfo,
     ProjetoInfo,
+    DisponibilidadeEquipeResponse,
+    RecursoAlocacaoEquipe,
+    AlocacaoMensalEquipe,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +53,117 @@ async def get_projetos_ativos_por_secao(db: AsyncSession = Depends(get_async_db)
 
     except Exception as e:
         logger.error(f"ERRO CRÍTICO NO ENDPOINT: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno do servidor: {str(e)}"
+        )
+
+
+@router.get("/disponibilidade-equipe", response_model=DisponibilidadeEquipeResponse, tags=["Dashboard"])
+async def get_disponibilidade_equipe(
+    equipe_id: int = Query(..., description="ID da equipe a ser consultada."),
+    ano: int = Query(..., description="Ano do período de consulta."),
+    mes_inicio: int = Query(..., ge=1, le=12, description="Mês inicial do período."),
+    mes_fim: int = Query(..., ge=1, le=12, description="Mês final do período."),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Fornece os dados de percentual de alocação para todos os membros de uma equipe específica,
+    dentro de um intervalo de meses, para alimentar o componente "Mapa de Calor".
+    """
+    logger.info(f"--- EXECUTANDO ENDPOINT /disponibilidade-equipe para equipe_id={equipe_id} ---")
+    try:
+        # Esta query busca todos os recursos de uma equipe e calcula suas alocações mensais
+        # em relação à capacidade registrada para cada mês.
+        raw_sql = text("""
+            WITH RECURSOS_EQUIPE AS (
+                -- Seleciona os recursos ativos da equipe especificada
+                SELECT r.id as recurso_id, r.nome as recurso_nome, e.id as equipe_id, e.nome as equipe_nome
+                FROM recurso r
+                JOIN equipe e ON r.equipe_principal_id = e.id
+                WHERE e.id = :equipe_id AND r.ativo = TRUE
+            ),
+            HORAS_ALOCADAS AS (
+                -- Soma as horas planejadas por recurso e mês
+                SELECT
+                    arp.recurso_id,
+                    hpa.mes,
+                    SUM(hpa.horas_planejadas) as total_horas_alocadas
+                FROM horas_planejadas_alocacao hpa
+                JOIN alocacao_recurso_projeto arp ON hpa.alocacao_id = arp.id
+                WHERE arp.recurso_id IN (SELECT recurso_id FROM RECURSOS_EQUIPE)
+                  AND hpa.ano = :ano
+                  AND hpa.mes BETWEEN :mes_inicio AND :mes_fim
+                GROUP BY arp.recurso_id, hpa.mes
+            ),
+            CAPACIDADE_RECURSO AS (
+                -- Busca a capacidade mensal de cada recurso
+                SELECT
+                    recurso_id,
+                    mes,
+                    horas_disponiveis_mes as capacidade_mensal
+                FROM horas_disponiveis_rh
+                WHERE recurso_id IN (SELECT recurso_id FROM RECURSOS_EQUIPE)
+                  AND ano = :ano
+                  AND mes BETWEEN :mes_inicio AND :mes_fim
+            )
+            -- Junta os dados para o resultado final
+            SELECT
+                re.recurso_id,
+                re.recurso_nome,
+                re.equipe_id,
+                re.equipe_nome,
+                cr.mes,
+                COALESCE(ha.total_horas_alocadas, 0) as horas_alocadas,
+                cr.capacidade_mensal
+            FROM RECURSOS_EQUIPE re
+            JOIN CAPACIDADE_RECURSO cr ON re.recurso_id = cr.recurso_id
+            LEFT JOIN HORAS_ALOCADAS ha ON re.recurso_id = ha.recurso_id AND cr.mes = ha.mes
+            ORDER BY re.recurso_nome, cr.mes;
+        """)
+
+        db_result = (await db.execute(
+            raw_sql,
+            {"equipe_id": equipe_id, "ano": ano, "mes_inicio": mes_inicio, "mes_fim": mes_fim}
+        )).mappings().all()
+
+        if not db_result:
+            # Se não houver resultados, busca apenas o nome da equipe para uma resposta vazia e amigável
+            equipe_info = await db.execute(text("SELECT nome FROM equipe WHERE id = :equipe_id"), {"equipe_id": equipe_id})
+            equipe_nome = equipe_info.scalar_one_or_none()
+            if not equipe_nome:
+                raise HTTPException(status_code=404, detail=f"Equipe com id {equipe_id} não encontrada.")
+            return DisponibilidadeEquipeResponse(equipe_id=equipe_id, equipe_nome=equipe_nome, recursos=[])
+
+        # Processa os resultados para agrupar por recurso
+        equipe_nome = db_result[0]['equipe_nome']
+        recursos_map = defaultdict(lambda: {"recurso_id": None, "recurso_nome": None, "alocacoes": []})
+
+        for row in db_result:
+            recurso_id = row['recurso_id']
+            if not recursos_map[recurso_id]["recurso_id"]:
+                recursos_map[recurso_id]["recurso_id"] = recurso_id
+                recursos_map[recurso_id]["recurso_nome"] = row['recurso_nome']
+
+            capacidade = row['capacidade_mensal']
+            horas_alocadas = row['horas_alocadas']
+            percentual = (horas_alocadas / capacidade * 100) if capacidade and capacidade > 0 else 0
+
+            recursos_map[recurso_id]["alocacoes"].append(
+                AlocacaoMensalEquipe(mes=row['mes'], percentual_alocacao=round(percentual, 1))
+            )
+
+        # Formata a resposta final de acordo com o schema
+        recursos_list = [RecursoAlocacaoEquipe(**data) for data in recursos_map.values()]
+
+        return DisponibilidadeEquipeResponse(
+            equipe_id=equipe_id,
+            equipe_nome=equipe_nome,
+            recursos=recursos_list
+        )
+
+    except Exception as e:
+        logger.error(f"ERRO CRÍTICO NO ENDPOINT /disponibilidade-equipe: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Erro interno do servidor: {str(e)}"
