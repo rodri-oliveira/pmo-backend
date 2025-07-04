@@ -17,6 +17,10 @@ from app.models.schemas import (
     DisponibilidadeEquipeResponse,
     RecursoAlocacaoEquipe,
     AlocacaoMensalEquipe,
+    AlocacaoProjetoResponse,
+    KpisProjeto,
+    AlocacaoMensalProjeto,
+    DetalheRecursoProjeto,
 )
 
 logger = logging.getLogger(__name__)
@@ -164,6 +168,132 @@ async def get_disponibilidade_equipe(
 
     except Exception as e:
         logger.error(f"ERRO CRÍTICO NO ENDPOINT /disponibilidade-equipe: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno do servidor: {str(e)}"
+        )
+
+
+@router.get("/alocacao-projeto", response_model=AlocacaoProjetoResponse, tags=["Dashboard"])
+async def get_alocacao_projeto(
+    projeto_id: int = Query(..., description="ID do projeto a ser analisado."),
+    ano: int = Query(..., description="Ano de referência para a análise."),
+    mes_inicio: int = Query(..., ge=1, le=12, description="Mês inicial do período."),
+    mes_fim: int = Query(..., ge=1, le=12, description="Mês final do período."),
+    equipe_id: Optional[int] = Query(None, description="Opcional. Filtra por equipe."),
+    secao_id: Optional[int] = Query(None, description="Opcional. Filtra por seção."),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Fornece dados consolidados sobre a alocação de recursos para um projeto específico.
+    """
+    logger.info(f"--- EXECUTANDO ENDPOINT /alocacao-projeto para projeto_id={projeto_id} ---")
+    try:
+        # Query base que será estendida com filtros opcionais de forma performática
+        query_base = """
+            SELECT
+                hpa.mes, hpa.ano,
+                arp.recurso_id, r.nome as recurso_nome,
+                hpa.horas_planejadas,
+                COALESCE(hdr.horas_disponiveis_mes, 0) as capacidade_recurso_mes
+            FROM horas_planejadas_alocacao hpa
+            JOIN alocacao_recurso_projeto arp ON hpa.alocacao_id = arp.id
+            JOIN recurso r ON arp.recurso_id = r.id
+            JOIN equipe e ON r.equipe_principal_id = e.id
+            LEFT JOIN horas_disponiveis_rh hdr ON r.id = hdr.recurso_id AND hpa.ano = hdr.ano AND hpa.mes = hdr.mes
+            WHERE arp.projeto_id = :projeto_id
+              AND hpa.ano = :ano
+              AND hpa.mes BETWEEN :mes_inicio AND :mes_fim
+              AND r.ativo = TRUE
+              AND hpa.horas_planejadas > 0
+        """
+        
+        params = {'projeto_id': projeto_id, 'ano': ano, 'mes_inicio': mes_inicio, 'mes_fim': mes_fim}
+
+        if equipe_id:
+            query_base += " AND e.id = :equipe_id"
+            params['equipe_id'] = equipe_id
+        if secao_id:
+            query_base += " AND e.secao_id = :secao_id"
+            params['secao_id'] = secao_id
+
+        # Adiciona ordenação para consistência
+        query_base += " ORDER BY r.nome, hpa.mes;"
+        
+        raw_sql = text(query_base)
+        
+        db_result = (await db.execute(raw_sql, params)).mappings().all()
+
+        if not db_result:
+            raise HTTPException(status_code=404, detail="Nenhuma alocação encontrada para o projeto e filtros fornecidos.")
+
+        # --- Processamento dos Dados --- #
+
+        # 1. KPIs Gerais
+        total_horas_planejadas_geral = sum(row['horas_planejadas'] for row in db_result)
+        recursos_envolvidos_geral = set(row['recurso_id'] for row in db_result)
+        
+        capacidade_total_recursos_geral = 0
+        recursos_capacidade_map = {}
+        for row in db_result:
+            key = (row['recurso_id'], row['mes'])
+            if key not in recursos_capacidade_map:
+                recursos_capacidade_map[key] = row['capacidade_recurso_mes']
+        capacidade_total_recursos_geral = sum(recursos_capacidade_map.values())
+
+        media_alocacao_geral = (total_horas_planejadas_geral / capacidade_total_recursos_geral * 100) if capacidade_total_recursos_geral > 0 else 0
+
+        kpis = KpisProjeto(
+            total_recursos_envolvidos=len(recursos_envolvidos_geral),
+            total_horas_planejadas=round(float(total_horas_planejadas_geral), 2),
+            media_alocacao_recursos_percentual=f"{media_alocacao_geral:.2f}%"
+        )
+
+        # 2. Alocação Mensal
+        alocacao_mensal_map = defaultdict(lambda: {'horas': 0, 'recursos': set()})
+        capacidade_mensal_map = defaultdict(lambda: defaultdict(float))
+        for row in db_result:
+            mes = row['mes']
+            alocacao_mensal_map[mes]['horas'] += row['horas_planejadas']
+            alocacao_mensal_map[mes]['recursos'].add(row['recurso_id'])
+            capacidade_mensal_map[mes][row['recurso_id']] = row['capacidade_recurso_mes']
+
+        alocacao_mensal_list = []
+        for mes, data in sorted(alocacao_mensal_map.items()):
+            capacidade_do_mes = sum(capacidade_mensal_map[mes][rid] for rid in data['recursos'])
+            alocacao_mensal_list.append(
+                AlocacaoMensalProjeto(
+                    mes=mes, ano=ano,
+                    total_horas_planejadas_no_projeto=round(float(data['horas']), 2),
+                    total_capacidade_recursos_envolvidos=round(float(capacidade_do_mes), 2),
+                    recursos_envolvidos_count=len(data['recursos'])
+                )
+            )
+
+        # 3. Detalhe por Recurso
+        detalhe_recursos_map = defaultdict(lambda: {'nome': '', 'horas': 0})
+        for row in db_result:
+            recurso_id = row['recurso_id']
+            detalhe_recursos_map[recurso_id]['nome'] = row['recurso_nome']
+            detalhe_recursos_map[recurso_id]['horas'] += row['horas_planejadas']
+
+        detalhe_recursos_list = [
+            DetalheRecursoProjeto(
+                recurso_id=rid,
+                recurso_nome=data['nome'],
+                total_horas_no_projeto=round(float(data['horas']), 2),
+                percentual_do_total_projeto=f"{(data['horas'] / total_horas_planejadas_geral * 100):.2f}%" if total_horas_planejadas_geral > 0 else "0.00%"
+            ) for rid, data in detalhe_recursos_map.items()
+        ]
+
+        return AlocacaoProjetoResponse(
+            kpis_projeto=kpis,
+            alocacao_mensal=alocacao_mensal_list,
+            detalhe_recursos=detalhe_recursos_list
+        )
+
+    except Exception as e:
+        logger.error(f"ERRO CRÍTICO NO ENDPOINT /alocacao-projeto: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Erro interno do servidor: {str(e)}"

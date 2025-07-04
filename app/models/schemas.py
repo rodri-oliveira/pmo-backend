@@ -279,4 +279,29 @@ class RecursoAlocacaoEquipe(BaseModel):
 class DisponibilidadeEquipeResponse(BaseModel):
     equipe_id: int
     equipe_nome: str
-    recursos: List[RecursoAlocacaoEquipe] 
+    recursos: List[RecursoAlocacaoEquipe]
+
+
+# Schemas para o novo endpoint de Análise de Alocação por Projeto
+class KpisProjeto(BaseModel):
+    total_recursos_envolvidos: int
+    total_horas_planejadas: float
+    media_alocacao_recursos_percentual: str
+
+class AlocacaoMensalProjeto(BaseModel):
+    mes: int
+    ano: int
+    total_horas_planejadas_no_projeto: float
+    total_capacidade_recursos_envolvidos: float
+    recursos_envolvidos_count: int
+
+class DetalheRecursoProjeto(BaseModel):
+    recurso_id: int
+    recurso_nome: str
+    total_horas_no_projeto: float
+    percentual_do_total_projeto: str
+
+class AlocacaoProjetoResponse(BaseModel):
+    kpis_projeto: KpisProjeto
+    alocacao_mensal: List[AlocacaoMensalProjeto]
+    detalhe_recursos: List[DetalheRecursoProjeto] 
