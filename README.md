@@ -1,64 +1,60 @@
-# WEG Automação PMO Backend
+# De Planilhas Manuais à Inteligência de Dados: A Transformação Digital do PMO na WEG
 
-## Configuração do Banco de Dados PostgreSQL
+Este documento apresenta a evolução da gestão de projetos e alocação de recursos no PMO da WEG, uma transição de processos manuais e suscetíveis a erros para uma plataforma centralizada, inteligente e em tempo real.
 
-### Credenciais de acesso
-- **Database**: automacaopmopostgre
-- **Username**: 5e0dceda-d930-5742-a8d9-1f2d1ff22159
-- **Password**: b@p5rk8&9BJRVEQ
-- **Host**: qas-postgresql-ap.weg.net
-- **Port**: 40030
+---
 
-### Inicialização do Banco de Dados
+### O Desafio: A Gestão Manual
 
-1. **Testar a conexão**:
-   ```
-   python -m app.db.test_connection
-   ```
+O controle de horas, alocação de recursos e acompanhamento de projetos era realizado em planilhas complexas. Este método, embora funcional, apresentava desafios significativos:
 
-2. **Criar as migrações com Alembic**:
-   ```
-   # Iniciar uma nova migração
-   alembic revision --autogenerate -m "Criação inicial das tabelas"
-   
-   # Aplicar as migrações
-   alembic upgrade head
-   ```
+- **Consolidação Manual:** Exigia horas de trabalho para unificar dados de múltiplas fontes.
+- **Alto Risco de Erros:** Fórmulas quebradas, dados desatualizados e erros de digitação eram uma constante.
+- **Falta de Visibilidade:** Era impossível obter uma visão estratégica e em tempo real da capacidade e alocação das equipes.
 
-3. **Inicializar dados iniciais**:
-   ```
-   python -m app.db.init_db
-   ```
+**O processo antigo era assim:**
 
-## Execução da API
+![Processo antigo em Excel](docs/images/antes_excel.png)
 
-This is a [FastAPI](https://fastapi.tiangolo.com/) project bootstrapped with [Developers Portal](https://developers-portal.weg.net/).
+---
 
-## Getting Started
+### A Solução: Plataforma Integrada de Gestão
 
-First, to run in development you may need to create a `.env` file in the root of the project.
+Para superar esses desafios, desenvolvemos uma plataforma web moderna que automatiza e centraliza todo o fluxo de gestão do PMO.
 
-This `.env` file should contain the given variables:
+**1. Gerenciamento Centralizado:**
+Uma interface limpa e intuitiva para gerenciar projetos e as alocações de cada recurso, substituindo a complexidade das abas de uma planilha.
 
-|Name|Description|Example|
-|-|-|-|
-|SWAGGER_SERVERS_LIST|List of servers divided by `,` that are passed to the [servers](https://swagger.io/docs/specification/api-host-and-base-path/) property of OpenAPI|`/,/api`|
+![Tela de Gerenciamento do Sistema](docs/images/depois_gerenciamento.png)
 
+**2. Dashboards Inteligentes e em Tempo Real:**
+Visão gerencial completa com KPIs, gráficos de alocação vs. capacidade e mapas de calor que permitem identificar gargalos e oportunidades instantaneamente.
 
-run the development server:
+![Dashboard de Visão do Gestor](docs/images/depois_dashboard.png)
 
-```bash
-fastapi dev main.py
-```
+---
 
-The API will be available at [http://localhost:3000/api](http://localhost:3000/api).
+### Comparativo de Impacto: Antes vs. Depois
 
-> You can find the docs at [http://localhost:3000/api](http://localhost:3000/api)
+| Antes: Gestão Manual em Excel | Depois: Plataforma Automatizada |
+| :--- | :--- |
+| ⏳ **Horas** para consolidar dados | ✅ Dados consolidados **automaticamente** |
+| 🚨 Alto risco de **erro humano** | 🔒 Validação e **consistência sistêmica** |
+| 📉 Visão **estática e retroativa** | 📊 Dashboards **dinâmicos e em tempo real** |
+| ❓ Difícil análise de **causa raiz** | 💡 Visão clara por **equipe, projeto e recurso** |
 
-## Learn More
+---
 
-To leare more about FastAPI, take a look at the following resources:
+### Principais Ganhos e Benefícios
 
-- [FastAPI Documentation](https://fastapi.tiangolo.com/learn/) - learn about FastAPI features and API.
+- **Eficiência Operacional:** Redução drástica do tempo gasto em tarefas manuais e repetitivas.
+- **Confiabilidade dos Dados:** Eliminação de erros de digitação e fórmulas, garantindo uma fonte única da verdade.
+- **Tomada de Decisão Estratégica:** Análises comparativas por mês, equipe e projeto para decisões baseadas em dados.
+- **Visibilidade Total:** Identificação instantânea de superalocação e subutilização de recursos.
+- **Tecnologia Moderna e Escalável:** Arquitetura robusta com FastAPI (Python) e Next.js (React), pronta para futuras evoluções.
 
-A API estará disponível em http://localhost:8000
+---
+
+### Valor Estratégico para a WEG
+
+> Este sistema não é apenas uma ferramenta, mas uma **transformação cultural**. Ele eleva o PMO de uma área operacional para uma **célula de inteligência estratégica**, permitindo que a WEG otimize o uso de seus talentos, antecipe demandas e mantenha controle total sobre a execução de seus projetos.
