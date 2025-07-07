@@ -45,23 +45,7 @@ class PlanejamentoHorasService:
         recurso_id = alocacao.recurso_id
         horas_disponiveis = await self.horas_disponiveis_repository.get_by_recurso_ano_mes(recurso_id, ano, mes)
         
-        if horas_disponiveis:
-            # Se houver configuração de horas disponíveis, verificar limite
-            total_planejado = await self.repository.get_total_horas_planejadas_por_recurso_mes(recurso_id, ano, mes)
-            total_planejado = total_planejado or 0
-            
-            # Subtrair horas do planejamento atual se for atualização
-            planejamento_atual = await self.repository.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
-            if planejamento_atual:
-                total_planejado -= float(planejamento_atual.horas_planejadas)
-            
-            # Verificar se o novo total não excede o disponível
-            if total_planejado + horas_planejadas > float(horas_disponiveis.horas_disponiveis_mes):
-                raise ValueError(
-                    f"Total de horas planejadas ({total_planejado + horas_planejadas}) excede "
-                    f"o disponível para o recurso ({horas_disponiveis.horas_disponiveis_mes}) "
-                    f"no mês {mes}/{ano}"
-                )
+        # Removido o bloqueio de excedente de horas disponíveis. Planejamentos podem ultrapassar o disponível.
         
         # Criar ou atualizar o planejamento
         planejamento = await self.repository.create_or_update(alocacao_id, ano, mes, horas_planejadas)
