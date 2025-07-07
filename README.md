@@ -1,4 +1,4 @@
-# Otimização Estratégica de Recursos: A Nova Plataforma de Gestão do PMO WEG
+# Otimização Estratégica de Recursos PMO
 
 Este documento detalha a plataforma desenvolvida para elevar a gestão de projetos e recursos do PMO, transformando dados operacionais em inteligência estratégica. A solução centraliza informações, automatiza processos e fornece visibilidade em tempo real para uma tomada de decisão ágil e fundamentada.
 
