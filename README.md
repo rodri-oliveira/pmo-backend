@@ -20,6 +20,9 @@ A nova plataforma foi concebida como um hub central de inteligência, projetado 
 **1. Gestão Centralizada e Fonte Única da Verdade:**
 Todos os dados de projetos, equipes e recursos são gerenciados em um único local, garantindo consistência e eliminando a fragmentação da informação. A interface intuitiva simplifica o gerenciamento de alocações e o acompanhamento do progresso.
 
+*Exemplo da interface de gerenciamento de projetos e alocação de horas planejadas.*
+![Interface de gerenciamento](docs/images/depois_gerenciamento.png)
+
 **2. Automação e Sincronização com o Jira:**
 A integração nativa com o Jira automatiza a coleta de apontamentos de horas, reduzindo a zero o esforço de lançamento manual e eliminando inconsistências. Os dados são sempre um reflexo fiel do trabalho realizado.
 
