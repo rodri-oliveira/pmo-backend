@@ -135,8 +135,18 @@ class PlanejamentoHorasService:
         Raises:
             ValueError: Se o planejamento não for encontrado
         """
-        planejamento = await self.repository.get(planejamento_id)
+        import logging
+        logger = logging.getLogger("app.services.planejamento_horas_service")
+        from app.core import config
+        print(f"[DELETE DEBUG] CONECTANDO AO BANCO: {config.settings.DATABASE_URI}")
+        logger.info(f"[delete_planejamento] Tentando deletar planejamento_id={planejamento_id}")
+        from sqlalchemy import select
+        from app.db.orm_models import HorasPlanejadas
+        result = await self.repository.db.execute(select(HorasPlanejadas).filter(HorasPlanejadas.id == planejamento_id))
+        planejamento = result.scalars().first()
         if not planejamento:
+            logger.warning(f"[delete_planejamento] Planejamento com ID {planejamento_id} não encontrado usando filtro!")
             raise ValueError(f"Planejamento com ID {planejamento_id} não encontrado")
-        
-        await self.repository.delete(planejamento_id) 
+        logger.info(f"[delete_planejamento] Planejamento encontrado via filtro: {planejamento}")
+        await self.repository.delete(planejamento_id)
+        logger.info(f"[delete_planejamento] Planejamento deletado com sucesso!")
