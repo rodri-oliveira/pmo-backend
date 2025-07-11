@@ -51,7 +51,7 @@ async def processar_periodo(data_inicio: datetime, data_fim: datetime):
             f"AND worklogDate <= '{data_fim.date()}'"
         )
         print(f"[DIAGNOSTICO] Usando JQL com filtro de data: {jql}")
-        issues = client.get_all_issues(jql, fields=["key","summary","assignee","worklog"], max_results=100)
+        issues = client.get_all_issues(jql, fields=["key","summary","assignee","worklog", "parent"])
         # Diagnóstico: quantas issues foram retornadas pelo JQL
         print(f"[PROCESSAR_PERIODO] Issues encontradas: {len(issues)}")
         # Você também pode filtrar por projeto específico
@@ -59,29 +59,46 @@ async def processar_periodo(data_inicio: datetime, data_fim: datetime):
         for issue in issues:
             try:
                 issue_key = issue.get("key", "")
-                proj_key = issue_key.split("-")[0]
-                secao = await secao_repo.get_by_jira_project_key(proj_key)
+                issue_fields = issue.get("fields", {})
+                
+                # 1. Determinar Seção (usa o prefixo da chave da issue, ex: "SGI")
+                proj_key_prefix = issue_key.split("-")[0]
+                secao = await secao_repo.get_by_jira_project_key(proj_key_prefix)
 
-                # upsert projeto (summary é nome do projeto)
-                resumo = issue["fields"].get("summary", "").strip() or issue_key
-                projeto = await proj_repo.get_by_name(resumo)
-                print(f"[DEBUG] Buscando projeto pelo nome: '{resumo}'. Encontrado: {projeto.id if projeto else 'Nenhum'}")
+                # 2. Determinar o "Projeto" (Épico ou a própria Issue)
+                parent_epic = issue_fields.get("parent")
+                
+                # Um projeto no nosso sistema corresponde a um Épico no Jira.
+                # Se a issue não tem um Épico pai, ela mesma é considerada o projeto.
+                if parent_epic:
+                    project_jira_key = parent_epic.get("key")
+                    project_name = parent_epic.get("fields", {}).get("summary", "").strip() or project_jira_key
+                else:
+                    project_jira_key = issue_key
+                    project_name = issue_fields.get("summary", "").strip() or issue_key
+                
+                # 3. Upsert do Projeto usando a project_jira_key que é mais confiável
+                projeto = await proj_repo.get_by_jira_project_key(project_jira_key)
+                
                 if not projeto:
                     status_default = await proj_repo.get_status_default()
-                    projeto = await proj_repo.create({
-                        "nome": resumo,
-                        "jira_project_key": proj_key,
+                    projeto_data = {
+                        "nome": project_name,
+                        "jira_project_key": project_jira_key,
                         "secao_id": secao.id if secao else None,
                         "status_projeto_id": status_default.id if status_default else None
-                    })
-                    print(f"[PROJECT_UPSERT] Created projeto {proj_key} -> id={projeto.id}")
-                elif projeto.nome != resumo:
-                    projeto.nome = resumo
+                    }
+                    projeto = await proj_repo.create(projeto_data)
+                    print(f"[PROJECT_UPSERT] Created projeto '{project_name}' ({project_jira_key}) -> id={projeto.id}")
+                elif projeto.nome != project_name:
+                    # Atualiza o nome se mudou no Jira
+                    projeto.nome = project_name
                     await proj_repo.db.commit()
                     await proj_repo.db.refresh(projeto)
-                    print(f"[PROJECT_UPSERT] Updated projeto {proj_key} -> id={projeto.id}")
+                    print(f"[PROJECT_UPSERT] Updated projeto '{project_name}' ({project_jira_key}) -> id={projeto.id}")
                 else:
-                    print(f"[PROJECT_FOUND] projeto {proj_key} -> id={projeto.id}")
+                    print(f"[PROJECT_FOUND] Found projeto '{project_name}' ({project_jira_key}) -> id={projeto.id}")
+
 
                 # upsert recurso (assignee)
                 ass = issue["fields"].get("assignee") or {}
@@ -100,7 +117,7 @@ async def processar_periodo(data_inicio: datetime, data_fim: datetime):
                         upd["nome"] = nome_rec
                     if email and recurso.email != email:
                         upd["email"] = email
-                    if not recurso.jira_user_id and jira_user_id:
+                    if recurso.jira_user_id is None and jira_user_id:
                         upd["jira_user_id"] = jira_user_id
                     
                     if upd:
@@ -130,7 +147,11 @@ async def processar_periodo(data_inicio: datetime, data_fim: datetime):
                 # Diagnóstico: quantos worklogs para esta issue
                 print(f"[PROCESSAR_PERIODO] Issue {issue_key}: {len(wlogs)} worklogs")
                 for wl in wlogs:
-                    wl_id = wl.get("id")
+                    wl_id_str = wl.get("id")
+                    if not wl_id_str:
+                        print(f"[SKIP_WORKLOG] Issue {issue_key}: worklog sem ID, pulando")
+                        continue
+
                     # parsing de datas sem timezone
                     def parse_dt(s): return datetime.fromisoformat(s[:-6]) if s else None
                     dt_c = parse_dt(wl.get("created"))
@@ -139,16 +160,16 @@ async def processar_periodo(data_inicio: datetime, data_fim: datetime):
                     horas = wl.get("timeSpentSeconds", 0) / 3600
                     # filtrar worklogs fora do período
                     if not dt_s or dt_s < data_inicio or dt_s > data_fim:
-                        print(f"[SKIP_WORKLOG] Issue {issue_key} wl_id={wl_id}: fora do período, pulando")
+                        print(f"[SKIP_WORKLOG] Issue {issue_key} wl_id={wl_id_str}: fora do período, pulando")
                         continue
                     # pular apontamentos com horas inválidas (>24 ou <=0)
                     if horas <= 0 or horas > 24:
-                        print(f"[SKIP_WORKLOG] Issue {issue_key} wl_id={wl_id}: horas_apontadas={horas} inválidas, pulando")
+                        print(f"[SKIP_WORKLOG] Issue {issue_key} wl_id={wl_id_str}: horas_apontadas={horas} inválidas, pulando")
                         continue
                     
                     # Garantir que recurso e projeto existem antes de criar o apontamento
                     if not recurso or not projeto:
-                        print(f"[SKIP_WORKLOG] Issue {issue_key} wl_id={wl_id}: recurso ou projeto não encontrado, pulando")
+                        print(f"[SKIP_WORKLOG] Issue {issue_key} wl_id={wl_id_str}: recurso ou projeto não encontrado, pulando")
                         continue
 
                     data = {
@@ -163,7 +184,7 @@ async def processar_periodo(data_inicio: datetime, data_fim: datetime):
                         "data_atualizacao": dt_u,
                         "data_sincronizacao_jira": datetime.now(),
                     }
-                    await apont_repo.sync_jira_apontamento(wl_id, data)
+                    await apont_repo.sync_jira_apontamento(wl_id_str, data)
                     total_count += 1
             except Exception as e:
                 # Log do erro e continua para a próxima issue
@@ -171,8 +192,6 @@ async def processar_periodo(data_inicio: datetime, data_fim: datetime):
                 print(f'\n--- ERRO AO PROCESSAR ISSUE: {issue_key_for_log} ---')
                 import traceback
                 traceback.print_exc()
-                print("----------------------------------------------------\n")
-                continue
                 print("----------------------------------------------------\n")
                 continue
         print(f"[PROCESSAR_PERIODO] Total worklogs processados: {total_count}")
