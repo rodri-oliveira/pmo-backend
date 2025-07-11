@@ -232,6 +232,7 @@ class ProjetoPlanejadoRealizado(BaseSchema):
     id: int
     nome: str
     status: str
+    acao: Optional[str] = None
     esforco_estimado: Optional[float] = None
     esforco_planejado: Optional[float] = None
     meses: Dict[str, MesPlanejadoRealizado]

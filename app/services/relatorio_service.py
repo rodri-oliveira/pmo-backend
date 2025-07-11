@@ -1,6 +1,6 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date
-from sqlalchemy import select, func, case, and_, or_, cast, String, extract, literal, union_all, Float
+from sqlalchemy import select, func, case, and_, or_, cast, String, extract, literal, literal_column, union_all, Float, Date
 from app.infrastructure.database.dim_tempo_sql_model import DimTempoSQL as DimTempo
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,24 +145,11 @@ class RelatorioService:
     # -------------------------------------------------------------------------
     # Relatório Planejado vs Realizado 2 (POST)
     # -------------------------------------------------------------------------
-    async def get_planejado_vs_realizado_v2(
-        self,
-        recurso_id: int,
-        status: Optional[str] = None,
-        mes_inicio: Optional[str] = None,
-        mes_fim: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Gera relatório Planejado vs Realizado consolidado por projeto e meses.
-
-        - Garante retorno de todos os meses entre mes_inicio e mes_fim (YYYY-MM).
-        - Calcula horas planejadas, realizadas e disponibilidade (RH).
-        - Monta linhas_resumo (Gap, Disponível, Total Planejado) e lista de projetos.
-        """
-        from calendar import monthrange
+    async def _determinar_intervalo_datas(self, recurso_id: int, mes_inicio: Optional[str], mes_fim: Optional[str]):
         from datetime import datetime
         from dateutil.relativedelta import relativedelta
+        from calendar import monthrange
 
-        # 1. Validar e construir intervalo de meses
         def parse_mes(m: Optional[str]) -> Optional[datetime]:
             if not m or m.lower() == 'string':
                 return None
@@ -174,74 +161,135 @@ class RelatorioService:
         dt_inicio = parse_mes(mes_inicio)
         dt_fim = parse_mes(mes_fim)
 
-        # Se datas não informadas, busca o intervalo completo no banco
         if not dt_inicio or not dt_fim:
-            # Subquery para datas planejadas
+            HP, ARP, AP = HorasPlanejadas, AlocacaoRecursoProjeto, Apontamento
+            
             planned_dates_q = (
-                select(
-                    func.to_date(HorasPlanejadas.ano.cast(String) + '-' + HorasPlanejadas.mes.cast(String), 'YYYY-MM').label("data")
-                )
-                .join(AlocacaoRecursoProjeto, AlocacaoRecursoProjeto.id == HorasPlanejadas.alocacao_id)
-                .where(AlocacaoRecursoProjeto.recurso_id == recurso_id)
+                select(func.min(func.to_date(HP.ano.cast(String) + '-' + HP.mes.cast(String), 'YYYY-MM')).label('min_date'),
+                       func.max(func.to_date(HP.ano.cast(String) + '-' + HP.mes.cast(String), 'YYYY-MM')).label('max_date'))
+                .join(ARP, ARP.id == HP.alocacao_id)
+                .where(ARP.recurso_id == recurso_id)
             )
-
-            # Subquery para datas realizadas
+            
             realized_dates_q = (
-                select(func.date_trunc('month', Apontamento.data_apontamento).label("data"))
-                .where(Apontamento.recurso_id == recurso_id)
+                select(func.min(func.date_trunc('month', AP.data_apontamento)).cast(Date).label('min_date'),
+                       func.max(func.date_trunc('month', AP.data_apontamento)).cast(Date).label('max_date'))
+                .where(AP.recurso_id == recurso_id)
             )
+
+            planned_result = await self.db.execute(planned_dates_q)
+            planned_dates = planned_result.first()
             
-            # União das fontes de data
-            all_dates_q = union_all(planned_dates_q, realized_dates_q).alias("all_dates")
+            realized_result = await self.db.execute(realized_dates_q)
+            realized_dates = realized_result.first()
 
-            min_max_q = select(func.min(all_dates_q.c.data).label("min_date"), func.max(all_dates_q.c.data).label("max_date"))
-            date_range_result = await self.db.execute(min_max_q)
-            min_max = date_range_result.one_or_none()
+            all_dates = []
+            if planned_dates and planned_dates.min_date:
+                all_dates.append(planned_dates.min_date)
+            if planned_dates and planned_dates.max_date:
+                all_dates.append(planned_dates.max_date)
+            if realized_dates and realized_dates.min_date:
+                all_dates.append(realized_dates.min_date)
+            if realized_dates and realized_dates.max_date:
+                all_dates.append(realized_dates.max_date)
 
-            db_min_date = min_max.min_date if min_max and min_max.min_date else datetime.utcnow().date()
-            db_max_date = min_max.max_date if min_max and min_max.max_date else datetime.utcnow().date()
-            
-            dt_inicio = dt_inicio or db_min_date
-            dt_fim = dt_fim or db_max_date
-
-        if dt_fim < dt_inicio:
-            raise ValueError("mes_fim não pode ser anterior ao mes_inicio")
+            if not all_dates:
+                today = datetime.today()
+                dt_inicio = dt_inicio or today.replace(day=1)
+                dt_fim = dt_fim or today
+            else:
+                min_db_date = min(all_dates)
+                max_db_date = max(all_dates)
+                dt_inicio = dt_inicio or min_db_date
+                dt_fim = dt_fim or max_db_date
+        
+        if dt_fim:
+            last_day = monthrange(dt_fim.year, dt_fim.month)[1]
+            dt_fim = dt_fim.replace(day=last_day)
 
         meses_intervalo = []
-        cursor = dt_inicio
-        while cursor <= dt_fim:
-            meses_intervalo.append(cursor.strftime("%Y-%m"))
-            cursor += relativedelta(months=1)
+        current_mes = dt_inicio
+        while current_mes <= dt_fim:
+            meses_intervalo.append(current_mes.strftime("%Y-%m"))
+            current_mes += relativedelta(months=1)
+            
+        return dt_inicio, dt_fim, meses_intervalo
 
-        # 2. Unificar consultas de horas planejadas e realizadas
+    async def _get_disponibilidade_recurso(self, recurso_id: int, dt_inicio: datetime, dt_fim: datetime) -> Dict[tuple, float]:
+        query = (
+            select(HorasDisponiveisRH.ano, HorasDisponiveisRH.mes, HorasDisponiveisRH.horas_disponiveis_mes)
+            .where(HorasDisponiveisRH.recurso_id == recurso_id)
+            .where(
+                func.to_date(
+                    HorasDisponiveisRH.ano.cast(String) + '-' + HorasDisponiveisRH.mes.cast(String), 
+                    'YYYY-MM'
+                ).between(dt_inicio, dt_fim)
+            )
+        )
+        result = await self.db.execute(query)
+        return {(row.ano, row.mes): row.horas_disponiveis_mes for row in result.fetchall()}
+
+    async def get_planejado_vs_realizado_v2(
+        self,
+        recurso_id: int,
+        status: Optional[str] = None,
+        mes_inicio: Optional[str] = None,
+        mes_fim: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        # 1. Determinar o intervalo de meses
+        dt_inicio, dt_fim, meses_intervalo = await self._determinar_intervalo_datas(
+            recurso_id, mes_inicio, mes_fim
+        )
+
+        # 2. Obter disponibilidade do recurso
+        disponibilidade_mes = await self._get_disponibilidade_recurso(
+            recurso_id, dt_inicio, dt_fim
+        )
+
+        # 3. Construir a consulta unificada para horas planejadas e realizadas
         HP, ARP, AP, P, S = HorasPlanejadas, AlocacaoRecursoProjeto, Apontamento, Projeto, StatusProjeto
 
-        planejado_subquery = (
+        planned_q = (
             select(
                 ARP.projeto_id,
                 HP.ano,
                 HP.mes,
-                func.sum(HP.horas_planejadas).label("planejado"),
-                literal(0).cast(Float).label("realizado")
+                HP.horas_planejadas.label("planejado"),
+                literal_column("0").cast(Float).label("realizado"),
             )
-            .join(ARP, HP.alocacao_id == ARP.id)
+            .join(ARP, ARP.id == HP.alocacao_id)
             .where(ARP.recurso_id == recurso_id)
-            .group_by(ARP.projeto_id, HP.ano, HP.mes)
         )
 
-        realizado_subquery = (
+        realized_q = (
             select(
                 AP.projeto_id,
                 extract("year", AP.data_apontamento).label("ano"),
                 extract("month", AP.data_apontamento).label("mes"),
-                literal(0).cast(Float).label("planejado"),
-                func.sum(AP.horas_apontadas).label("realizado")
+                literal_column("0").cast(Float).label("planejado"),
+                func.sum(AP.horas_apontadas).label("realizado"),
             )
             .where(AP.recurso_id == recurso_id)
-            .group_by(AP.projeto_id, extract("year", AP.data_apontamento), extract("month", AP.data_apontamento))
+            .group_by(
+                AP.projeto_id,
+                extract("year", AP.data_apontamento),
+                extract("month", AP.data_apontamento),
+            )
         )
-        
-        unified_query = union_all(planejado_subquery, realizado_subquery).alias("unified")
+
+        unified_query = union_all(planned_q, realized_q).alias("unified_query")
+
+        # Subconsulta para agregar as observações por projeto
+        acao_subquery = (
+            select(
+                ARP.projeto_id,
+                func.string_agg(ARP.observacao, '\n').label("acao")
+            )
+            .where(ARP.recurso_id == recurso_id)
+            .where(ARP.observacao.isnot(None))
+            .group_by(ARP.projeto_id)
+            .alias("acao_subquery")
+        )
 
         # Consulta principal agregada
         main_q = (
@@ -250,50 +298,80 @@ class RelatorioService:
                 P.nome.label("projeto_nome"),
                 P.codigo_empresa,
                 S.nome.label("status_nome"),
+                acao_subquery.c.acao,
                 unified_query.c.ano,
                 unified_query.c.mes,
                 func.sum(unified_query.c.planejado).label("total_planejado"),
-                func.sum(unified_query.c.realizado).label("total_realizado")
+                func.sum(unified_query.c.realizado).label("total_realizado"),
             )
             .join(P, P.id == unified_query.c.projeto_id)
             .join(S, S.id == P.status_projeto_id, isouter=True)
-            .where(func.to_date(unified_query.c.ano.cast(String) + '-' + unified_query.c.mes.cast(String), 'YYYY-MM').between(dt_inicio, dt_fim))
-            .group_by(unified_query.c.projeto_id, P.nome, P.codigo_empresa, S.nome, unified_query.c.ano, unified_query.c.mes)
+            .join(
+                acao_subquery,
+                acao_subquery.c.projeto_id == unified_query.c.projeto_id,
+                isouter=True,
+            )
+            .where(
+                func.to_date(
+                    unified_query.c.ano.cast(String)
+                    + "-"
+                    + unified_query.c.mes.cast(String),
+                    "YYYY-MM",
+                ).between(dt_inicio, dt_fim)
+            )
+            .group_by(
+                unified_query.c.projeto_id,
+                P.nome,
+                P.codigo_empresa,
+                S.nome,
+                acao_subquery.c.acao,
+                unified_query.c.ano,
+                unified_query.c.mes,
+            )
         )
+
+        if status and status != "string":
+            main_q = main_q.where(S.nome == status)
 
         result = await self.db.execute(main_q)
         rows = result.fetchall()
 
-        # 3. Consultar disponibilidade de RH
-        disp_q = select(HorasDisponiveisRH.ano, HorasDisponiveisRH.mes, HorasDisponiveisRH.horas_disponiveis_mes.label("disponivel"))\
-            .where(HorasDisponiveisRH.recurso_id == recurso_id)
-        disp_result = (await self.db.execute(disp_q)).fetchall()
-        disponibilidade_mes = {(d.ano, d.mes): d.disponivel for d in disp_result}
+        acao_result = await self.db.execute(select(acao_subquery))
+        acoes_map = {row.projeto_id: row.acao for row in acao_result}
 
-        # 4. Estruturar resposta
+        # 4. Processar resultados e montar estrutura de projetos
         projetos_map = {}
         for row in rows:
-            proj_id = row.projeto_id
-            if proj_id not in projetos_map:
-                projetos_map[proj_id] = {
-                    "id": proj_id,
+            projeto_id = row.projeto_id
+            if projeto_id not in projetos_map:
+                projetos_map[projeto_id] = {
+                    "id": projeto_id,
                     "nome": row.projeto_nome,
-                    "codigo_empresa": row.codigo_empresa,
                     "status": row.status_nome,
+                    "acao": row.acao,
+                    "esforco_estimado": None,  # AINDA PRECISA IMPLEMENTAR
                     "esforco_planejado": 0,
-                    "esforco_realizado": 0,
-                    "meses": {m: {"planejado": 0, "realizado": 0} for m in meses_intervalo}
+                    "meses": {
+                        m: {"planejado": 0, "realizado": 0} for m in meses_intervalo
+                    },
                 }
-            
-            mes_str = f"{int(row.ano):04d}-{int(row.mes):02d}"
-            if mes_str in projetos_map[proj_id]["meses"]:
-                projetos_map[proj_id]["meses"][mes_str]["planejado"] = float(row.total_planejado or 0)
-                projetos_map[proj_id]["meses"][mes_str]["realizado"] = float(row.total_realizado or 0)
 
-        # Calcular totais por projeto
-        for proj in projetos_map.values():
-            proj["esforco_planejado"] = sum(m["planejado"] for m in proj["meses"].values())
-            proj["esforco_realizado"] = sum(m["realizado"] for m in proj["meses"].values())
+            mes_str = f"{int(row.ano)}-{int(row.mes):02d}"
+            if mes_str in projetos_map[projeto_id]["meses"]:
+                projetos_map[projeto_id]["meses"][mes_str]["planejado"] = float(
+                    row.total_planejado or 0
+                )
+                projetos_map[projeto_id]["meses"][mes_str]["realizado"] = float(
+                    row.total_realizado or 0
+                )
+
+        for p_id, projeto in projetos_map.items():
+            # Garante inclusão da observação (ação) agregada
+            projeto["acao"] = acoes_map.get(p_id, projeto.get("acao") or "")
+            # Calcula esforço total planejado
+            projeto["esforco_planejado"] = sum(
+                m["planejado"] for m in projeto["meses"].values()
+            )
 
         # 5. Montar linhas de resumo
         resumo_gap = {"label": "GAP", "meses": {m: {"planejado": 0, "realizado": None} for m in meses_intervalo}}
@@ -326,33 +404,6 @@ class RelatorioService:
         return {
             "linhas_resumo": [resumo_gap, resumo_disponivel, resumo_total],
             "projetos": lista_projetos,
-        }
-
-        # Montar resposta final
-        linhas_resumo = [
-            {
-                "label": "GAP",
-                "esforco_planejado": sum(filter(None, resumo_gap.values())),
-                "esforco_realizado": None,  # GAP não tem realizado
-                "meses": {m: {"planejado": resumo_gap.get(m), "realizado": None} for m in meses_intervalo},
-            },
-            {
-                "label": "Horas Disponíveis",
-                "esforco_planejado": sum(filter(None, resumo_disp.values())),
-                "esforco_realizado": None, # Disponibilidade não tem realizado
-                "meses": {m: {"planejado": resumo_disp.get(m), "realizado": None} for m in meses_intervalo},
-            },
-            {
-                "label": "Total de esforço (hrs)",
-                "esforco_planejado": sum(filter(None, resumo_total_planejado.values())),
-                "esforco_realizado": sum(filter(None, resumo_total_realizado.values())),
-                "meses": {m: {"planejado": resumo_total_planejado.get(m), "realizado": resumo_total_realizado.get(m) if resumo_total_realizado.get(m, 0) > 0 else None} for m in meses_intervalo},
-            },
-        ]
-
-        return {
-            "linhas_resumo": linhas_resumo,
-            "projetos": list(projetos_dict.values()),
         }
 
     # -------------------------------------------------------------------------
