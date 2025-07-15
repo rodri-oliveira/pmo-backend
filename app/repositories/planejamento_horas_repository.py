@@ -1,47 +1,81 @@
 from typing import List, Optional, Dict, Any
-from sqlalchemy import func, extract, text, select
+from sqlalchemy import func, extract, text, select, update, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from app.db.orm_models import HorasPlanejadas, AlocacaoRecursoProjeto
 from app.repositories.base_repository import BaseRepository
+from app.schemas.matriz_planejamento_schemas import PlanejamentoHorasCreate
 
 class PlanejamentoHorasRepository(BaseRepository[HorasPlanejadas]):
-    """Repositório para planejamento de horas."""
-    
+
     def __init__(self, db: AsyncSession):
         super().__init__(db, HorasPlanejadas)
-    
-    async def get_by_alocacao_ano_mes(self, alocacao_id: int, ano: int, mes: int) -> Optional[HorasPlanejadas]:
-        """Obtém planejamento por alocação, ano e mês."""
+
+    def _to_dict(self, obj: HorasPlanejadas) -> Dict[str, Any]:
+        """Converte um objeto ORM para um dicionário seguro."""
+        if not obj:
+            return None
+        return {
+            "id": obj.id,
+            "alocacao_id": obj.alocacao_id,
+            "ano": obj.ano,
+            "mes": obj.mes,
+            "horas_planejadas": float(obj.horas_planejadas)
+        }
+
+    async def create(self, data: PlanejamentoHorasCreate) -> Dict[str, Any]:
+        """Cria um novo registro e retorna um dicionário."""
+        db_obj = self.model(**data.model_dump())
+        self.db.add(db_obj)
+        await self.db.flush()
+        await self.db.refresh(db_obj)
+        return self._to_dict(db_obj)
+
+    async def update(self, id: int, data: dict) -> Optional[Dict[str, Any]]:
+        """Atualiza um registro e retorna um dicionário."""
+        if not data:
+            obj = await self.get_by_id(id)
+            return self._to_dict(obj)
+
+        query = (
+            update(self.model)
+            .where(self.model.id == id)
+            .values(**data)
+            .returning(self.model)
+        )
+        result = await self.db.execute(query)
+        await self.db.flush()
+        obj = result.scalars().first()
+        return self._to_dict(obj)
+
+    async def get_by_alocacao_ano_mes(self, alocacao_id: int, ano: int, mes: int) -> Optional[Dict[str, Any]]:
+        """Obtém planejamento por alocação, ano e mês, como um dicionário."""
         query = select(HorasPlanejadas).filter(
             HorasPlanejadas.alocacao_id == alocacao_id,
             HorasPlanejadas.ano == ano,
             HorasPlanejadas.mes == mes
         )
         result = await self.db.execute(query)
-        return result.scalars().first()
-    
-    async def create_or_update(self, alocacao_id: int, ano: int, mes: int, horas_planejadas: float) -> HorasPlanejadas:
-        """Cria ou atualiza um planejamento de horas."""
-        existing = await self.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
+        obj = result.scalars().first()
+        return self._to_dict(obj)
+
+    async def create_or_update(self, alocacao_id: int, ano: int, mes: int, horas_planejadas: float) -> Dict[str, Any]:
+        """Cria ou atualiza um planejamento e retorna um dicionário."""
+        existing_dict = await self.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
         
-        if existing:
-            # Atualizar existente
-            existing.horas_planejadas = horas_planejadas
-            await self.db.commit()
-            await self.db.refresh(existing)
-            return existing
+        if existing_dict:
+            return await self.update(existing_dict["id"], {"horas_planejadas": horas_planejadas})
         else:
-            # Criar novo
-            return await self.create({
-                "alocacao_id": alocacao_id,
-                "ano": ano,
-                "mes": mes,
-                "horas_planejadas": horas_planejadas
-            })
+            novo_schema = PlanejamentoHorasCreate(
+                alocacao_id=alocacao_id,
+                ano=ano,
+                mes=mes,
+                horas_planejadas=horas_planejadas
+            )
+            return await self.create(novo_schema)
     
-    async def list_by_alocacao(self, alocacao_id: int, ano: Optional[int] = None) -> List[HorasPlanejadas]:
-        """Lista todos os planejamentos de uma alocação."""
+    async def list_by_alocacao(self, alocacao_id: int, ano: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Lista todos os planejamentos de uma alocação, retornando uma lista de dicionários."""
         query = select(HorasPlanejadas).filter(
             HorasPlanejadas.alocacao_id == alocacao_id
         )
@@ -49,7 +83,8 @@ class PlanejamentoHorasRepository(BaseRepository[HorasPlanejadas]):
             query = query.filter(HorasPlanejadas.ano == ano)
         query = query.order_by(HorasPlanejadas.ano, HorasPlanejadas.mes)
         result = await self.db.execute(query)
-        return result.scalars().all()
+        orm_objects = result.scalars().all()
+        return [self._to_dict(obj) for obj in orm_objects]
     
     async def list_by_recurso_periodo(self, recurso_id: int, ano: int, mes_inicio: int = 1, mes_fim: int = 12) -> List[Dict[str, Any]]:
         """Lista planejamentos de um recurso em um período."""

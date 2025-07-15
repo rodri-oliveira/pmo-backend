@@ -1,4 +1,4 @@
-Table configuracao {
+    Table configuracao {
   id int [pk, increment]
   chave varchar(100) [unique, not null]
   valor text
@@ -182,4 +182,4 @@ Ref: apontamento.projeto_id > projeto.id
 Ref: apontamento.id_usuario_admin_criador > usuario.id  
 Ref: horas_planejadas_alocacao.alocacao_id > alocacao_recurso_projeto.id  
 Ref: log_atividade.usuario_id > usuario.id  
-Ref: sincronizacao_jira.usuario_id > usuario.id  
+Ref: sincronizacao_jira.usuario_id > usuario.id eu preciso de um endpoint que pegara o recurso id , todos os projetos id e para cada projeto id irá pendurado status_alocacao_id , hotas estimadas , acao que em alocacao_recurso_projeto esta como observacao , as horas planejadas horas_planejadas decimal(5,2) [not null] da tabela horas_planejadas_alocacao , 

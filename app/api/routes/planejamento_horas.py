@@ -16,6 +16,13 @@ class PlanejamentoHorasCreate(BaseModel):
     mes: int
     horas_planejadas: float
 
+class PlanejamentoHorasUpdate(BaseModel):
+    projeto_id: int
+    recurso_id: int
+    ano: int
+    mes: int
+    horas_planejadas: float
+
 class PlanejamentoHorasResponse(BaseModel):
     id: int
     alocacao_id: int
@@ -28,7 +35,7 @@ class PlanejamentoHorasResponse(BaseModel):
     class Config:
         from_attributes = True
 
-router = APIRouter(tags=["Planejamento de Horas"])
+router = APIRouter(prefix="/planejamento", tags=["Planejamento de Horas"])
 
 @router.post("/", response_model=PlanejamentoHorasResponse, status_code=status.HTTP_201_CREATED)
 async def create_or_update_planejamento(
@@ -58,6 +65,33 @@ async def create_or_update_planejamento(
         return result
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+@router.put("/horas", response_model=PlanejamentoHorasResponse, summary="Atualiza horas planejadas por projeto e recurso")
+async def update_planejamento_by_project_resource(
+    planejamento: PlanejamentoHorasUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_admin_user)
+):
+    """
+    Cria ou atualiza um registro de horas planejadas com base no ID do projeto e do recurso.
+
+    Este endpoint é ideal para ser usado em interfaces de matriz, onde o ID da alocação
+    pode não estar diretamente disponível.
+    """
+    try:
+        service = PlanejamentoHorasService(db)
+        result = await service.create_or_update_by_project_resource(
+            projeto_id=planejamento.projeto_id,
+            recurso_id=planejamento.recurso_id,
+            ano=planejamento.ano,
+            mes=planejamento.mes,
+            horas_planejadas=planejamento.horas_planejadas
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro inesperado: {str(e)}")
 
 @router.get("/alocacao/{alocacao_id}", response_model=dict)
 async def list_planejamento_by_alocacao(

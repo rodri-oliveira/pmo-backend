@@ -4,6 +4,7 @@ from app.repositories.planejamento_horas_repository import PlanejamentoHorasRepo
 import logging
 from app.repositories.alocacao_repository import AlocacaoRepository
 from app.repositories.horas_disponiveis_repository import HorasDisponiveisRepository
+from app.schemas.matriz_planejamento_schemas import MatrizPlanejamentoUpdate
 
 class PlanejamentoHorasService:
     def __init__(self, db: AsyncSession):
@@ -15,50 +16,32 @@ class PlanejamentoHorasService:
     async def create_or_update_planejamento(self, alocacao_id: int, ano: int, mes: int, horas_planejadas: float) -> Dict[str, Any]:
         """
         Cria ou atualiza o planejamento de horas para uma alocação em um mês específico.
-        
-        Args:
-            alocacao_id: ID da alocação
-            ano: Ano do planejamento
-            mes: Mês do planejamento (1-12)
-            horas_planejadas: Horas planejadas para o mês
-            
-        Returns:
-            Dict[str, Any]: Dados do planejamento criado/atualizado
-            
-        Raises:
-            ValueError: Se a alocação não existir ou se as horas excederem o disponível
         """
-        # Verificar se a alocação existe
-        alocacao = await self.alocacao_repository.get(alocacao_id)
-        if not alocacao:
+        # 1. Obter IDs de forma segura, sem carregar o objeto ORM
+        alocacao_ids = await self.alocacao_repository.get_ids_by_id(alocacao_id)
+        if not alocacao_ids:
             raise ValueError(f"Alocação com ID {alocacao_id} não encontrada")
-        
-        # Verificar limites do mês (1-12)
-        if mes < 1 or mes > 12:
+
+        # 2. Validações
+        if not 1 <= mes <= 12:
             raise ValueError(f"Mês deve estar entre 1 e 12, recebido: {mes}")
-        
-        # Verificar se as horas planejadas são positivas
         if horas_planejadas < 0:
             raise ValueError(f"Horas planejadas devem ser positivas, recebido: {horas_planejadas}")
-        
-        # Verificar se as horas planejadas não excedem as horas disponíveis do recurso
-        recurso_id = alocacao.recurso_id
-        horas_disponiveis = await self.horas_disponiveis_repository.get_by_recurso_ano_mes(recurso_id, ano, mes)
-        
-        # Removido o bloqueio de excedente de horas disponíveis. Planejamentos podem ultrapassar o disponível.
-        
-        # Criar ou atualizar o planejamento
-        planejamento = await self.repository.create_or_update(alocacao_id, ano, mes, horas_planejadas)
-        
-        # Retornar com dados adicionais
+
+        # 3. Criar ou atualizar o planejamento (o repositório já é seguro)
+        planejamento_dict = await self.repository.create_or_update(
+            alocacao_id, ano, mes, horas_planejadas
+        )
+
+        # 4. Montar o retorno apenas com dados primitivos
         return {
-            "id": planejamento.id,
-            "alocacao_id": planejamento.alocacao_id,
-            "projeto_id": alocacao.projeto_id,
-            "recurso_id": alocacao.recurso_id,
-            "ano": planejamento.ano,
-            "mes": planejamento.mes,
-            "horas_planejadas": float(planejamento.horas_planejadas)
+            "id": planejamento_dict["id"],
+            "alocacao_id": planejamento_dict["alocacao_id"],
+            "projeto_id": alocacao_ids["projeto_id"],
+            "recurso_id": alocacao_ids["recurso_id"],
+            "ano": planejamento_dict["ano"],
+            "mes": planejamento_dict["mes"],
+            "horas_planejadas": planejamento_dict["horas_planejadas"]
         }
     
     async def get_planejamento(self, alocacao_id: int, ano: int, mes: int) -> Optional[dict]:
@@ -150,3 +133,54 @@ class PlanejamentoHorasService:
         logger.info(f"[delete_planejamento] Planejamento encontrado via filtro: {planejamento}")
         await self.repository.delete(planejamento_id)
         logger.info(f"[delete_planejamento] Planejamento deletado com sucesso!")
+
+    async def salvar_alteracoes_matriz(self, payload: MatrizPlanejamentoUpdate) -> None:
+        logger = logging.getLogger(__name__)
+        logger.info("--- INICIANDO salvar_alteracoes_matriz ---")
+        try:
+            for i, projeto_update in enumerate(payload.alteracoes_projetos):
+                logger.info(f"--- Processando projeto {i+1}/{len(payload.alteracoes_projetos)}: ID {projeto_update.projeto_id} ---")
+
+                # 1. Encontrar a alocação ativa
+                logger.info(f"Buscando alocação ativa para recurso {payload.recurso_id} e projeto {projeto_update.projeto_id}")
+                alocacao = await self.alocacao_repository.get_active_by_recurso_projeto(
+                    recurso_id=payload.recurso_id,
+                    projeto_id=projeto_update.projeto_id
+                )
+                logger.info(f"Alocação encontrada: {alocacao}")
+
+                if not alocacao:
+                    logger.error(f"Alocação ativa não encontrada para o recurso ID {payload.recurso_id} e projeto ID {projeto_update.projeto_id}")
+                    raise ValueError(f"Alocação ativa não encontrada para o recurso ID {payload.recurso_id} e projeto ID {projeto_update.projeto_id}")
+
+                alocacao_id = alocacao["id"]
+                logger.info(f"ID da alocação: {alocacao_id}")
+
+                # 2. Atualizar os dados da alocação
+                update_data = {}
+                if projeto_update.status_alocacao_id is not None:
+                    update_data['status_alocacao_id'] = projeto_update.status_alocacao_id
+                if projeto_update.observacao is not None:
+                    update_data['observacao'] = projeto_update.observacao
+                if projeto_update.esforco_estimado is not None:
+                    update_data['esforco_estimado'] = projeto_update.esforco_estimado
+                
+                if update_data:
+                    logger.info(f"Atualizando alocação {alocacao_id} com dados: {update_data}")
+                    await self.alocacao_repository.update(alocacao_id, update_data)
+                    logger.info(f"Alocação {alocacao_id} atualizada.")
+
+                # 3. Criar ou atualizar as horas planejadas para cada mês
+                for j, planejamento_mensal in enumerate(projeto_update.planejamento_mensal):
+                    logger.info(f"Processando planejamento {j+1}/{len(projeto_update.planejamento_mensal)}: Mês {planejamento_mensal.mes}")
+                    await self.create_or_update_planejamento(
+                        alocacao_id=alocacao_id,
+                        ano=payload.ano,
+                        mes=planejamento_mensal.mes,
+                        horas_planejadas=planejamento_mensal.horas_planejadas
+                    )
+                    logger.info(f"Planejamento para o mês {planejamento_mensal.mes} concluído.")
+            logger.info("--- FINALIZADO salvar_alteracoes_matriz com SUCESSO ---")
+        except Exception as e:
+            logger.error(f"ERRO FATAL em salvar_alteracoes_matriz: {e}", exc_info=True)
+            raise

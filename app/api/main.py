@@ -13,14 +13,15 @@ from app.api.routes import (
     recurso_routes,
     status_projeto_routes,
     projeto_routes,
-    planejamento_horas,
+    alocacao_routes,
     apontamentos,
+    planejamento_horas,
     filtros,
     relatorios,
     relatorios_dinamico,
-    alocacao_routes,
     sincronizacoes_jira,
-    dashboard
+    dashboard,
+    matriz_planejamento
 )
 
 logger.info("Configurando o api_router principal...")
@@ -42,5 +43,6 @@ api_router.include_router(relatorios.router, tags=["Relatórios"])
 api_router.include_router(relatorios_dinamico.router)
 api_router.include_router(sincronizacoes_jira.router, prefix="/sincronizacoes-jira", tags=["Integração Jira"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+api_router.include_router(matriz_planejamento.router, prefix="/matriz-planejamento", tags=["Matriz de Planejamento"])
 
 logger.info("Todos os routers foram registrados com sucesso.")

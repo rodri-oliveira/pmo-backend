@@ -1,26 +1,48 @@
-from sqlalchemy import create_engine, SmallInteger  # Usar SmallInteger para PostgreSQL
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import declarative_base
 from app.core.config import settings
-from typing import Generator
-
-# Remover import do MySQL TINYINT
-# from sqlalchemy.dialects.mysql import TINYINT
+from typing import AsyncGenerator
 
 DATABASE_URL = settings.DATABASE_URI
 
-# Crie engine e session síncronos
-engine = create_engine(DATABASE_URL, echo=True)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# 1. Crie um async_engine
+async_engine = create_async_engine(
+    DATABASE_URL,
+    echo=True,  # Log SQL queries
+    future=True # Use a nova API do SQLAlchemy 2.0
+)
+
+# 2. Crie um AsyncSessionLocal (fábrica de sessões assíncronas)
+AsyncSessionLocal = async_sessionmaker(
+    bind=async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,  # Essencial para FastAPI
+    autocommit=False,
+    autoflush=False,
+)
 
 Base = declarative_base()
 
-def get_db() -> Generator:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# 3. Crie a dependência get_db assíncrona
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Dependência do FastAPI para obter uma sessão de banco de dados assíncrona.
+    Garante que a sessão seja sempre fechada após a requisição.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
-def init_db():
-    # Cria todas as tabelas no banco de dados
-    Base.metadata.create_all(bind=engine)
+async def init_db():
+    """
+    Inicializa o banco de dados, criando as tabelas se não existirem.
+    """
+    async with async_engine.begin() as conn:
+        # await conn.run_sync(Base.metadata.drop_all) # Descomente para apagar tudo ao iniciar
+        await conn.run_sync(Base.metadata.create_all)
