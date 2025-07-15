@@ -145,6 +145,8 @@ class AlocacaoRecursoProjeto(Base):
     data_fim_alocacao = Column(Date, nullable=True)
     data_criacao = Column(DateTime, nullable=False, default=func.now())
     data_atualizacao = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+    esforco_estimado = Column(DECIMAL(10, 2), nullable=True)
+    esforco_planejado = Column(DECIMAL(10, 2), nullable=True)
 
     # Relacionamentos
     recurso = relationship("Recurso", back_populates="alocacoes")
