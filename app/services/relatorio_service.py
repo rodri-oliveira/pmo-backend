@@ -603,4 +603,10 @@ class RelatorioService:
             for row in rows
         ]
 
-        return HorasDisponiveisResponse(meses=meses_horas)
+        periodo_dict = {"data_inicio": start_str, "data_fim": end_str}
+
+        return HorasDisponiveisResponse(
+            recurso_id=request.recurso_id,
+            periodo=periodo_dict,
+            horas_por_mes=meses_horas
+        )
