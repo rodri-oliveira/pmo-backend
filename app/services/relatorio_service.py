@@ -568,9 +568,16 @@ class RelatorioService:
 
         # Query principal para buscar os meses do período na dim_tempo
         # e juntar com as horas disponíveis
+        # Constrói expressão 'YYYY-MM' a partir de ano e mês
+        mes_ano_expr = func.concat(
+            DimTempo.ano.cast(String),
+            '-',
+            func.lpad(DimTempo.mes.cast(String), 2, '0')
+        ).label('mes_ano_str')
+
         main_query = (
             select(
-                DimTempo.mes_ano_str,
+                mes_ano_expr,
                 func.coalesce(rh_query.c.horas_disponiveis_mes, 0).label("horas_disponiveis")
             )
             .select_from(DimTempo)
@@ -582,7 +589,7 @@ class RelatorioService:
                 )
             )
             .where(
-                func.to_date(DimTempo.mes_ano_str, 'YYYY-MM')
+                func.to_date(mes_ano_expr, 'YYYY-MM')
                 .between(start_date, end_date)
             )
             .order_by(DimTempo.ano, DimTempo.mes)
