@@ -578,7 +578,9 @@ class RelatorioService:
         main_query = (
             select(
                 mes_ano_expr,
-                func.coalesce(rh_query.c.horas_disponiveis_mes, 0).label("horas_disponiveis")
+                func.coalesce(func.max(rh_query.c.horas_disponiveis_mes), 0).label("horas_disponiveis"),
+                DimTempo.ano,
+                DimTempo.mes
             )
             .select_from(DimTempo)
             .outerjoin(
@@ -592,6 +594,8 @@ class RelatorioService:
                 func.to_date(mes_ano_expr, 'YYYY-MM')
                 .between(start_date, end_date)
             )
+            .distinct()
+            .group_by(mes_ano_expr, DimTempo.ano, DimTempo.mes)
             .order_by(DimTempo.ano, DimTempo.mes)
         )
 
