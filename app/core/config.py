@@ -54,7 +54,7 @@ settings = Settings()
 from urllib.parse import quote_plus
 password = quote_plus(settings.DB_PASSWORD)
 settings.DATABASE_URI = f"postgresql+asyncpg://{settings.DB_USER}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
-print(f"--- CONECTANDO AO BANCO: {settings.DATABASE_URI} ---")
+# A linha que imprimia a URI do banco de dados foi removida para limpar os logs.
 
 # Defina a URL de conexão diretamente nas configurações do contexto
 def get_url():

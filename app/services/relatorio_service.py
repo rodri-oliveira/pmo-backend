@@ -398,13 +398,34 @@ class RelatorioService:
 
         for item in final_list:
             if isinstance(item, dict) and "meses" in item:
-                for mes, valores in item["meses"].items():
-                    if valores["planejado"] > 0:
-                        item["percentual_realizado"] = round((valores["realizado"] / valores["planejado"]) * 100, 2)
-                    else:
-                        item["percentual_realizado"] = 100 if valores["realizado"] > 0 else 0
+                # Inicializa totais para o item
+                total_planejado = 0
+                total_realizado = 0
 
-        return sorted(final_list, key=lambda x: (x.get('label', x.get('nome', ''))))
+                for mes, valores in item["meses"].items():
+                    total_planejado += valores.get("planejado") or 0
+                    total_realizado += valores.get("realizado") or 0
+
+                # Adiciona os totais ao item
+                item["esforco_planejado"] = total_planejado
+                item["esforco_realizado"] = total_realizado
+
+                # Calcula o percentual geral para o item
+                if total_planejado > 0:
+                    item["percentual_realizado"] = round((total_realizado / total_planejado) * 100, 2)
+                else:
+                    # Se não há horas planejadas, o percentual é 0, a menos que haja horas realizadas (caso anômalo)
+                    item["percentual_realizado"] = 100 if total_realizado > 0 else 0
+
+        # Separa os projetos das linhas de resumo para o retorno
+        linhas_resumo = [item for item in final_list if "label" in item]
+        projetos_formatados = [item for item in final_list if "id" in item]
+
+        # Retorna o dicionário no formato esperado pela API
+        return {
+            "linhas_resumo": sorted(linhas_resumo, key=lambda x: x.get('label', '')),
+            "projetos": sorted(projetos_formatados, key=lambda x: x.get('nome', '')),
+        }
 
     async def get_disponibilidade_recursos(
         self,

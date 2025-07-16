@@ -1,8 +1,11 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Body, Request, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.services.jira_webhook_service import JiraWebhookService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Jira Webhooks"])
 
@@ -37,7 +40,7 @@ async def process_jira_worklog_webhook(
     except Exception as e:
         # Não lançamos 500 para o Jira para evitar retentativas, mas logamos o erro
         # Seria ideal ter um sistema de logging adequado
-        print(f"Erro ao processar webhook Jira: {str(e)}")
+        logger.error(f"Erro ao processar webhook Jira: {str(e)}")
         return {
             "status": "error", 
             "message": "Erro ao processar webhook", 

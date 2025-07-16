@@ -37,7 +37,6 @@ api_router.include_router(projeto_routes.router, prefix="/projetos", tags=["Proj
 api_router.include_router(alocacao_routes.router, prefix="/alocacoes", tags=["Alocações"])
 api_router.include_router(apontamentos.router, prefix="/apontamentos", tags=["Apontamentos"])
 api_router.include_router(filtros.router, prefix="/filtros", tags=["Filtros"])
-api_router.include_router(relatorios.router, prefix="/relatorios", tags=["Relatórios"])
 api_router.include_router(relatorios_dinamico.router, prefix="/relatorios-dinamico", tags=["Relatórios Dinâmicos"])
 api_router.include_router(sincronizacoes_jira.router, prefix="/sincronizacoes-jira", tags=["Sincronizações Jira"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])

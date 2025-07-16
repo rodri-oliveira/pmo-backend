@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -10,6 +11,9 @@ from app.application.dtos.status_projeto_dtos import StatusProjetoCreateDTO, Sta
 from app.domain.repositories.status_projeto_repository import StatusProjetoRepository
 from app.infrastructure.database.status_projeto_sql_model import StatusProjetoSQL
 from app.utils.dependency_checker import check_dependents
+
+logger = logging.getLogger(__name__)
+
 
 class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
     def __init__(self, db_session: AsyncSession):
@@ -30,7 +34,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
             return None
         except Exception as e:
             # Log the error
-            print(f"Erro ao buscar status por ID: {str(e)}")
+            logger.error(f"Erro ao buscar status por ID: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro ao buscar status de projeto: {str(e)}"
@@ -45,7 +49,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
             return None
         except Exception as e:
             # Log the error
-            print(f"Erro ao buscar status por nome: {str(e)}")
+            logger.error(f"Erro ao buscar status por nome: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro ao buscar status de projeto por nome: {str(e)}"
@@ -64,7 +68,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
             return [DomainStatusProjeto.model_validate(self._to_dict(s)) for s in status_sql]
         except Exception as e:
             # Log the error
-            print(f"Erro ao listar status: {str(e)}")
+            logger.error(f"Erro ao listar status: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro ao listar status de projeto: {str(e)}"
@@ -88,7 +92,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
         except Exception as e:
             await self.db_session.rollback()
             # Log the error
-            print(f"Erro ao criar status: {str(e)}")
+            logger.error(f"Erro ao criar status: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro ao criar status de projeto: {str(e)}"
@@ -150,7 +154,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
             raise
         except Exception as e:
             # Log the error
-            print(f"Erro ao atualizar status: {str(e)}")
+            logger.error(f"Erro ao atualizar status: {str(e)}")
             # Rollback da transação em caso de erro
             await self.db_session.rollback()
             raise HTTPException(
@@ -164,7 +168,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
             max_order = result.scalar_one_or_none()
             return max_order
         except Exception as e:
-            print(f"Erro ao buscar a ordem de exibição máxima: {str(e)}")
+            logger.error(f"Erro ao buscar a ordem de exibição máxima: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro ao buscar a ordem de exibição máxima: {str(e)}"
@@ -178,7 +182,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
                 return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
             return None
         except Exception as e:
-            print(f"Erro ao buscar status por nome (incluindo inativos): {str(e)}")
+            logger.error(f"Erro ao buscar status por nome (incluindo inativos): {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro ao buscar status de projeto por nome: {str(e)}"
@@ -192,7 +196,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
                 return DomainStatusProjeto.model_validate(self._to_dict(status_sql))
             return None
         except Exception as e:
-            print(f"Erro ao buscar status por ordem_exibicao (incluindo inativos): {str(e)}")
+            logger.error(f"Erro ao buscar status por ordem_exibicao (incluindo inativos): {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro ao buscar status de projeto por ordem de exibição: {str(e)}"
@@ -234,7 +238,7 @@ class SQLAlchemyStatusProjetoRepository(StatusProjetoRepository):
             raise
         except Exception as e:
             await self.db_session.rollback()
-            print(f"Erro ao excluir status: {str(e)}")
+            logger.error(f"Erro ao excluir status: {str(e)}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Erro ao excluir status de projeto: {str(e)}"

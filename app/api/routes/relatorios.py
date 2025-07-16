@@ -12,7 +12,7 @@ from app.services.relatorio_service import RelatorioService
 from app.models.schemas import PlanejadoVsRealizadoRequest, PlanejadoVsRealizadoResponse
 from app.utils.date_utils import parse_date_flex
 
-router = APIRouter(prefix="/relatorios", tags=["Relatórios"])
+router = APIRouter(tags=["Relatórios"])
 
 
 @router.get("/horas-apontadas")

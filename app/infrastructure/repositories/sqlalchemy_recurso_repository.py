@@ -2,6 +2,7 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update as sqlalchemy_update, delete as sqlalchemy_delete, and_, or_
+import logging
 import traceback # Adicionado para logging detalhado
 from datetime import datetime, timezone
 from app.domain.models.recurso_model import Recurso as DomainRecurso
@@ -12,6 +13,9 @@ from app.utils.dependency_checker import check_dependents
 from fastapi import HTTPException
 from sqlalchemy import func
 from app.db.orm_models import AlocacaoRecursoProjeto, HorasDisponiveisRH, Usuario, Apontamento
+
+logger = logging.getLogger(__name__)
+
 
 class SQLAlchemyRecursoRepository(RecursoRepository):
     def __init__(self, db_session: AsyncSession):
@@ -88,7 +92,7 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
             recursos_sql = result.scalars().all()
             return [DomainRecurso.model_validate(recurso) for recurso in recursos_sql]
         except Exception as e:
-            print(f"Erro ao executar query no get_all: {e}")
+            logger.error(f"Erro ao executar query no get_all: {e}")
             traceback.print_exc()
             raise
 
@@ -114,7 +118,7 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
             return DomainRecurso.model_validate(new_recurso_sql)
         except Exception as e:
             await self.db_session.rollback()
-            print(f"Error creating recurso: {e}")
+            logger.error(f"Error creating recurso: {e}")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Erro ao criar recurso: {str(e)}")
 
@@ -140,7 +144,7 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
             return DomainRecurso.model_validate(recurso_sql)
         except Exception as e:
             await self.db_session.rollback()
-            print(f"Error updating recurso: {e}")
+            logger.error(f"Error updating recurso: {e}")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Erro ao atualizar recurso: {str(e)}")
 
@@ -213,6 +217,6 @@ class SQLAlchemyRecursoRepository(RecursoRepository):
         except Exception as e:
             # Logar e tratar outros erros
             await self.db_session.rollback()
-            print(f"Error deleting recurso: {e}")
+            logger.error(f"Error deleting recurso: {e}")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Erro ao deletar recurso: {str(e)}")

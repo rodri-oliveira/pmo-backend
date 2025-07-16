@@ -5,6 +5,11 @@ import logging
 from app.repositories.alocacao_repository import AlocacaoRepository
 from app.repositories.horas_disponiveis_repository import HorasDisponiveisRepository
 from app.schemas.matriz_planejamento_schemas import MatrizPlanejamentoUpdate
+from sqlalchemy import select
+from app.db.orm_models import HorasPlanejadas
+
+logger = logging.getLogger(__name__)
+
 
 class PlanejamentoHorasService:
     def __init__(self, db: AsyncSession):
@@ -118,13 +123,8 @@ class PlanejamentoHorasService:
         Raises:
             ValueError: Se o planejamento não for encontrado
         """
-        import logging
-        logger = logging.getLogger("app.services.planejamento_horas_service")
-        from app.core import config
-        print(f"[DELETE DEBUG] CONECTANDO AO BANCO: {config.settings.DATABASE_URI}")
+        logger.debug(f"[DELETE DEBUG] Conectando ao banco para deletar planejamento_id={planejamento_id}")
         logger.info(f"[delete_planejamento] Tentando deletar planejamento_id={planejamento_id}")
-        from sqlalchemy import select
-        from app.db.orm_models import HorasPlanejadas
         result = await self.repository.db.execute(select(HorasPlanejadas).filter(HorasPlanejadas.id == planejamento_id))
         planejamento = result.scalars().first()
         if not planejamento:

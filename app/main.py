@@ -66,6 +66,7 @@ def root():
     """Redireciona para a documentação da API."""
     return RedirectResponse(url="/docs")
 
+
 # Executar a aplicação com uvicorn
 if __name__ == "__main__":
     try:
