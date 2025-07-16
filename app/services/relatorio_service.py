@@ -535,9 +535,17 @@ class RelatorioService:
         """
         Busca as horas disponíveis para um recurso dentro de um período de meses.
         """
+                # Detecta os campos corretos no request (compatibilidade)
+        if hasattr(request, 'mes_inicio') and hasattr(request, 'mes_fim'):
+            start_str = request.mes_inicio
+            end_str = request.mes_fim
+        else:
+            start_str = request.data_inicio
+            end_str = request.data_fim
+
         # Extrai o ano e mês de início e fim
-        start_year, start_month = map(int, request.mes_inicio.split('-'))
-        end_year, end_month = map(int, request.mes_fim.split('-'))
+        start_year, start_month = map(int, start_str.split('-'))
+        end_year, end_month = map(int, end_str.split('-'))
 
         # Constrói a data de início e fim para a query
         start_date = date(start_year, start_month, 1)
