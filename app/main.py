@@ -56,9 +56,13 @@ if settings.root_path is not None:
 if settings.swagger_servers_list is not None:
     app.servers = list(map(lambda x: { "url": x }, settings.swagger_servers_list.split(",")))
 
-# Incluir routers
-app.include_router(api_router, prefix="/backend") # Rotas legadas
-app.include_router(v1_router, prefix="/backend/v1") # Novas rotas da V1
+# --- Inclusão de Roteadores ---
+# Roteador para endpoints legados, mantidos para compatibilidade.
+# Novas rotas não devem ser adicionadas aqui.
+app.include_router(api_router, prefix="/backend")
+
+# Roteador para a V1 da API. Todos os novos endpoints devem ser registrados aqui.
+app.include_router(v1_router, prefix="/backend/v1")
 app.include_router(health.router, prefix="/health")
 
 @app.get("/")

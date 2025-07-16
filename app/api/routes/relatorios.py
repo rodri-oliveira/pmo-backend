@@ -14,6 +14,8 @@ from app.utils.date_utils import parse_date_flex
 
 # O prefixo "/relatorios" é definido no roteador v1 (app/api/v1/router.py)
 # para manter a consistência e evitar duplicação de prefixos.
+# O prefixo "/relatorios" é definido no roteador v1 (app/api/v1/router.py)
+# para manter a consistência e evitar duplicação de prefixos.
 router = APIRouter(tags=["Relatórios"])
 
 
