@@ -172,14 +172,14 @@ class PlanejamentoHorasService:
 
                 # 3. Criar ou atualizar as horas planejadas para cada mês
                 for j, planejamento_mensal in enumerate(projeto_update.planejamento_mensal):
-                    logger.info(f"Processando planejamento {j+1}/{len(projeto_update.planejamento_mensal)}: Mês {planejamento_mensal.mes}")
+                    logger.info(f"Processando planejamento {j+1}/{len(projeto_update.planejamento_mensal)}: Ano {planejamento_mensal.ano}, Mês {planejamento_mensal.mes}")
                     await self.create_or_update_planejamento(
                         alocacao_id=alocacao_id,
-                        ano=payload.ano,
+                        ano=planejamento_mensal.ano,  # <-- ALTERAÇÃO PRINCIPAL AQUI
                         mes=planejamento_mensal.mes,
                         horas_planejadas=planejamento_mensal.horas_planejadas
                     )
-                    logger.info(f"Planejamento para o mês {planejamento_mensal.mes} concluído.")
+                    logger.info(f"Planejamento para o ano/mês {planejamento_mensal.ano}/{planejamento_mensal.mes} concluído.")
             logger.info("--- FINALIZADO salvar_alteracoes_matriz com SUCESSO ---")
         except Exception as e:
             logger.error(f"ERRO FATAL em salvar_alteracoes_matriz: {e}", exc_info=True)
