@@ -9,3 +9,4 @@ passlib[bcrypt]
 python-multipart
 alembic
 PyJWT
+pandas # Para manipulação de dados nos scripts
