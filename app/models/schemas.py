@@ -305,4 +305,22 @@ class DetalheRecursoProjeto(BaseModel):
 class AlocacaoProjetoResponse(BaseModel):
     kpis_projeto: KpisProjeto
     alocacao_mensal: List[AlocacaoMensalProjeto]
-    detalhe_recursos: List[DetalheRecursoProjeto] 
+    detalhe_recursos: List[DetalheRecursoProjeto]
+
+
+# Schemas para o endpoint de Horas Disponíveis por Recurso
+ANO_MES_REGEX = r"^\d{4}-(0[1-9]|1[0-2])$"
+
+class HorasDisponiveisRequest(BaseModel):
+    recurso_id: int
+    data_inicio: str = Field(..., pattern=ANO_MES_REGEX, description="Mês de início no formato AAAA-MM")
+    data_fim: str = Field(..., pattern=ANO_MES_REGEX, description="Mês de fim no formato AAAA-MM")
+
+class MesHoras(BaseModel):
+    mes: str # Formato AAAA-MM
+    horas: float
+
+class HorasDisponiveisResponse(BaseModel):
+    recurso_id: int
+    periodo: Dict[str, str]
+    horas_por_mes: List[MesHoras]

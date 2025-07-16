@@ -10,6 +10,7 @@ from app.core.docs import custom_openapi
 # Importar routers
 from app.api.main import api_router
 from app.api.routes import health
+from app.api.v1.router import v1_router
 
 # Importar configuração do banco de dados
 from app.db.session import async_engine, Base
@@ -56,7 +57,8 @@ if settings.swagger_servers_list is not None:
     app.servers = list(map(lambda x: { "url": x }, settings.swagger_servers_list.split(",")))
 
 # Incluir routers
-app.include_router(api_router, prefix="/backend/v1")
+app.include_router(api_router, prefix="/backend") # Rotas legadas
+app.include_router(v1_router, prefix="/backend/v1") # Novas rotas da V1
 app.include_router(health.router, prefix="/health")
 
 @app.get("/")
