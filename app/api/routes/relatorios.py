@@ -231,7 +231,8 @@ async def post_planejado_vs_realizado_v2(
     service = RelatorioService(db)
     data = await service.get_planejado_vs_realizado_v2(
         recurso_id=payload.recurso_id,
-        status=payload.status,
+        status_id=payload.status_id,
+        alocacao_id=payload.alocacao_id,
         mes_inicio=payload.mes_inicio,
         mes_fim=payload.mes_fim,
     )

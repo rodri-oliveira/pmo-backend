@@ -233,7 +233,8 @@ class RelatorioService:
     async def get_planejado_vs_realizado_v2(
         self,
         recurso_id: int,
-        status: Optional[str] = None,
+        status_id: Optional[int] = None,
+        alocacao_id: Optional[int] = None,
         mes_inicio: Optional[str] = None,
         mes_fim: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -248,8 +249,11 @@ class RelatorioService:
         )
 
         # 3. Construir a consulta unificada para horas planejadas e realizadas
+        # Se alocacao_id for informado, filtramos especificadamente por essa alocação
+        alocacao_id = alocacao_id or None
         HP, ARP, AP, P, S = HorasPlanejadas, AlocacaoRecursoProjeto, Apontamento, Projeto, StatusProjeto
 
+        # -- Horas Planejadas --
         planned_q = (
             select(
                 ARP.projeto_id,
@@ -261,6 +265,11 @@ class RelatorioService:
             .join(ARP, ARP.id == HP.alocacao_id)
             .where(ARP.recurso_id == recurso_id)
         )
+
+        # -- Horas Realizadas --
+        # Aplicar filtro de alocação, se informado, tanto para planejado quanto para realizado
+        if alocacao_id:
+            planned_q = planned_q.where(ARP.id == alocacao_id)
 
         realized_q = (
             select(
@@ -277,6 +286,8 @@ class RelatorioService:
                 extract("month", AP.data_apontamento),
             )
         )
+        if alocacao_id:
+            realized_q = realized_q.join(ARP, AP.projeto_id == ARP.projeto_id).where(ARP.id == alocacao_id)
 
         unified_query = union_all(planned_q, realized_q).alias("unified_query")
 
@@ -292,6 +303,7 @@ class RelatorioService:
             .alias("acao_subquery")
         )
 
+        # Consulta principal agregada
         # Consulta principal agregada
         main_q = (
             select(
@@ -331,8 +343,8 @@ class RelatorioService:
             )
         )
 
-        if status and status != "string":
-            main_q = main_q.where(S.nome == status)
+        if status_id:
+            main_q = main_q.where(S.id == status_id)
 
         result = await self.db.execute(main_q)
         rows = result.fetchall()
@@ -349,6 +361,7 @@ class RelatorioService:
                     "id": projeto_id,
                     "nome": row.projeto_nome,
                     "status": row.status_nome,
+                    "alocacao_id": alocacao_id,
                     "acao": row.acao,
                     "esforco_estimado": None,  # AINDA PRECISA IMPLEMENTAR
                     "esforco_planejado": 0,

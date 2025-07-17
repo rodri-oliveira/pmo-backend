@@ -232,6 +232,7 @@ class ProjetoPlanejadoRealizado(BaseSchema):
     id: int
     nome: str
     status: str
+    alocacao_id: Optional[int] = None
     acao: Optional[str] = None
     esforco_estimado: Optional[float] = None
     esforco_planejado: Optional[float] = None
@@ -252,7 +253,8 @@ class PlanejadoVsRealizadoRequest(BaseSchema):
     Somente recurso_id é obrigatório; demais filtros são opcionais.
     """
     recurso_id: int
-    status: Optional[str] = None
+    status_id: Optional[int] = None  # ID do status do projeto
+    alocacao_id: Optional[int] = None  # Opcional: filtrar por alocação específica
     mes_inicio: Optional[str] = None  # YYYY-MM
     mes_fim: Optional[str] = None  # YYYY-MM
 
