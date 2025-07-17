@@ -1,87 +1,52 @@
 from typing import List, Optional, Dict, Any
-from sqlalchemy import func, extract, text, select, update, update
+from sqlalchemy import select, update, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 from app.db.orm_models import HorasPlanejadas, AlocacaoRecursoProjeto
 from app.repositories.base_repository import BaseRepository
-from app.schemas.matriz_planejamento_schemas import PlanejamentoHorasCreate
 
-class PlanejamentoHorasRepository(BaseRepository[HorasPlanejadas]):
 
+class PlanejamentoHorasRepository(BaseRepository):
     def __init__(self, db: AsyncSession):
         super().__init__(db, HorasPlanejadas)
 
-    def _to_dict(self, obj: HorasPlanejadas) -> Dict[str, Any]:
-        """Converte um objeto ORM para um dicionário seguro."""
-        if not obj:
-            return None
-        return {
-            "id": obj.id,
-            "alocacao_id": obj.alocacao_id,
-            "ano": obj.ano,
-            "mes": obj.mes,
-            "horas_planejadas": float(obj.horas_planejadas)
-        }
-
-    async def create(self, data: PlanejamentoHorasCreate) -> Dict[str, Any]:
-        """Cria um novo registro e retorna um dicionário."""
-        db_obj = self.model(**data.model_dump())
-        self.db.add(db_obj)
-        await self.db.flush()
-        await self.db.refresh(db_obj)
-        return self._to_dict(db_obj)
-
-    async def update(self, id: int, data: dict) -> Optional[Dict[str, Any]]:
-        """Atualiza um registro e retorna um dicionário."""
-        if not data:
-            obj = await self.get_by_id(id)
-            return self._to_dict(obj)
-
-        query = (
-            update(self.model)
-            .where(self.model.id == id)
-            .values(**data)
-            .returning(self.model)
-        )
-        result = await self.db.execute(query)
-        await self.db.flush()
-        obj = result.scalars().first()
-        return self._to_dict(obj)
-
-    async def get_by_alocacao_ano_mes(self, alocacao_id: int, ano: int, mes: int) -> Optional[Dict[str, Any]]:
-        """Obtém planejamento por alocação, ano e mês, como um dicionário."""
-        query = select(HorasPlanejadas).filter(
+    async def get_by_alocacao_ano_mes(self, alocacao_id: int, ano: int, mes: int) -> Optional[HorasPlanejadas]:
+        query = select(HorasPlanejadas).where(
             HorasPlanejadas.alocacao_id == alocacao_id,
             HorasPlanejadas.ano == ano,
             HorasPlanejadas.mes == mes
         )
         result = await self.db.execute(query)
-        obj = result.scalars().first()
-        return self._to_dict(obj)
+        return result.scalars().first()
 
     async def create_or_update(self, alocacao_id: int, ano: int, mes: int, horas_planejadas: float) -> Dict[str, Any]:
-        """Cria ou atualiza um planejamento e retorna um dicionário."""
-        existing_dict = await self.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
-        
-        if existing_dict:
-            return await self.update(existing_dict["id"], {"horas_planejadas": horas_planejadas})
+        existing = await self.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
+        if existing:
+            stmt = (
+                update(HorasPlanejadas)
+                .where(HorasPlanejadas.id == existing.id)
+                .values(horas_planejadas=horas_planejadas)
+                .returning(HorasPlanejadas)
+            )
+            result = await self.db.execute(stmt)
+            await self.db.commit()
+            updated_obj = result.scalar_one()
+            return updated_obj.to_dict()
         else:
-            novo_schema = PlanejamentoHorasCreate(
+            new_obj = HorasPlanejadas(
                 alocacao_id=alocacao_id,
                 ano=ano,
                 mes=mes,
                 horas_planejadas=horas_planejadas
             )
-            return await self.create(novo_schema)
-    
-    async def list_by_alocacao(self, alocacao_id: int, ano: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Lista todos os planejamentos de uma alocação, retornando uma lista de dicionários."""
-        query = select(HorasPlanejadas).filter(
-            HorasPlanejadas.alocacao_id == alocacao_id
-        )
-        if ano is not None:
-            query = query.filter(HorasPlanejadas.ano == ano)
-        query = query.order_by(HorasPlanejadas.ano, HorasPlanejadas.mes)
+            self.db.add(new_obj)
+            await self.db.commit()
+            await self.db.refresh(new_obj)
+            return new_obj.to_dict()
+
+    async def list_by_alocacao(self, alocacao_id: int, ano: Optional[int] = None) -> List[HorasPlanejadas]:
+        query = select(HorasPlanejadas).where(HorasPlanejadas.alocacao_id == alocacao_id)
+        if ano:
+            query = query.where(HorasPlanejadas.ano == ano)
         result = await self.db.execute(query)
         orm_objects = result.scalars().all()
         return [self._to_dict(obj) for obj in orm_objects]
@@ -133,3 +98,32 @@ class PlanejamentoHorasRepository(BaseRepository[HorasPlanejadas]):
         total_horas = result.scalars().first()
         
         return float(total_horas) if total_horas is not None else None
+
+    async def get_matriz_data_by_recurso(self, recurso_id: int) -> List[Dict[str, Any]]:
+        """
+        Busca os dados brutos para a montagem da matriz de planejamento de um recurso.
+        Retorna uma lista de dicionários, cada um representando uma linha de dados
+        combinando alocação e planejamento mensal (se houver).
+        """
+        query = text("""
+            SELECT
+                a.id as alocacao_id,
+                a.projeto_id,
+                a.status_alocacao_id,
+                a.observacao,
+                a.esforco_estimado,
+                hp.ano,
+                hp.mes,
+                hp.horas_planejadas
+            FROM
+                alocacao_recurso_projeto a
+            LEFT JOIN
+                horas_planejadas_alocacao hp ON a.id = hp.alocacao_id
+            WHERE
+                a.recurso_id = :recurso_id
+            ORDER BY
+                a.projeto_id, hp.ano, hp.mes
+        """)
+        
+        result = await self.db.execute(query, {"recurso_id": recurso_id})
+        return [dict(row._mapping) for row in result.all()]

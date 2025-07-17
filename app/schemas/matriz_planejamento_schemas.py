@@ -1,6 +1,27 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+# Schemas para o novo endpoint GET /matriz-planejamento/{recurso_id}
+
+class PlanejamentoMensalResponse(BaseModel):
+    ano: int
+    mes: int
+    horas_planejadas: float
+
+class ProjetoPlanejamentoResponse(BaseModel):
+    projeto_id: int
+    status_alocacao_id: Optional[int] = None
+    observacao: Optional[str] = None
+    esforco_estimado: Optional[float] = None
+    planejamento_mensal: List[PlanejamentoMensalResponse]
+
+class MatrizPlanejamentoResponse(BaseModel):
+    recurso_id: int
+    projetos: List[ProjetoPlanejamentoResponse]
+
+class MatrizPlanejamentoRequest(BaseModel):
+    recurso_id: int
+
 
 class PlanejamentoHorasCreate(BaseModel):
     alocacao_id: int

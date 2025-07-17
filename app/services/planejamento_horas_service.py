@@ -4,7 +4,12 @@ from app.repositories.planejamento_horas_repository import PlanejamentoHorasRepo
 import logging
 from app.repositories.alocacao_repository import AlocacaoRepository
 from app.repositories.horas_disponiveis_repository import HorasDisponiveisRepository
-from app.schemas.matriz_planejamento_schemas import MatrizPlanejamentoUpdate
+from app.schemas.matriz_planejamento_schemas import (
+    MatrizPlanejamentoUpdate, 
+    MatrizPlanejamentoResponse, 
+    ProjetoPlanejamentoResponse, 
+    PlanejamentoMensalResponse
+)
 from sqlalchemy import select
 from app.db.orm_models import HorasPlanejadas
 
@@ -12,6 +17,147 @@ logger = logging.getLogger(__name__)
 
 
 class PlanejamentoHorasService:
+    async def get_matriz_planejamento_by_recurso(self, recurso_id: int) -> Optional[MatrizPlanejamentoResponse]:
+        """
+        Busca e monta a matriz de planejamento completa para um recurso.
+        """
+        logger.info(f"Buscando dados da matriz para o recurso_id: {recurso_id}")
+        
+        # Passo 1: Chamar o repositório para obter os dados brutos (a ser implementado)
+        raw_data = await self.repository.get_matriz_data_by_recurso(recurso_id)
+        
+        if not raw_data:
+            logger.warning(f"Nenhum dado de planejamento encontrado para o recurso_id: {recurso_id}")
+            # Retorna uma matriz vazia se o recurso existir mas não tiver planejamento
+            return MatrizPlanejamentoResponse(recurso_id=recurso_id, projetos=[])
+
+        # Passo 2: Estruturar os dados no formato da resposta
+        projetos_dict: Dict[int, ProjetoPlanejamentoResponse] = {}
+        
+        for row in raw_data:
+            projeto_id = row['projeto_id']
+            
+            if projeto_id not in projetos_dict:
+                projetos_dict[projeto_id] = ProjetoPlanejamentoResponse(
+                    projeto_id=projeto_id,
+                    status_alocacao_id=row.get('status_alocacao_id'),
+                    observacao=row.get('observacao'),
+                    esforco_estimado=float(row.get('esforco_estimado', 0.0)) if row.get('esforco_estimado') is not None else None,
+                    planejamento_mensal=[]
+                )
+            
+            # Adiciona o planejamento mensal se houver
+            if row.get('ano') is not None and row.get('mes') is not None and row.get('horas_planejadas') is not None:
+                planejamento_mensal = PlanejamentoMensalResponse(
+                    ano=row['ano'],
+                    mes=row['mes'],
+                    horas_planejadas=float(row['horas_planejadas'])
+                )
+                projetos_dict[projeto_id].planejamento_mensal.append(planejamento_mensal)
+
+        # Passo 3: Montar o objeto de resposta final
+        response = MatrizPlanejamentoResponse(
+            recurso_id=recurso_id,
+            projetos=list(projetos_dict.values())
+        )
+        
+        logger.info(f"Matriz de planejamento montada com sucesso para o recurso_id: {recurso_id}")
+        return response
+
+    async def get_matriz_planejamento_by_recurso(self, recurso_id: int) -> Optional[MatrizPlanejamentoResponse]:
+        """
+        Busca e monta a matriz de planejamento completa para um recurso.
+        """
+        logger.info(f"Buscando dados da matriz para o recurso_id: {recurso_id}")
+        
+        # Passo 1: Chamar o repositório para obter os dados brutos (a ser implementado)
+        raw_data = await self.repository.get_matriz_data_by_recurso(recurso_id)
+        
+        if not raw_data:
+            logger.warning(f"Nenhum dado de planejamento encontrado para o recurso_id: {recurso_id}")
+            # Retorna uma matriz vazia se o recurso existir mas não tiver planejamento
+            return MatrizPlanejamentoResponse(recurso_id=recurso_id, projetos=[])
+
+        # Passo 2: Estruturar os dados no formato da resposta
+        projetos_dict: Dict[int, ProjetoPlanejamentoResponse] = {}
+        
+        for row in raw_data:
+            projeto_id = row['projeto_id']
+            
+            if projeto_id not in projetos_dict:
+                projetos_dict[projeto_id] = ProjetoPlanejamentoResponse(
+                    projeto_id=projeto_id,
+                    status_alocacao_id=row.get('status_alocacao_id'),
+                    observacao=row.get('observacao'),
+                    esforco_estimado=float(row.get('esforco_estimado', 0.0)) if row.get('esforco_estimado') is not None else None,
+                    planejamento_mensal=[]
+                )
+            
+            # Adiciona o planejamento mensal se houver
+            if row.get('ano') is not None and row.get('mes') is not None and row.get('horas_planejadas') is not None:
+                planejamento_mensal = PlanejamentoMensalResponse(
+                    ano=row['ano'],
+                    mes=row['mes'],
+                    horas_planejadas=float(row['horas_planejadas'])
+                )
+                projetos_dict[projeto_id].planejamento_mensal.append(planejamento_mensal)
+
+        # Passo 3: Montar o objeto de resposta final
+        response = MatrizPlanejamentoResponse(
+            recurso_id=recurso_id,
+            projetos=list(projetos_dict.values())
+        )
+        
+        logger.info(f"Matriz de planejamento montada com sucesso para o recurso_id: {recurso_id}")
+        return response
+
+    async def get_matriz_planejamento_by_recurso(self, recurso_id: int) -> Optional[MatrizPlanejamentoResponse]:
+        """
+        Busca e monta a matriz de planejamento completa para um recurso.
+        """
+        logger.info(f"Buscando dados da matriz para o recurso_id: {recurso_id}")
+        
+        # Passo 1: Chamar o repositório para obter os dados brutos (a ser implementado)
+        raw_data = await self.repository.get_matriz_data_by_recurso(recurso_id)
+        
+        if not raw_data:
+            logger.warning(f"Nenhum dado de planejamento encontrado para o recurso_id: {recurso_id}")
+            # Retorna uma matriz vazia se o recurso existir mas não tiver planejamento
+            return MatrizPlanejamentoResponse(recurso_id=recurso_id, projetos=[])
+
+        # Passo 2: Estruturar os dados no formato da resposta
+        projetos_dict: Dict[int, ProjetoPlanejamentoResponse] = {}
+        
+        for row in raw_data:
+            projeto_id = row['projeto_id']
+            
+            if projeto_id not in projetos_dict:
+                projetos_dict[projeto_id] = ProjetoPlanejamentoResponse(
+                    projeto_id=projeto_id,
+                    status_alocacao_id=row.get('status_alocacao_id'),
+                    observacao=row.get('observacao'),
+                    esforco_estimado=float(row.get('esforco_estimado', 0.0)) if row.get('esforco_estimado') is not None else None,
+                    planejamento_mensal=[]
+                )
+            
+            # Adiciona o planejamento mensal se houver
+            if row.get('ano') is not None and row.get('mes') is not None and row.get('horas_planejadas') is not None:
+                planejamento_mensal = PlanejamentoMensalResponse(
+                    ano=row['ano'],
+                    mes=row['mes'],
+                    horas_planejadas=float(row['horas_planejadas'])
+                )
+                projetos_dict[projeto_id].planejamento_mensal.append(planejamento_mensal)
+
+        # Passo 3: Montar o objeto de resposta final
+        response = MatrizPlanejamentoResponse(
+            recurso_id=recurso_id,
+            projetos=list(projetos_dict.values())
+        )
+        
+        logger.info(f"Matriz de planejamento montada com sucesso para o recurso_id: {recurso_id}")
+        return response
+
     def __init__(self, db: AsyncSession):
         self.db = db
         self.repository = PlanejamentoHorasRepository(db)

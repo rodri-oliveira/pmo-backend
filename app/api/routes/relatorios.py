@@ -9,7 +9,9 @@ from app.repositories.apontamento_repository import ApontamentoRepository, equip
 from app.db.orm_models import FonteApontamento
 from app.models.usuario import UsuarioInDB
 from app.services.relatorio_service import RelatorioService
+from app.services.planejamento_horas_service import PlanejamentoHorasService
 from app.models.schemas import PlanejadoVsRealizadoRequest, PlanejadoVsRealizadoResponse
+from app.schemas.matriz_planejamento_schemas import MatrizPlanejamentoResponse, MatrizPlanejamentoRequest
 from app.utils.date_utils import parse_date_flex
 
 router = APIRouter(tags=["Relatórios"])
@@ -234,6 +236,20 @@ async def post_planejado_vs_realizado_v2(
         mes_fim=payload.mes_fim,
     )
     return data
+
+
+@router.post("/planejado-vs-realizado-3", response_model=MatrizPlanejamentoResponse, summary="Dados para Matriz de Planejamento")
+async def get_matriz_planejamento_data(
+    payload: MatrizPlanejamentoRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UsuarioInDB = Depends(get_current_admin_user)
+):
+    """Fornece os dados estruturados para a tela de edição da matriz de planejamento de um recurso."""
+    service = PlanejamentoHorasService(db)
+    matriz_data = await service.get_matriz_planejamento_by_recurso(recurso_id=payload.recurso_id)
+    if not matriz_data:
+        raise HTTPException(status_code=404, detail="Dados da matriz não encontrados para o recurso especificado.")
+    return matriz_data
 
 @router.get("/disponibilidade-recursos")
 async def get_disponibilidade_recursos_endpoint(
