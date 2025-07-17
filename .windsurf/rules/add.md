@@ -1,5 +1,5 @@
 ---
-trigger: manual
+trigger: always_on
 ---
 
-sempre verificar o padrão do projeto em termos de estrutura de dados etc para qualquer implementação para manter o padrão 
+Sempre que for fazer uma implementação ou refatoração no projeto é para verificar a estrutura do projeto para não  criar pastas ou arquivos que ja existem , respeitando a arquitetura e evitando redundancias.
