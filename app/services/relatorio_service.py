@@ -1,6 +1,6 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date
-from sqlalchemy import select, func, case, and_, or_, cast, String, extract, literal, literal_column, union_all, Float, Date
+from sqlalchemy import select, func, case, and_, or_, cast, String, Integer, extract, literal, literal_column, union_all, Float, Date
 from app.infrastructure.database.dim_tempo_sql_model import DimTempoSQL as DimTempo
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -254,9 +254,20 @@ class RelatorioService:
         HP, ARP, AP, P, S = HorasPlanejadas, AlocacaoRecursoProjeto, Apontamento, Projeto, StatusProjeto
 
         # -- Horas Planejadas --
+        # Subconsulta para encontrar a alocação mais recente por projeto para o recurso
+        latest_alloc_subquery = (
+            select(
+                func.max(ARP.id).label("latest_alocacao_id")
+            )
+            .where(ARP.recurso_id == recurso_id)
+            .group_by(ARP.projeto_id)
+            .alias("latest_alloc_subquery")
+        )
+
         planned_q = (
             select(
                 ARP.projeto_id,
+                ARP.id.label("alocacao_id"),
                 HP.ano,
                 HP.mes,
                 HP.horas_planejadas.label("planejado"),
@@ -266,6 +277,13 @@ class RelatorioService:
             .where(ARP.recurso_id == recurso_id)
         )
 
+        # Se um alocacao_id específico não for fornecido, usa a lógica da alocação mais recente
+        if not alocacao_id:
+            planned_q = planned_q.join(
+                latest_alloc_subquery,
+                ARP.id == latest_alloc_subquery.c.latest_alocacao_id
+            )
+
         # -- Horas Realizadas --
         # Aplicar filtro de alocação, se informado, tanto para planejado quanto para realizado
         if alocacao_id:
@@ -274,6 +292,7 @@ class RelatorioService:
         realized_q = (
             select(
                 AP.projeto_id,
+                literal_column("NULL").cast(Integer).label("alocacao_id"), # Mantém a estrutura da união
                 extract("year", AP.data_apontamento).label("ano"),
                 extract("month", AP.data_apontamento).label("mes"),
                 literal_column("0").cast(Float).label("planejado"),
@@ -312,6 +331,7 @@ class RelatorioService:
                 P.codigo_empresa,
                 S.nome.label("status_nome"),
                 acao_subquery.c.acao,
+                func.max(unified_query.c.alocacao_id).label("alocacao_id"), # Agrega o ID da alocação
                 unified_query.c.ano,
                 unified_query.c.mes,
                 func.sum(unified_query.c.planejado).label("total_planejado"),
@@ -361,7 +381,7 @@ class RelatorioService:
                     "id": projeto_id,
                     "nome": row.projeto_nome,
                     "status": row.status_nome,
-                    "alocacao_id": alocacao_id,
+                    "alocacao_id": row.alocacao_id or alocacao_id, # Usa o ID da query ou o filtro
                     "acao": row.acao,
                     "esforco_estimado": None,  # AINDA PRECISA IMPLEMENTAR
                     "esforco_planejado": 0,

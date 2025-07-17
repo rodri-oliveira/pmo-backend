@@ -10,6 +10,7 @@ from app.db.orm_models import FonteApontamento
 from app.models.usuario import UsuarioInDB
 from app.services.relatorio_service import RelatorioService
 from app.services.planejamento_horas_service import PlanejamentoHorasService
+from app.repositories.alocacao_repository import AlocacaoRepository
 from app.models.schemas import PlanejadoVsRealizadoRequest, PlanejadoVsRealizadoResponse
 from app.schemas.matriz_planejamento_schemas import MatrizPlanejamentoResponse, MatrizPlanejamentoRequest
 from app.utils.date_utils import parse_date_flex

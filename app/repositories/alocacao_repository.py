@@ -8,21 +8,7 @@ from app.repositories.base_repository import BaseRepository
 
 class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
 
-    async def update(self, id: int, data: dict) -> None:
-        """
-        Sobrescreve o método base para usar uma instrução de atualização direta
-        e não retornar o objeto ORM, evitando problemas de greenlet.
-        """
-        if not data:
-            return
 
-        query = (
-            update(self.model)
-            .where(self.model.id == id)
-            .values(**data)
-        )
-        await self.db.execute(query)
-        await self.db.flush()
 
     """Repositório para operações com a entidade AlocacaoRecursoProjeto."""
 
@@ -76,6 +62,7 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
         )
         result = await self.db.execute(query)
         await self.db.flush()
+        await self.db.commit()
         return result.scalars().first()
     
     async def get_by_recurso_projeto_data(self, recurso_id: int, projeto_id: int, data_inicio: date) -> Optional[AlocacaoRecursoProjeto]:

@@ -3,6 +3,9 @@ from sqlalchemy import select, update, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.orm_models import HorasPlanejadas, AlocacaoRecursoProjeto
 from app.repositories.base_repository import BaseRepository
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class PlanejamentoHorasRepository(BaseRepository):
@@ -19,29 +22,41 @@ class PlanejamentoHorasRepository(BaseRepository):
         return result.scalars().first()
 
     async def create_or_update(self, alocacao_id: int, ano: int, mes: int, horas_planejadas: float) -> Dict[str, Any]:
+        logger.debug(f"Iniciando create_or_update para alocacao_id={alocacao_id}, ano={ano}, mes={mes}")
         existing = await self.get_by_alocacao_ano_mes(alocacao_id, ano, mes)
-        if existing:
-            stmt = (
-                update(HorasPlanejadas)
-                .where(HorasPlanejadas.id == existing.id)
-                .values(horas_planejadas=horas_planejadas)
-                .returning(HorasPlanejadas)
-            )
-            result = await self.db.execute(stmt)
-            await self.db.commit()
-            updated_obj = result.scalar_one()
-            return updated_obj.to_dict()
-        else:
-            new_obj = HorasPlanejadas(
-                alocacao_id=alocacao_id,
-                ano=ano,
-                mes=mes,
-                horas_planejadas=horas_planejadas
-            )
-            self.db.add(new_obj)
-            await self.db.commit()
-            await self.db.refresh(new_obj)
-            return new_obj.to_dict()
+        
+        try:
+            if existing:
+                logger.info(f"Atualizando planejamento existente ID={existing.id} com {horas_planejadas} horas.")
+                stmt = (
+                    update(HorasPlanejadas)
+                    .where(HorasPlanejadas.id == existing.id)
+                    .values(horas_planejadas=horas_planejadas)
+                    .returning(HorasPlanejadas)
+                )
+                result = await self.db.execute(stmt)
+                await self.db.commit()
+                updated_obj = result.scalar_one()
+                logger.info(f"Planejamento ID={updated_obj.id} atualizado com sucesso.")
+                return updated_obj.to_dict()
+            else:
+                logger.info(f"Criando novo planejamento para alocacao_id={alocacao_id}, ano={ano}, mes={mes}.")
+                new_obj = HorasPlanejadas(
+                    alocacao_id=alocacao_id,
+                    ano=ano,
+                    mes=mes,
+                    horas_planejadas=horas_planejadas
+                )
+                self.db.add(new_obj)
+                await self.db.flush()
+                await self.db.commit()
+                await self.db.refresh(new_obj)
+                logger.info(f"Novo planejamento ID={new_obj.id} criado com sucesso.")
+                return new_obj.to_dict()
+        except Exception as e:
+            logger.error(f"Erro em create_or_update para alocacao_id={alocacao_id}: {e}", exc_info=True)
+            await self.db.rollback()
+            raise
 
     async def list_by_alocacao(self, alocacao_id: int, ano: Optional[int] = None) -> List[HorasPlanejadas]:
         query = select(HorasPlanejadas).where(HorasPlanejadas.alocacao_id == alocacao_id)
@@ -107,8 +122,8 @@ class PlanejamentoHorasRepository(BaseRepository):
         """
         query = text("""
             SELECT
-                a.id as alocacao_id,
                 p.id as projeto_id,
+                a.id as alocacao_id,
                 a.status_alocacao_id,
                 a.observacao,
                 a.esforco_estimado,
@@ -116,15 +131,16 @@ class PlanejamentoHorasRepository(BaseRepository):
                 hp.mes,
                 hp.horas_planejadas
             FROM
-                alocacao_recurso_projeto a
-            LEFT JOIN 
-                projeto p ON a.projeto_id = p.id
-            LEFT JOIN
-                horas_planejadas_alocacao hp ON a.id = hp.alocacao_id
-            WHERE
-                a.recurso_id = :recurso_id
-            ORDER BY
-                a.projeto_id, hp.ano, hp.mes
+                projeto p
+            INNER JOIN LATERAL (
+                SELECT *
+                FROM alocacao_recurso_projeto a2
+                WHERE a2.projeto_id = p.id AND a2.recurso_id = :recurso_id
+                ORDER BY a2.data_inicio_alocacao DESC
+                LIMIT 1
+            ) a ON TRUE
+            LEFT JOIN horas_planejadas_alocacao hp ON a.id = hp.alocacao_id
+            ORDER BY p.id, hp.ano, hp.mes
         """)
         
         result = await self.db.execute(query, {"recurso_id": recurso_id})

@@ -29,6 +29,8 @@ class PlanejamentoHorasService:
         """
         logger.info(f"Buscando dados da matriz para o recurso_id: {recurso_id}")
         
+
+        
         raw_data = await self.repository.get_matriz_data_by_recurso(recurso_id)
         
         if not raw_data:
@@ -37,26 +39,30 @@ class PlanejamentoHorasService:
 
         projetos_dict: Dict[int, ProjetoPlanejamentoResponse] = {}
         
+        logger.info(f"Dados brutos recebidos do repositório: {raw_data}")
+
         for row in raw_data:
             projeto_id = row['projeto_id']
-            
+
+            # Garante que o projeto seja adicionado ao dicionário com os dados da alocação
             if projeto_id not in projetos_dict:
                 projetos_dict[projeto_id] = ProjetoPlanejamentoResponse(
                     projeto_id=projeto_id,
-                    alocacao_id=row['alocacao_id'],
+                    alocacao_id=row.get('alocacao_id'), # Usa .get() para segurança
                     status_alocacao_id=row.get('status_alocacao_id'),
                     observacao=row.get('observacao'),
                     esforco_estimado=float(row.get('esforco_estimado', 0.0)) if row.get('esforco_estimado') is not None else None,
                     planejamento_mensal=[]
                 )
-            
-            if row.get('ano') is not None and row.get('mes') is not None and row.get('horas_planejadas') is not None:
-                planejamento_mensal = PlanejamentoMensalResponse(
+
+            # Adiciona o planejamento mensal se ele existir
+            if row.get('ano') and row.get('mes') and row.get('horas_planejadas') is not None:
+                planejamento = PlanejamentoMensalResponse(
                     ano=row['ano'],
                     mes=row['mes'],
                     horas_planejadas=float(row['horas_planejadas'])
                 )
-                projetos_dict[projeto_id].planejamento_mensal.append(planejamento_mensal)
+                projetos_dict[projeto_id].planejamento_mensal.append(planejamento)
 
         response = MatrizPlanejamentoResponse(
             recurso_id=recurso_id,
@@ -148,7 +154,11 @@ class PlanejamentoHorasService:
 
     async def salvar_alteracoes_matriz(self, payload: MatrizPlanejamentoUpdate) -> None:
         logger.info("--- INICIANDO salvar_alteracoes_matriz ---")
+        logger.info(f"Payload recebido: {payload.model_dump_json(indent=2)}") # Log do payload
         try:
+            if not payload.alteracoes_projetos:
+                logger.warning("A lista 'alteracoes_projetos' está vazia. Nenhuma alteração será salva.")
+
             for projeto_update in payload.alteracoes_projetos:
                 alocacao_id = projeto_update.alocacao_id
                 logger.info(f"Processando alocação ID: {alocacao_id} para o projeto ID: {projeto_update.projeto_id}")
