@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.inspection import inspect
 from fastapi import Depends
 
 from app.core.config import settings
@@ -15,7 +16,12 @@ async_engine = create_async_engine(
 )
 
 # Base para modelos ORM
-Base = declarative_base()
+class CustomBase:
+    def to_dict(self):
+        """Converte o objeto SQLAlchemy em um dicionário."""
+        return {c.key: getattr(self, c.key) for c in inspect(self).mapper.column_attrs}
+
+Base = declarative_base(cls=CustomBase)
 
 # Criar fábrica de sessão assíncrona
 AsyncSessionLocal = async_sessionmaker(

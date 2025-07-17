@@ -108,7 +108,7 @@ class PlanejamentoHorasRepository(BaseRepository):
         query = text("""
             SELECT
                 a.id as alocacao_id,
-                a.projeto_id,
+                p.id as projeto_id,
                 a.status_alocacao_id,
                 a.observacao,
                 a.esforco_estimado,
@@ -117,6 +117,8 @@ class PlanejamentoHorasRepository(BaseRepository):
                 hp.horas_planejadas
             FROM
                 alocacao_recurso_projeto a
+            LEFT JOIN 
+                projeto p ON a.projeto_id = p.id
             LEFT JOIN
                 horas_planejadas_alocacao hp ON a.id = hp.alocacao_id
             WHERE

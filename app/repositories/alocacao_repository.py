@@ -210,11 +210,19 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
         result = await self.db.execute(query)
         return result.scalars().all()
 
+    async def get_latest_by_recurso_projeto(self, recurso_id: int, projeto_id: int) -> Optional[Dict[str, Any]]:
+        """Obtém a alocação mais recente para um recurso e projeto, independentemente de estar ativa."""
+        query = select(self.model).filter(
+            self.model.recurso_id == recurso_id,
+            self.model.projeto_id == projeto_id
+        ).order_by(self.model.data_inicio_alocacao.desc())
+        
+        result = await self.db.execute(query)
+        instance = result.scalars().first()
+        return instance.to_dict() if instance else None
+
     async def get_active_by_recurso_projeto(self, recurso_id: int, projeto_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Obtém a alocação ativa mais recente para um recurso em um projeto.
-        Uma alocação é considerada ativa se a data de fim for nula ou no futuro.
-        """
+        """Obtém a alocação ativa mais recente para um recurso e projeto e retorna como dict."""
         query = select(self.model).filter(
             self.model.recurso_id == recurso_id,
             self.model.projeto_id == projeto_id,
@@ -223,19 +231,10 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
                 self.model.data_fim_alocacao >= date.today()
             )
         ).order_by(self.model.data_inicio_alocacao.desc())
-        
+
         result = await self.db.execute(query)
-        obj = result.scalars().first()
-        if obj:
-            return {
-                "id": obj.id,
-                "recurso_id": obj.recurso_id,
-                "projeto_id": obj.projeto_id,
-                "status_alocacao_id": obj.status_alocacao_id,
-                "observacao": obj.observacao,
-                "esforco_estimado": float(obj.esforco_estimado) if obj.esforco_estimado is not None else None
-            }
-        return None
+        instance = result.scalars().first()
+        return instance.to_dict() if instance else None
 
     async def get_ids_by_id(self, alocacao_id: int) -> Optional[Dict[str, int]]:
         """ Obtém os IDs de recurso e projeto de uma alocação pelo seu ID. """

@@ -10,6 +10,7 @@ class PlanejamentoMensalResponse(BaseModel):
 
 class ProjetoPlanejamentoResponse(BaseModel):
     projeto_id: int
+    alocacao_id: int
     status_alocacao_id: Optional[int] = None
     observacao: Optional[str] = None
     esforco_estimado: Optional[float] = None
@@ -36,6 +37,7 @@ class PlanejamentoMensalUpdate(BaseModel):
 
 class ProjetoUpdate(BaseModel):
     projeto_id: int
+    alocacao_id: int
     status_alocacao_id: Optional[int] = None
     observacao: Optional[str] = None
     esforco_estimado: Optional[float] = None
