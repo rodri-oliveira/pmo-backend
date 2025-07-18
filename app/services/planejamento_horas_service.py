@@ -175,13 +175,18 @@ class PlanejamentoHorasService:
                     logger.info(f"Atualizando alocação {alocacao_id} com dados: {update_data}")
                     await self.alocacao_repository.update(alocacao_id, update_data)
 
-                for planejamento_mensal in projeto_update.planejamento_mensal:
-                    await self.create_or_update_planejamento(
-                        alocacao_id=alocacao_id,
-                        ano=planejamento_mensal.ano,
-                        mes=planejamento_mensal.mes,
-                        horas_planejadas=planejamento_mensal.horas_planejadas
-                    )
+                # Verificar se a lista de planejamento mensal não está vazia antes de processá-la
+                if projeto_update.planejamento_mensal:
+                    logger.info(f"Processando {len(projeto_update.planejamento_mensal)} registros de planejamento mensal")
+                    for planejamento_mensal in projeto_update.planejamento_mensal:
+                        await self.create_or_update_planejamento(
+                            alocacao_id=alocacao_id,
+                            ano=planejamento_mensal.ano,
+                            mes=planejamento_mensal.mes,
+                            horas_planejadas=planejamento_mensal.horas_planejadas
+                        )
+                else:
+                    logger.warning(f"Lista de planejamento mensal vazia para alocação {alocacao_id}")
             logger.info("--- FINALIZADO salvar_alteracoes_matriz com SUCESSO ---")
         except Exception as e:
             logger.error(f"ERRO FATAL em salvar_alteracoes_matriz: {e}", exc_info=True)
