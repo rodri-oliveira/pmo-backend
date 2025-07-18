@@ -1,7 +1,8 @@
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date
 from sqlalchemy import select, func, case, and_, or_, cast, String, Integer, extract, literal, literal_column, union_all, Float, Date
-from app.infrastructure.database.dim_tempo_sql_model import DimTempoSQL as DimTempo
+# Alterando a importação para o local correto
+from app.db.orm_models import DimTempo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.orm_models import (
@@ -292,7 +293,8 @@ class RelatorioService:
         realized_q = (
             select(
                 AP.projeto_id,
-                literal_column("NULL").cast(Integer).label("alocacao_id"), # Mantém a estrutura da união
+                # Usar uma abordagem diferente para obter a alocação
+                literal_column("NULL").cast(Integer).label("alocacao_id"), # Voltamos para a versão original
                 extract("year", AP.data_apontamento).label("ano"),
                 extract("month", AP.data_apontamento).label("mes"),
                 literal_column("0").cast(Float).label("planejado"),
@@ -374,14 +376,73 @@ class RelatorioService:
 
         # 4. Processar resultados e montar estrutura de projetos
         projetos_map = {}
+        
+        # Primeiro, vamos buscar as alocações mais recentes para cada projeto
+        # Modificar a consulta para buscar alocações por status do projeto
+        alocacoes_query = (
+            select(ARP.projeto_id, func.max(ARP.id).label("alocacao_id"))
+            .where(ARP.recurso_id == recurso_id)
+            .group_by(ARP.projeto_id)
+        )
+        
+        alocacoes_result = await self.db.execute(alocacoes_query)
+        alocacoes_map = {row.projeto_id: row.alocacao_id for row in alocacoes_result}
+        
+        # Adicionar uma consulta para buscar projetos sem alocações
+        projetos_sem_alocacao_query = (
+            select(AP.projeto_id)
+            .where(AP.recurso_id == recurso_id)
+            .group_by(AP.projeto_id)
+            .except_(
+                select(ARP.projeto_id)
+                .where(ARP.recurso_id == recurso_id)
+                .group_by(ARP.projeto_id)
+            )
+        )
+        
+        projetos_sem_alocacao_result = await self.db.execute(projetos_sem_alocacao_query)
+        projetos_sem_alocacao = [row.projeto_id for row in projetos_sem_alocacao_result]
+        
+        # Para projetos sem alocação, criar alocações temporárias
+        if projetos_sem_alocacao:
+            # Buscar o status "Não Iniciado"
+            status_nao_iniciado_query = select(StatusProjeto.id).where(StatusProjeto.nome == "Não Iniciado")
+            status_result = await self.db.execute(status_nao_iniciado_query)
+            status_nao_iniciado_id = status_result.scalar_one_or_none()
+            
+            # Criar alocações para projetos sem alocação
+            for projeto_id in projetos_sem_alocacao:
+                nova_alocacao = AlocacaoRecursoProjeto(
+                    recurso_id=recurso_id,
+                    projeto_id=projeto_id,
+                    data_inicio_alocacao=date.today(),
+                    status_alocacao_id=status_nao_iniciado_id
+                )
+                self.db.add(nova_alocacao)
+            
+            await self.db.commit()
+            
+            # Atualizar o mapa de alocações
+            alocacoes_query = (
+                select(ARP.projeto_id, func.max(ARP.id).label("alocacao_id"))
+                .where(ARP.recurso_id == recurso_id)
+                .group_by(ARP.projeto_id)
+            )
+            
+            alocacoes_result = await self.db.execute(alocacoes_query)
+            alocacoes_map = {row.projeto_id: row.alocacao_id for row in alocacoes_result}
+
         for row in rows:
             projeto_id = row.projeto_id
             if projeto_id not in projetos_map:
+                # Usar o ID da alocação do mapa se disponível, ou o da query, ou o filtro
+                alocacao_id_efetivo = alocacao_id or alocacoes_map.get(projeto_id) or row.alocacao_id
+                
                 projetos_map[projeto_id] = {
                     "id": projeto_id,
                     "nome": row.projeto_nome,
                     "status": row.status_nome,
-                    "alocacao_id": row.alocacao_id or alocacao_id, # Usa o ID da query ou o filtro
+                    "alocacao_id": alocacao_id_efetivo,
                     "acao": row.acao,
                     "esforco_estimado": None,  # AINDA PRECISA IMPLEMENTAR
                     "esforco_planejado": 0,
