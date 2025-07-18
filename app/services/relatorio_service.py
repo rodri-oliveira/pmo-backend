@@ -333,16 +333,19 @@ class RelatorioService:
                 unified_query.c.projeto_id,
                 P.nome.label("projeto_nome"),
                 P.codigo_empresa,
-                S.nome.label("status_nome"),
+                func.coalesce(S.nome, literal_column("''")).label("status_nome"),  # Mantemos o nome do status, mas usaremos o status da alocação
                 acao_subquery.c.acao,
                 func.max(unified_query.c.alocacao_id).label("alocacao_id"), # Agrega o ID da alocação
                 unified_query.c.ano,
                 unified_query.c.mes,
                 func.sum(unified_query.c.planejado).label("total_planejado"),
                 func.sum(unified_query.c.realizado).label("total_realizado"),
+                # Adicionamos o status_alocacao_id para poder filtrar por ele
+                func.max(unified_query.c.status_alocacao_id).label("status_alocacao_id"),
             )
             .join(P, P.id == unified_query.c.projeto_id)
-            .join(S, S.id == P.status_projeto_id, isouter=True)
+            # Alteramos o join para usar o status da alocação em vez do status do projeto
+            .join(S, S.id == unified_query.c.status_alocacao_id, isouter=True)
             .join(
                 acao_subquery,
                 acao_subquery.c.projeto_id == unified_query.c.projeto_id,
@@ -368,7 +371,8 @@ class RelatorioService:
         )
 
         if status_id:
-            main_q = main_q.where(S.id == status_id)
+            # Alteramos para filtrar pelo status da alocação
+            main_q = main_q.where(unified_query.c.status_alocacao_id == status_id)
 
         result = await self.db.execute(main_q)
         rows = result.fetchall()
@@ -446,7 +450,7 @@ class RelatorioService:
                     "status": row.status_nome,
                     "alocacao_id": alocacao_id_efetivo,
                     "acao": row.acao,
-                    "esforco_estimado": None,  # AINDA PRECISA IMPLEMENTAR
+                    "esforco_estimado": None,  # Será atualizado abaixo
                     "esforco_planejado": 0,
                     "meses": {
                         m: {"planejado": 0, "realizado": 0} for m in meses_intervalo
@@ -462,6 +466,7 @@ class RelatorioService:
                     row.total_realizado or 0
                 )
 
+        # Calcula esforço total planejado
         for p_id, projeto in projetos_map.items():
             # Garante inclusão da observação (ação) agregada
             projeto["acao"] = acoes_map.get(p_id, projeto.get("acao") or "")
@@ -469,7 +474,19 @@ class RelatorioService:
             projeto["esforco_planejado"] = sum(
                 m["planejado"] for m in projeto["meses"].values()
             )
-
+        
+        # Buscar o esforço estimado para cada alocação
+        alocacoes_ids = [projeto["alocacao_id"] for projeto in projetos_map.values() if projeto["alocacao_id"]]
+        if alocacoes_ids:
+            esforco_query = select(ARP.id, ARP.esforco_estimado).where(ARP.id.in_(alocacoes_ids))
+            esforco_result = await self.db.execute(esforco_query)
+            esforco_map = {row.id: float(row.esforco_estimado) if row.esforco_estimado is not None else None for row in esforco_result}
+            
+            # Atualizar o esforço estimado em cada projeto
+            for projeto in projetos_map.values():
+                if projeto["alocacao_id"] in esforco_map:
+                    projeto["esforco_estimado"] = esforco_map[projeto["alocacao_id"]]
+        
         # 5. Montar linhas de resumo
         resumo_gap = {"label": "GAP", "meses": {m: {"planejado": 0, "realizado": None} for m in meses_intervalo}}
         resumo_disponivel = {"label": "Horas Disponíveis", "meses": {m: {"planejado": 0, "realizado": None} for m in meses_intervalo}}

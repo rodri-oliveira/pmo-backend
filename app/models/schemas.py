@@ -253,7 +253,7 @@ class PlanejadoVsRealizadoRequest(BaseSchema):
     Somente recurso_id é obrigatório; demais filtros são opcionais.
     """
     recurso_id: int
-    status_id: Optional[int] = None  # ID do status do projeto
+    status_id: Optional[int] = None  # ID do status da alocação
     alocacao_id: Optional[int] = None  # Opcional: filtrar por alocação específica
     mes_inicio: Optional[str] = None  # YYYY-MM
     mes_fim: Optional[str] = None  # YYYY-MM
