@@ -265,6 +265,7 @@ class RelatorioService:
             .alias("latest_alloc_subquery")
         )
 
+        # Modificar a consulta planned_q para incluir o status_alocacao_id
         planned_q = (
             select(
                 ARP.projeto_id,
@@ -273,6 +274,7 @@ class RelatorioService:
                 HP.mes,
                 HP.horas_planejadas.label("planejado"),
                 literal_column("0").cast(Float).label("realizado"),
+                ARP.status_alocacao_id,  # Adicionar status_alocacao_id
             )
             .join(ARP, ARP.id == HP.alocacao_id)
             .where(ARP.recurso_id == recurso_id)
@@ -293,12 +295,12 @@ class RelatorioService:
         realized_q = (
             select(
                 AP.projeto_id,
-                # Usar uma abordagem diferente para obter a alocação
-                literal_column("NULL").cast(Integer).label("alocacao_id"), # Voltamos para a versão original
+                literal_column("NULL").cast(Integer).label("alocacao_id"),
                 extract("year", AP.data_apontamento).label("ano"),
                 extract("month", AP.data_apontamento).label("mes"),
                 literal_column("0").cast(Float).label("planejado"),
                 func.sum(AP.horas_apontadas).label("realizado"),
+                literal_column("NULL").cast(Integer).label("status_alocacao_id")  # Add placeholder for status_alocacao_id
             )
             .where(AP.recurso_id == recurso_id)
             .group_by(
