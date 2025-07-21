@@ -145,7 +145,7 @@ class JiraClient:
         endpoint = f"/issue/{issue_id_or_key}/worklog"
         return self._make_request("GET", endpoint)
     
-    def _make_request(self, method: str, endpoint: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _make_request(self, method: str, endpoint: str, data: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Realiza uma requisição para a API do Jira.
 
@@ -153,6 +153,7 @@ class JiraClient:
             method (str): Método HTTP (GET, POST, PUT, DELETE)
             endpoint (str): Endpoint da API (ex: /rest/api/3/issue)
             data (Optional[Dict[str, Any]], optional): Dados para enviar no corpo da requisição. Defaults to None.
+            params (Optional[Dict[str, Any]], optional): Parâmetros de query para a URL. Defaults to None.
 
         Returns:
             Dict[str, Any]: Resposta da API em formato JSON
@@ -186,13 +187,13 @@ class JiraClient:
             print(f"[JIRA_REQUEST_HEADERS] {headers}")
             
             if method == "GET":
-                response = requests.get(url, headers=headers)
+                response = requests.get(url, headers=headers, params=params)
             elif method == "POST":
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=data, params=params)
             elif method == "PUT":
-                response = requests.put(url, headers=headers, json=data)
+                response = requests.put(url, headers=headers, json=data, params=params)
             elif method == "DELETE":
-                response = requests.delete(url, headers=headers)
+                response = requests.delete(url, headers=headers, params=params)
             else:
                 raise ValueError(f"Método HTTP não suportado: {method}")
                 

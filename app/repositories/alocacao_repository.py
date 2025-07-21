@@ -67,40 +67,71 @@ class AlocacaoRepository(BaseRepository[AlocacaoRecursoProjeto]):
     
     async def get_by_recurso_projeto_data(self, recurso_id: int, projeto_id: int, data_inicio: date) -> Optional[AlocacaoRecursoProjeto]:
         """Obtém alocação pelo recurso, projeto e data de início."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"[GET_BY_RECURSO_PROJETO_DATA] Buscando: recurso_id={recurso_id}, projeto_id={projeto_id}, data_inicio={data_inicio}")
+        
         query = select(AlocacaoRecursoProjeto).filter(
             AlocacaoRecursoProjeto.recurso_id == recurso_id,
             AlocacaoRecursoProjeto.projeto_id == projeto_id,
             AlocacaoRecursoProjeto.data_inicio_alocacao == data_inicio
         )
         result = await self.db.execute(query)
-        return result.scalars().first()
+        alocacao = result.scalars().first()
+        
+        if alocacao:
+            logger.info(f"[GET_BY_RECURSO_PROJETO_DATA] Encontrada alocação ID {alocacao.id}: recurso={alocacao.recurso_id}, projeto={alocacao.projeto_id}, data={alocacao.data_inicio_alocacao}")
+        else:
+            logger.info(f"[GET_BY_RECURSO_PROJETO_DATA] Nenhuma alocação encontrada")
+            
+        return alocacao
     
     async def find_overlapping_allocations(
         self, recurso_id: int, data_inicio: date, data_fim: date, exclude_alocacao_id: Optional[int] = None
     ) -> List[AlocacaoRecursoProjeto]:
         """Encontra alocações para um recurso que se sobrepõem a um determinado período."""
-        # Condição base: a nova alocação começa antes que a existente termine,
-        # E a nova alocação termina depois que a existente começa.
-        # Isso cobre todos os casos de sobreposição.
-        query = select(self.model).filter(
-            self.model.recurso_id == recurso_id,
-            # A nova alocação deve começar antes do fim da existente.
-            # Se a existente não tem data de fim (NULL), ela é contínua.
-            self.model.data_inicio_alocacao <= data_fim,
-            # A nova alocação deve terminar após o início da existente.
-            or_(
-                self.model.data_fim_alocacao == None,
-                self.model.data_fim_alocacao >= data_inicio
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"[FIND_OVERLAPPING] Iniciando busca por conflitos - recurso_id: {recurso_id}, periodo: {data_inicio} - {data_fim}")
+        logger.info(f"[FIND_OVERLAPPING] Buscando alocações que se sobrepõem ao período solicitado")
+        logger.info(f"[FIND_OVERLAPPING] Lógica: nova_inicio <= existente_fim E nova_fim >= existente_inicio")
+        
+        try:
+            # Carregar explicitamente o relacionamento projeto para evitar lazy loading
+            # Lógica correta de sobreposição: duas alocações se sobrepõem se:
+            # - A nova alocação começa antes que a existente termine E
+            # - A nova alocação termina depois que a existente comece
+            query = select(self.model).options(
+                joinedload(self.model.projeto)
+            ).filter(
+                self.model.recurso_id == recurso_id,
+                # Condição 1: A nova começa antes que a existente termine (ou a existente não tem fim)
+                or_(
+                    self.model.data_fim_alocacao == None,  # Alocação existente sem fim
+                    data_inicio <= self.model.data_fim_alocacao  # Nova começa antes do fim da existente
+                ),
+                # Condição 2: A nova termina depois que a existente comece
+                data_fim >= self.model.data_inicio_alocacao
             )
-        )
 
-        # Se estivermos atualizando uma alocação, devemos excluí-la da verificação
-        # para não conflitar com ela mesma.
-        if exclude_alocacao_id is not None:
-            query = query.filter(self.model.id != exclude_alocacao_id)
+            if exclude_alocacao_id is not None:
+                query = query.filter(self.model.id != exclude_alocacao_id)
+                logger.info(f"[FIND_OVERLAPPING] Excluindo alocação ID: {exclude_alocacao_id}")
 
-        result = await self.db.execute(query)
-        return result.scalars().all()
+            logger.info(f"[FIND_OVERLAPPING] Executando query...")
+            result = await self.db.execute(query)
+            logger.info(f"[FIND_OVERLAPPING] Query executada, obtendo resultados...")
+            conflitos = result.scalars().all()
+            logger.info(f"[FIND_OVERLAPPING] Encontrados {len(conflitos)} conflitos")
+            
+            return conflitos
+            
+        except Exception as e:
+            logger.error(f"[FIND_OVERLAPPING] ERRO: {type(e).__name__}: {str(e)}")
+            logger.error(f"[FIND_OVERLAPPING] Stack trace:", exc_info=True)
+            raise
     
     async def list_by_recurso(self, recurso_id: int) -> List[AlocacaoRecursoProjeto]:
         """Lista alocações de um recurso."""

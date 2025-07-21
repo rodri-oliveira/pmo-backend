@@ -85,62 +85,91 @@ class AlocacaoService:
         Raises:
             ValueError: Se o recurso ou projeto não existir, ou se houver conflito de datas
         """
-        # Verificar se o recurso existe
-        recurso = await self.recurso_repository.get(alocacao_data["recurso_id"])
-        if not recurso:
-            raise ValueError(f"Recurso com ID {alocacao_data['recurso_id']} não encontrado")
+        import logging
+        logger = logging.getLogger(__name__)
         
-        # Verificar se o projeto existe
-        projeto = await self.projeto_repository.get(alocacao_data["projeto_id"])
-        if not projeto:
-            raise ValueError(f"Projeto com ID {alocacao_data['projeto_id']} não encontrado")
+        logger.info(f"[ALOCACAO_CREATE] Iniciando criação de alocação: {alocacao_data}")
+        logger.info(f"[ALOCACAO_CREATE] REGRA: Recurso pode estar em vários projetos, apenas não pode haver alocações idênticas")
         
-        # Verificar sobreposição de alocações para o mesmo recurso
-        data_inicio = alocacao_data["data_inicio_alocacao"]
-        # Se a data fim não for fornecida, a alocação é considerada contínua.
-        # Para a verificação, podemos usar uma data muito no futuro.
-        data_fim = alocacao_data.get("data_fim_alocacao")
+        try:
+            # Verificar se o recurso existe
+            logger.info(f"[ALOCACAO_CREATE] Verificando recurso ID: {alocacao_data['recurso_id']}")
+            recurso = await self.recurso_repository.get(alocacao_data["recurso_id"])
+            if not recurso:
+                raise ValueError(f"Recurso com ID {alocacao_data['recurso_id']} não encontrado")
+            logger.info(f"[ALOCACAO_CREATE] Recurso encontrado: {recurso.id}")
+            
+            # Verificar se o projeto existe
+            logger.info(f"[ALOCACAO_CREATE] Verificando projeto ID: {alocacao_data['projeto_id']}")
+            projeto = await self.projeto_repository.get(alocacao_data["projeto_id"])
+            if not projeto:
+                raise ValueError(f"Projeto com ID {alocacao_data['projeto_id']} não encontrado")
+            logger.info(f"[ALOCACAO_CREATE] Projeto encontrado: {projeto.id}")
+            
+            # Verificar se já existe uma alocação idêntica (mesmo recurso + mesmo projeto + mesma data de início)
+            data_inicio = alocacao_data["data_inicio_alocacao"]
+            logger.info(f"[ALOCACAO_CREATE] Verificando se já existe alocação idêntica: recurso {alocacao_data['recurso_id']}, projeto {alocacao_data['projeto_id']}, data {data_inicio}")
 
-        # A lógica de verificação de sobreposição agora é mais robusta.
-        # Não verificamos mais apenas por projeto, mas sim se o RECURSO está ocupado.
-        conflitos = await self.repository.find_overlapping_allocations(
-            recurso_id=alocacao_data["recurso_id"],
-            data_inicio=data_inicio,
-            data_fim=data_fim if data_fim else date(9999, 12, 31) # Usa data máxima se não houver data de fim
-        )
-
-        if conflitos:
-            # Detalha os projetos conflitantes na mensagem de erro
-            nomes_projetos = [c.projeto.nome for c in conflitos if c.projeto]
-            raise ValueError(f"O recurso já está alocado no(s) projeto(s): {', '.join(nomes_projetos)} durante o período solicitado.")
-
-        # Preencher equipe_id automaticamente (snapshot do momento)
-        alocacao_data = dict(alocacao_data)
-        # Use apenas o campo direto, nunca relacionamento
-        equipe_id = getattr(recurso, "equipe_principal_id", None)
-        alocacao_data["equipe_id"] = equipe_id
-        # Criar a alocação
-        alocacao = await self.repository.create(alocacao_data)
-
-        # Buscar a alocacao novamente, agora com os relacionamentos carregados
-        from sqlalchemy.future import select
-        from sqlalchemy.orm import joinedload
-        from app.db.orm_models import AlocacaoRecursoProjeto, Equipe
-
-        query = (
-            select(AlocacaoRecursoProjeto)
-            .options(
-                joinedload(AlocacaoRecursoProjeto.equipe).joinedload(Equipe.secao),
-                joinedload(AlocacaoRecursoProjeto.recurso),
-                joinedload(AlocacaoRecursoProjeto.projeto),
-                joinedload(AlocacaoRecursoProjeto.status_alocacao)  # Adicionado
+            alocacao_existente = await self.repository.get_by_recurso_projeto_data(
+                recurso_id=alocacao_data["recurso_id"],
+                projeto_id=alocacao_data["projeto_id"],
+                data_inicio=data_inicio
             )
-            .filter(AlocacaoRecursoProjeto.id == alocacao.id)
-        )
-        result = await self.db.execute(query)
-        alocacao_completa = result.scalars().first()
+            if alocacao_existente:
+                logger.info(f"[ALOCACAO_CREATE] Alocação existente encontrada: ID={alocacao_existente.id}, recurso={alocacao_existente.recurso_id}, projeto={alocacao_existente.projeto_id}, data={alocacao_existente.data_inicio_alocacao}")
+            else:
+                logger.info(f"[ALOCACAO_CREATE] Nenhuma alocação existente encontrada")
 
-        return self._format_response(alocacao_completa)
+            if alocacao_existente:
+                # Mostrar mensagem de erro simples com IDs para evitar inconsistências
+                logger.info(f"[ALOCACAO_CREATE] Alocação duplicada detectada - bloqueando criação")
+                raise ValueError(f"Já existe uma alocação idêntica: recurso {alocacao_data['recurso_id']}, projeto {alocacao_existente.projeto_id}, data {data_inicio}. Alocação existente ID: {alocacao_existente.id}.")
+
+            # Preencher equipe_id automaticamente
+            alocacao_data = dict(alocacao_data)
+            equipe_id = getattr(recurso, "equipe_principal_id", None)
+            alocacao_data["equipe_id"] = equipe_id
+            logger.info(f"[ALOCACAO_CREATE] Equipe ID definida: {equipe_id}")
+            
+            # Criar a alocação
+            logger.info(f"[ALOCACAO_CREATE] Chamando repository.create...")
+            alocacao = await self.repository.create(alocacao_data)
+            logger.info(f"[ALOCACAO_CREATE] Alocação criada com ID: {alocacao.id}")
+
+            # Usar uma nova sessão isolada para buscar o objeto completo
+            logger.info(f"[ALOCACAO_CREATE] Iniciando busca com nova sessão...")
+            from sqlalchemy import select
+            from sqlalchemy.orm import joinedload
+            from app.db.orm_models import AlocacaoRecursoProjeto, Equipe
+            from app.db.session import AsyncSessionLocal
+
+            async with AsyncSessionLocal() as new_session:
+                logger.info(f"[ALOCACAO_CREATE] Nova sessão criada, montando query...")
+                query = (
+                    select(AlocacaoRecursoProjeto)
+                    .options(
+                        joinedload(AlocacaoRecursoProjeto.equipe).joinedload(Equipe.secao),
+                        joinedload(AlocacaoRecursoProjeto.recurso),
+                        joinedload(AlocacaoRecursoProjeto.projeto),
+                        joinedload(AlocacaoRecursoProjeto.status_alocacao)
+                    )
+                    .filter(AlocacaoRecursoProjeto.id == alocacao.id)
+                )
+                logger.info(f"[ALOCACAO_CREATE] Executando query na nova sessão...")
+                result = await new_session.execute(query)
+                logger.info(f"[ALOCACAO_CREATE] Query executada, obtendo resultado...")
+                alocacao_completa = result.scalars().first()
+                logger.info(f"[ALOCACAO_CREATE] Alocação completa obtida: {alocacao_completa.id if alocacao_completa else 'None'}")
+
+            logger.info(f"[ALOCACAO_CREATE] Formatando resposta...")
+            response = self._format_response(alocacao_completa)
+            logger.info(f"[ALOCACAO_CREATE] Resposta formatada com sucesso")
+            return response
+            
+        except Exception as e:
+            logger.error(f"[ALOCACAO_CREATE] ERRO: {type(e).__name__}: {str(e)}")
+            logger.error(f"[ALOCACAO_CREATE] Stack trace:", exc_info=True)
+            raise
     
     async def get(self, alocacao_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -152,7 +181,7 @@ class AlocacaoService:
         Returns:
             Dict: Dados da alocação, ou None se não encontrada
         """
-        from sqlalchemy.future import select
+        from sqlalchemy import select
         from sqlalchemy.orm import joinedload
         from app.db.orm_models import AlocacaoRecursoProjeto, Equipe
 
@@ -271,7 +300,7 @@ class AlocacaoService:
         alocacao_atualizada = await self.repository.update(alocacao_id, alocacao_data)
 
         # Buscar novamente com relacionamentos carregados
-        from sqlalchemy.future import select
+        from sqlalchemy import select
         from sqlalchemy.orm import joinedload
         from app.db.orm_models import AlocacaoRecursoProjeto, Equipe
 
