@@ -13,16 +13,7 @@ class ProjetoService:
         self.status_repository = StatusProjetoRepository(db)
     
     def create(self, projeto_create: ProjetoCreateSchema):
-        novo_projeto = Projeto(
-            nome=projeto_create.nome,
-            codigo_empresa=projeto_create.codigo_empresa,
-            descricao=projeto_create.descricao,
-            jira_project_key=projeto_create.jira_project_key,
-            status_projeto_id=projeto_create.status_projeto_id,
-            data_inicio_prevista=projeto_create.data_inicio_prevista,
-            data_fim_prevista=projeto_create.data_fim_prevista,
-            ativo=projeto_create.ativo,
-        )
+        novo_projeto = Projeto(**projeto_create.dict())
         self.db.add(novo_projeto)
         self.db.commit()
         self.db.refresh(novo_projeto)

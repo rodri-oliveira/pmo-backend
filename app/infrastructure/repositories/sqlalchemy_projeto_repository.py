@@ -52,9 +52,10 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             return DomainProjeto.model_validate(self._to_dict(projeto_sql))
         return None
 
-    async def create(self, projeto_data: dict) -> DomainProjeto:
+    async def create(self, projeto_data: ProjetoCreateDTO) -> DomainProjeto:
         try:
-            novo_projeto_sql = Projeto(**projeto_data)
+            projeto_dict = projeto_data.dict()  # Converte para dicionário
+            novo_projeto_sql = Projeto(**projeto_dict)
             self.db_session.add(novo_projeto_sql)
             await self.db_session.flush() # Garante que o ID seja gerado sem commitar a transação
             await self.db_session.refresh(novo_projeto_sql)
