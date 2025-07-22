@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from sqlalchemy import select, update, delete, text
+from sqlalchemy import select, update, delete, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.orm_models import HorasPlanejadas, AlocacaoRecursoProjeto
 from app.repositories.base_repository import BaseRepository
@@ -64,8 +64,49 @@ class PlanejamentoHorasRepository(BaseRepository):
             query = query.where(HorasPlanejadas.ano == ano)
         result = await self.db.execute(query)
         orm_objects = result.scalars().all()
-        return [self._to_dict(obj) for obj in orm_objects]
+        return [obj.to_dict() for obj in orm_objects]
     
+    async def list_all(self, skip: int = 0, limit: int = 100, alocacao_id: Optional[int] = None, 
+                       ano: Optional[int] = None, mes: Optional[int] = None) -> tuple[List[Dict[str, Any]], int]:
+        """Lista todas as horas planejadas agrupadas por alocacao_id com horas por mês."""
+        # Query base
+        query = select(HorasPlanejadas)
+        
+        # Aplicar filtros se especificados
+        if alocacao_id is not None:
+            query = query.where(HorasPlanejadas.alocacao_id == alocacao_id)
+        if ano is not None:
+            query = query.where(HorasPlanejadas.ano == ano)
+        if mes is not None:
+            query = query.where(HorasPlanejadas.mes == mes)
+
+        result = await self.db.execute(query)
+        orm_objects = result.scalars().all()
+        
+        # Agrupar por alocacao_id
+        alocacoes_dict = {}
+        for obj in orm_objects:
+            alocacao_id = obj.alocacao_id
+            if alocacao_id not in alocacoes_dict:
+                alocacoes_dict[alocacao_id] = {
+                    "alocacao_id": alocacao_id,
+                    "horas_planejadas_por_mes": []
+                }
+            # Garantir que todos os campos estão presentes
+            alocacoes_dict[alocacao_id]["horas_planejadas_por_mes"].append({
+                "ano": obj.ano,
+                "mes": obj.mes,
+                "horas_planejadas": obj.horas_planejadas,
+                "data_criacao": obj.data_criacao,
+                "data_atualizacao": obj.data_atualizacao
+            })
+
+        # Converter para lista e aplicar paginação
+        items = list(alocacoes_dict.values())[skip:skip + limit]
+        total = len(alocacoes_dict)
+        
+        return items, total
+
     async def list_by_recurso_periodo(self, recurso_id: int, ano: int, mes_inicio: int = 1, mes_fim: int = 12) -> List[Dict[str, Any]]:
         """Lista planejamentos de um recurso em um período."""
         # Usar SQL nativo para obter os dados mais facilmente

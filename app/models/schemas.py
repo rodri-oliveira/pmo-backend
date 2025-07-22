@@ -310,6 +310,46 @@ class AlocacaoProjetoResponse(BaseModel):
     detalhe_recursos: List[DetalheRecursoProjeto]
 
 
+# Schemas para Horas Planejadas (CRUD)
+
+class HorasPlanejadasBase(BaseSchema):
+    alocacao_id: int
+    ano: int
+    mes: int
+    horas_planejadas: Decimal
+
+class HorasPlanejadasCreate(HorasPlanejadasBase):
+    pass
+
+class HorasPlanejadasUpdate(BaseSchema):
+    horas_planejadas: Optional[Decimal] = None
+
+class HorasPlanejadasResponse(HorasPlanejadasBase):
+    id: int
+    data_criacao: datetime
+    data_atualizacao: datetime
+
+class HorasPlanejadasListResponse(BaseSchema):
+    items: List[HorasPlanejadasResponse]
+    total: int
+
+# --- Schemas para Resposta Agrupada ---
+class HorasPlanejadasPorMesResponse(BaseSchema):
+    ano: int
+    mes: int
+    horas_planejadas: Decimal
+    data_criacao: datetime
+    data_atualizacao: datetime
+
+class HorasPlanejadasAgrupadoResponse(BaseSchema):
+    alocacao_id: int
+    horas_planejadas_por_mes: List[HorasPlanejadasPorMesResponse]
+
+class HorasPlanejadasAgrupadoListResponse(BaseSchema):
+    items: List[HorasPlanejadasAgrupadoResponse]
+    total: int
+
+
 # Schemas para o endpoint de Horas Disponíveis por Recurso
 ANO_MES_REGEX = r"^\d{4}-(0[1-9]|1[0-2])$"
 

@@ -136,6 +136,19 @@ class PlanejamentoHorasService:
             logger.error(f"[list_by_alocacao] Erro inesperado: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar planejamentos por alocação: {str(e)}")
     
+    async def list_all(self, skip: int = 0, limit: int = 100, alocacao_id: Optional[int] = None, 
+                      ano: Optional[int] = None, mes: Optional[int] = None) -> tuple[List[Dict[str, Any]], int]:
+        """
+        Lista todas as horas planejadas com paginação e filtros opcionais.
+        """
+        try:
+            items, total = await self.repository.list_all(skip, limit, alocacao_id, ano, mes)
+            logger.info(f"[list_all] Retornando {len(items)} de {total} registros")
+            return items, total
+        except Exception as e:
+            logger.error(f"[list_all] Erro inesperado: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Erro inesperado ao listar planejamentos: {str(e)}")
+    
     async def list_by_recurso_periodo(self, recurso_id: int, ano: int, mes_inicio: int = 1, mes_fim: int = 12) -> List[Dict[str, Any]]:
         """
         Lista planejamentos de um recurso em um período.
