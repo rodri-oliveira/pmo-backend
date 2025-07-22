@@ -239,6 +239,15 @@ class RelatorioService:
         mes_inicio: Optional[str] = None,
         mes_fim: Optional[str] = None,
     ) -> Dict[str, Any]:
+        # 1. Determinar o intervalo de meses se fornecido
+        dt_inicio = dt_fim = None
+        meses_intervalo = []
+        
+        if mes_inicio or mes_fim:
+            dt_inicio, dt_fim, meses_intervalo = await self._determinar_intervalo_datas(
+                recurso_id, mes_inicio, mes_fim
+            )
+
         # Query SIMPLIFICADA para retornar TODAS as alocações do recurso
         HP, ARP, AP, P, S = HorasPlanejadas, AlocacaoRecursoProjeto, Apontamento, Projeto, StatusProjeto
 
@@ -269,6 +278,21 @@ class RelatorioService:
         if status_id:
             main_q = main_q.where(ARP.status_alocacao_id == status_id)
 
+        # Aplicar filtro de data APENAS se fornecido
+        if dt_inicio and dt_fim:
+            main_q = main_q.where(
+                or_(
+                    ARP.data_inicio_alocacao.between(dt_inicio, dt_fim),
+                    and_(
+                        ARP.data_inicio_alocacao <= dt_fim,
+                        or_(
+                            ARP.data_fim_alocacao.is_(None),
+                            ARP.data_fim_alocacao >= dt_inicio
+                        )
+                    )
+                )
+            )
+
         result = await self.db.execute(main_q)
         rows = result.fetchall()
 
@@ -282,6 +306,17 @@ class RelatorioService:
             # Chave única por alocação
             projeto_key = f"alocacao_{alocacao_id}"
             
+            # Determinar meses para exibição
+            if meses_intervalo:
+                meses_dict = {mes: {"planejado": 0, "realizado": 0} for mes in meses_intervalo}
+            else:
+                meses_dict = {
+                    "2025-07": {
+                        "planejado": row.esforco_planejado or 0,
+                        "realizado": 0
+                    }
+                }
+            
             projetos_map[projeto_key] = {
                 "id": projeto_id,
                 "nome": row.projeto_nome,
@@ -290,35 +325,38 @@ class RelatorioService:
                 "acao": row.acao,
                 "esforco_estimado": row.codigo_empresa or 0,
                 "esforco_planejado": row.esforco_planejado or 0,
-                "meses": {
-                    "2025-07": {
-                        "planejado": row.esforco_planejado or 0,
-                        "realizado": 0
-                    }
-                }
+                "meses": meses_dict
             }
 
         # 5. Calcular totais e disponibilidade (simplificado)
         total_planejado = sum(p["esforco_planejado"] for p in projetos_map.values())
+        
+        # Determinar meses para linhas de resumo
+        if meses_intervalo:
+            meses_resumo = {mes: {"planejado": 0, "realizado": None} for mes in meses_intervalo}
+            meses_total = {mes: {"planejado": total_planejado, "realizado": 0} for mes in meses_intervalo}
+        else:
+            meses_resumo = {"2025-07": {"planejado": 0, "realizado": None}}
+            meses_total = {"2025-07": {"planejado": total_planejado, "realizado": 0}}
         
         linhas_resumo = [
             {
                 "label": "GAP",
                 "esforco_planejado": 0,
                 "esforco_realizado": 0,
-                "meses": {"2025-07": {"planejado": 0, "realizado": None}}
+                "meses": meses_resumo
             },
             {
                 "label": "Horas Disponíveis", 
                 "esforco_planejado": 0,
                 "esforco_realizado": 0,
-                "meses": {"2025-07": {"planejado": 0, "realizado": None}}
+                "meses": meses_resumo
             },
             {
                 "label": "Total de esforço (hrs)",
                 "esforco_planejado": total_planejado,
                 "esforco_realizado": 0,
-                "meses": {"2025-07": {"planejado": total_planejado, "realizado": 0}}
+                "meses": meses_total
             }
         ]
 
@@ -481,10 +519,11 @@ class RelatorioService:
             )
             .where(HorasDisponiveisRH.recurso_id == request.recurso_id)
             .where(
-                func.to_date(HorasDisponiveisRH.ano.cast(String) + '-' + HorasDisponiveisRH.mes.cast(String), 'YYYY-MM')
-                .between(start_date, end_date)
+                func.to_date(
+                    HorasDisponiveisRH.ano.cast(String) + '-' + HorasDisponiveisRH.mes.cast(String), 
+                    'YYYY-MM'
+                ).between(start_date, end_date)
             )
-            .alias("rh_query")
         )
 
         # Query principal para buscar os meses do período na dim_tempo
