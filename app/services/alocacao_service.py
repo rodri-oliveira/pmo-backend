@@ -89,7 +89,7 @@ class AlocacaoService:
         logger = logging.getLogger(__name__)
         
         logger.info(f"[ALOCACAO_CREATE] Iniciando criação de alocação: {alocacao_data}")
-        logger.info(f"[ALOCACAO_CREATE] REGRA: Recurso pode estar em vários projetos, apenas não pode haver alocações idênticas")
+        logger.info(f"[ALOCACAO_CREATE] REGRA: Recurso pode ter múltiplas alocações, inclusive na mesma data (regra WEG)")
         
         try:
             # Verificar se o recurso existe
@@ -106,24 +106,8 @@ class AlocacaoService:
                 raise ValueError(f"Projeto com ID {alocacao_data['projeto_id']} não encontrado")
             logger.info(f"[ALOCACAO_CREATE] Projeto encontrado: {projeto.id}")
             
-            # Verificar se já existe uma alocação idêntica (mesmo recurso + mesmo projeto + mesma data de início)
-            data_inicio = alocacao_data["data_inicio_alocacao"]
-            logger.info(f"[ALOCACAO_CREATE] Verificando se já existe alocação idêntica: recurso {alocacao_data['recurso_id']}, projeto {alocacao_data['projeto_id']}, data {data_inicio}")
-
-            alocacao_existente = await self.repository.get_by_recurso_projeto_data(
-                recurso_id=alocacao_data["recurso_id"],
-                projeto_id=alocacao_data["projeto_id"],
-                data_inicio=data_inicio
-            )
-            if alocacao_existente:
-                logger.info(f"[ALOCACAO_CREATE] Alocação existente encontrada: ID={alocacao_existente.id}, recurso={alocacao_existente.recurso_id}, projeto={alocacao_existente.projeto_id}, data={alocacao_existente.data_inicio_alocacao}")
-            else:
-                logger.info(f"[ALOCACAO_CREATE] Nenhuma alocação existente encontrada")
-
-            if alocacao_existente:
-                # Mostrar mensagem de erro simples com IDs para evitar inconsistências
-                logger.info(f"[ALOCACAO_CREATE] Alocação duplicada detectada - bloqueando criação")
-                raise ValueError(f"Já existe uma alocação idêntica: recurso {alocacao_data['recurso_id']}, projeto {alocacao_existente.projeto_id}, data {data_inicio}. Alocação existente ID: {alocacao_existente.id}.")
+            # REMOVIDO: Validação de alocação duplicada - WEG permite múltiplas alocações na mesma data
+            logger.info(f"[ALOCACAO_CREATE] Permitindo múltiplas alocações para o mesmo recurso na mesma data (regra WEG)")
 
             # Preencher equipe_id automaticamente
             alocacao_data = dict(alocacao_data)
@@ -266,10 +250,19 @@ class AlocacaoService:
         Raises:
             ValueError: Se a alocação não existir ou se houver conflito de datas
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"[ALOCACAO_UPDATE] Iniciando atualização da alocação ID: {alocacao_id}")
+        logger.info(f"[ALOCACAO_UPDATE] Dados para atualização: {alocacao_data}")
+        
         # Verificar se a alocação existe
         alocacao = await self.repository.get(alocacao_id)
         if not alocacao:
+            logger.warning(f"[ALOCACAO_UPDATE] Alocação com ID {alocacao_id} não encontrada")
             raise ValueError(f"Alocação com ID {alocacao_id} não encontrada")
+        
+        logger.info(f"[ALOCACAO_UPDATE] Alocação encontrada: recurso_id={alocacao.recurso_id}, projeto_id={alocacao.projeto_id}")
         
         # Se estiver atualizando o recurso, verificar se existe
         if "recurso_id" in alocacao_data and alocacao_data["recurso_id"] != alocacao.recurso_id:
@@ -297,7 +290,9 @@ class AlocacaoService:
                 raise ValueError(f"Já existe uma alocação para este recurso neste projeto com a mesma data de início")
 
         # Atualizar a alocação
+        logger.info(f"[ALOCACAO_UPDATE] Executando atualização no repositório...")
         alocacao_atualizada = await self.repository.update(alocacao_id, alocacao_data)
+        logger.info(f"[ALOCACAO_UPDATE] Alocação atualizada com sucesso no repositório")
 
         # Buscar novamente com relacionamentos carregados
         from sqlalchemy import select
@@ -317,7 +312,9 @@ class AlocacaoService:
         result = await self.db.execute(query)
         alocacao_completa = result.scalars().first()
 
-        return self._format_response(alocacao_completa)
+        response = self._format_response(alocacao_completa)
+        logger.info(f"[ALOCACAO_UPDATE] Atualização concluída com sucesso para alocação ID: {alocacao_id}")
+        return response
 
     async def delete(self, alocacao_id: int) -> None:
         """
@@ -329,13 +326,23 @@ class AlocacaoService:
         Raises:
             ValueError: Se a alocação não existir
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"[ALOCACAO_DELETE] Iniciando exclusão da alocação ID: {alocacao_id}")
+        
         # Verificar se a alocação existe
         alocacao = await self.repository.get(alocacao_id)
         if not alocacao:
+            logger.warning(f"[ALOCACAO_DELETE] Alocação com ID {alocacao_id} não encontrada")
             raise ValueError(f"Alocação com ID {alocacao_id} não encontrada")
         
+        logger.info(f"[ALOCACAO_DELETE] Alocação encontrada: recurso_id={alocacao.recurso_id}, projeto_id={alocacao.projeto_id}")
+        
         # Remover a alocação
+        logger.info(f"[ALOCACAO_DELETE] Executando exclusão no repositório...")
         await self.repository.delete(alocacao_id)
+        logger.info(f"[ALOCACAO_DELETE] Alocação ID {alocacao_id} excluída com sucesso")
     
     def _format_response(self, alocacao: AlocacaoRecursoProjeto) -> Dict[str, Any]:
         """

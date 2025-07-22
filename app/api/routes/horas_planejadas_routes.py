@@ -111,6 +111,77 @@ async def list_horas_planejadas(
         
         # A estrutura retornada está de acordo com HorasPlanejadasAgrupadoResponse
         return HorasPlanejadasAgrupadoListResponse(total=total, items=items)
+    except Exception as e:
+        logger.error(f"[list_horas_planejadas] Erro inesperado: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor ao listar planejamentos"
+        )
+
+
+# ------------------- Update por chave composta -------------------
+@router.put(
+    "/{alocacao_id}/{ano}/{mes}",
+    response_model=HorasPlanejadasResponse,
+    summary="Atualizar Horas Planejadas (alocacao_id/ano/mes)"
+)
+async def update_horas_planejadas(
+    alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
+    ano: int = Path(..., ge=2020, le=2050, description="Ano"),
+    mes: int = Path(..., ge=1, le=12, description="Mês"),
+    payload: HorasPlanejadasUpdate = ...,
+    db: AsyncSession = Depends(get_async_db)
+):
+    try:
+        service = PlanejamentoHorasService(db)
+        result = await service.create_or_update_planejamento(
+            alocacao_id=alocacao_id,
+            ano=ano,
+            mes=mes,
+            horas_planejadas=payload.horas_planejadas
+        )
+        logger.info(
+            f"[update_horas_planejadas] Planejamento atualizado para alocacao_id={alocacao_id}, ano={ano}, mes={mes}"
+        )
+        return HorasPlanejadasResponse(
+            id=result["id"],
+            alocacao_id=alocacao_id,
+            ano=ano,
+            mes=mes,
+            horas_planejadas=payload.horas_planejadas,
+            data_criacao=result["data_criacao"].isoformat() if "data_criacao" in result else "",
+            data_atualizacao=result["data_atualizacao"].isoformat() if "data_atualizacao" in result else ""
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error(f"[update_horas_planejadas] Erro inesperado: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erro interno ao atualizar planejamento")
+
+
+# ------------------- Delete por chave composta -------------------
+@router.delete(
+    "/{alocacao_id}/{ano}/{mes}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Deletar Horas Planejadas (alocacao_id/ano/mes)"
+)
+async def delete_horas_planejadas(
+    alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
+    ano: int = Path(..., ge=2020, le=2050, description="Ano"),
+    mes: int = Path(..., ge=1, le=12, description="Mês"),
+    db: AsyncSession = Depends(get_async_db)
+):
+    try:
+        service = PlanejamentoHorasService(db)
+        await service.delete_planejamento_by_key(alocacao_id, ano, mes)
+        logger.info(
+            f"[delete_horas_planejadas] Planejamento removido: alocacao_id={alocacao_id}, ano={ano}, mes={mes}"
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error(f"[delete_horas_planejadas] Erro inesperado: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erro interno ao deletar planejamento")
         
     except Exception as e:
         logger.error(f"[list_horas_planejadas] Erro inesperado: {str(e)}")

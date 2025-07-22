@@ -107,6 +107,21 @@ class PlanejamentoHorasRepository(BaseRepository):
         
         return items, total
 
+    async def delete_by_alocacao_ano_mes(self, alocacao_id: int, ano: int, mes: int) -> bool:
+        """Exclui um planejamento específico pela chave composta. Retorna True se algo foi deletado."""
+        stmt = (
+            delete(HorasPlanejadas)
+            .where(
+                HorasPlanejadas.alocacao_id == alocacao_id,
+                HorasPlanejadas.ano == ano,
+                HorasPlanejadas.mes == mes
+            )
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        # rowcount > 0 indica deleção
+        return result.rowcount > 0
+
     async def list_by_recurso_periodo(self, recurso_id: int, ano: int, mes_inicio: int = 1, mes_fim: int = 12) -> List[Dict[str, Any]]:
         """Lista planejamentos de um recurso em um período."""
         # Usar SQL nativo para obter os dados mais facilmente

@@ -155,6 +155,13 @@ class PlanejamentoHorasService:
         """
         return await self.repository.list_by_recurso_periodo(recurso_id, ano, mes_inicio, mes_fim)
     
+    async def delete_planejamento_by_key(self, alocacao_id: int, ano: int, mes: int) -> None:
+        """Remove planejamento usando chave composta."""
+        deleted = await self.repository.delete_by_alocacao_ano_mes(alocacao_id, ano, mes)
+        if not deleted:
+            raise ValueError(
+                f"Planejamento não encontrado para alocacao_id={alocacao_id}, ano={ano}, mes={mes}")
+
     async def delete_planejamento(self, planejamento_id: int) -> None:
         """
         Remove um planejamento de horas.
