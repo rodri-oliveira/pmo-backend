@@ -240,6 +240,9 @@ async def get_alocacao(
             )
         
         return alocacao
+    except HTTPException:
+        # Re-lançar HTTPExceptions (como 404) sem modificação
+        raise
     except ValueError as e:
         # Tratamento específico para erros de validação
         logging.error(f"Erro de validação ao buscar alocação {alocacao_id}: {str(e)}")
@@ -348,21 +351,17 @@ async def delete_alocacao(
     try:
         service = AlocacaoService(db)
         
-        # Verificar se a alocação existe
-        alocacao = await service.get(alocacao_id)
-        if not alocacao:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Alocação com ID {alocacao_id} não encontrada"
-            )
-        
-        # Remover a alocação
+        # O serviço já faz a verificação se a alocação existe
+        # e lança ValueError se não encontrar
         await service.delete(alocacao_id)
         
     except ValueError as e:
-        # Tratamento específico para erros de validação
-        logging.error(f"Erro de validação ao excluir alocação {alocacao_id}: {str(e)}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        # Alocação não encontrada - retorna 404
+        logging.warning(f"Tentativa de excluir alocação inexistente {alocacao_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Alocação com ID {alocacao_id} não encontrada"
+        )
     except SQLAlchemyError as e:
         # Tratamento para erros de banco de dados
         logging.error(f"Erro de banco de dados ao excluir alocação {alocacao_id}: {str(e)}")
