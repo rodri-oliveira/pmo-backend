@@ -239,6 +239,13 @@ class RelatorioService:
         mes_inicio: Optional[str] = None,
         mes_fim: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Relatório Planejado vs Realizado 2 - Retorna TODAS as alocações por padrão.
+        
+        Filtros são aplicados apenas quando explicitamente enviados pelo frontend:
+        - status_id: filtra por status de alocação específico
+        - alocacao_id: filtra por alocação específica
+        - mes_inicio/mes_fim: define intervalo de datas
+        """
         # 1. Determinar o intervalo de meses
         dt_inicio, dt_fim, meses_intervalo = await self._determinar_intervalo_datas(
             recurso_id, mes_inicio, mes_fim
@@ -249,23 +256,10 @@ class RelatorioService:
             recurso_id, dt_inicio, dt_fim
         )
 
-        # 3. Construir a consulta unificada para horas planejadas e realizadas
-        # Se alocacao_id for informado, filtramos especificadamente por essa alocação
-        alocacao_id = alocacao_id or None
+        # 3. Construir consulta simplificada que retorna TODAS as alocações
         HP, ARP, AP, P, S = HorasPlanejadas, AlocacaoRecursoProjeto, Apontamento, Projeto, StatusProjeto
 
-        # -- Horas Planejadas --
-        # Subconsulta para encontrar a alocação mais recente por projeto para o recurso
-        latest_alloc_subquery = (
-            select(
-                func.max(ARP.id).label("latest_alocacao_id")
-            )
-            .where(ARP.recurso_id == recurso_id)
-            .group_by(ARP.projeto_id)
-            .alias("latest_alloc_subquery")
-        )
-
-        # Modificar a consulta planned_q para incluir o status_alocacao_id
+        # -- Query para Horas Planejadas (sem filtro de "alocação mais recente") --
         planned_q = (
             select(
                 ARP.projeto_id,
@@ -274,24 +268,20 @@ class RelatorioService:
                 HP.mes,
                 HP.horas_planejadas.label("planejado"),
                 literal_column("0").cast(Float).label("realizado"),
-                ARP.status_alocacao_id,  # Adicionar status_alocacao_id
+                ARP.status_alocacao_id,
             )
-            .join(ARP, ARP.id == HP.alocacao_id)
+            .select_from(ARP)
+            .outerjoin(HP, HP.alocacao_id == ARP.id)  # LEFT JOIN para incluir alocações sem horas planejadas
             .where(ARP.recurso_id == recurso_id)
         )
 
-        # Se um alocacao_id específico não for fornecido, usa a lógica da alocação mais recente
-        if not alocacao_id:
-            planned_q = planned_q.join(
-                latest_alloc_subquery,
-                ARP.id == latest_alloc_subquery.c.latest_alocacao_id
-            )
-
-        # -- Horas Realizadas --
-        # Aplicar filtro de alocação, se informado, tanto para planejado quanto para realizado
+        # Aplicar filtros opcionais para horas planejadas
         if alocacao_id:
             planned_q = planned_q.where(ARP.id == alocacao_id)
+        if status_id:
+            planned_q = planned_q.where(ARP.status_alocacao_id == status_id)
 
+        # -- Query para Horas Realizadas --
         realized_q = (
             select(
                 AP.projeto_id,
@@ -300,7 +290,7 @@ class RelatorioService:
                 extract("month", AP.data_apontamento).label("mes"),
                 literal_column("0").cast(Float).label("planejado"),
                 func.sum(AP.horas_apontadas).label("realizado"),
-                literal_column("NULL").cast(Integer).label("status_alocacao_id")  # Add placeholder for status_alocacao_id
+                literal_column("NULL").cast(Integer).label("status_alocacao_id")
             )
             .where(AP.recurso_id == recurso_id)
             .group_by(
@@ -309,12 +299,15 @@ class RelatorioService:
                 extract("month", AP.data_apontamento),
             )
         )
+
+        # Aplicar filtro de alocação específica para horas realizadas (se necessário)
         if alocacao_id:
             realized_q = realized_q.join(ARP, AP.projeto_id == ARP.projeto_id).where(ARP.id == alocacao_id)
 
+        # Unir as duas queries
         unified_query = union_all(planned_q, realized_q).alias("unified_query")
 
-        # Subconsulta para agregar as observações por projeto
+        # Subconsulta para observações (ações)
         acao_subquery = (
             select(
                 ARP.projeto_id,
@@ -326,30 +319,27 @@ class RelatorioService:
             .alias("acao_subquery")
         )
 
-        # Consulta principal agregada
-        # Consulta principal agregada
+        # Query principal simplificada
         main_q = (
             select(
                 unified_query.c.projeto_id,
                 P.nome.label("projeto_nome"),
                 P.codigo_empresa,
-                func.coalesce(S.nome, literal_column("''")).label("status_nome"),  # Mantemos o nome do status, mas usaremos o status da alocação
+                func.coalesce(S.nome, literal_column("''")).label("status_nome"),
                 acao_subquery.c.acao,
-                func.max(unified_query.c.alocacao_id).label("alocacao_id"), # Agrega o ID da alocação
+                func.max(unified_query.c.alocacao_id).label("alocacao_id"),
                 unified_query.c.ano,
                 unified_query.c.mes,
                 func.sum(unified_query.c.planejado).label("total_planejado"),
                 func.sum(unified_query.c.realizado).label("total_realizado"),
-                # Adicionamos o status_alocacao_id para poder filtrar por ele
                 func.max(unified_query.c.status_alocacao_id).label("status_alocacao_id"),
             )
+            .select_from(unified_query)
             .join(P, P.id == unified_query.c.projeto_id)
-            # Alteramos o join para usar o status da alocação em vez do status do projeto
-            .join(S, S.id == unified_query.c.status_alocacao_id, isouter=True)
-            .join(
+            .outerjoin(S, S.id == unified_query.c.status_alocacao_id)  # LEFT JOIN para não perder dados
+            .outerjoin(
                 acao_subquery,
                 acao_subquery.c.projeto_id == unified_query.c.projeto_id,
-                isouter=True,
             )
             .where(
                 func.to_date(
@@ -370,79 +360,36 @@ class RelatorioService:
             )
         )
 
-        if status_id:
-            # Alteramos para filtrar pelo status da alocação
-            main_q = main_q.where(unified_query.c.status_alocacao_id == status_id)
-
         result = await self.db.execute(main_q)
         rows = result.fetchall()
 
+        # Buscar todas as alocações do recurso (sem filtro de "mais recente")
+        todas_alocacoes_query = (
+            select(ARP.projeto_id, ARP.id.label("alocacao_id"))
+            .where(ARP.recurso_id == recurso_id)
+        )
+        
+        # Aplicar filtros opcionais
+        if alocacao_id:
+            todas_alocacoes_query = todas_alocacoes_query.where(ARP.id == alocacao_id)
+        if status_id:
+            todas_alocacoes_query = todas_alocacoes_query.where(ARP.status_alocacao_id == status_id)
+        
+        alocacoes_result = await self.db.execute(todas_alocacoes_query)
+        alocacoes_map = {row.projeto_id: row.alocacao_id for row in alocacoes_result}
+
+        # Buscar observações para todos os projetos
         acao_result = await self.db.execute(select(acao_subquery))
         acoes_map = {row.projeto_id: row.acao for row in acao_result}
 
-        # 4. Processar resultados e montar estrutura de projetos
+        # 4. Processar resultados sem criar alocações automáticas
         projetos_map = {}
-        
-        # Primeiro, vamos buscar as alocações mais recentes para cada projeto
-        # Modificar a consulta para buscar alocações por status do projeto
-        alocacoes_query = (
-            select(ARP.projeto_id, func.max(ARP.id).label("alocacao_id"))
-            .where(ARP.recurso_id == recurso_id)
-            .group_by(ARP.projeto_id)
-        )
-        
-        alocacoes_result = await self.db.execute(alocacoes_query)
-        alocacoes_map = {row.projeto_id: row.alocacao_id for row in alocacoes_result}
-        
-        # Adicionar uma consulta para buscar projetos sem alocações
-        projetos_sem_alocacao_query = (
-            select(AP.projeto_id)
-            .where(AP.recurso_id == recurso_id)
-            .group_by(AP.projeto_id)
-            .except_(
-                select(ARP.projeto_id)
-                .where(ARP.recurso_id == recurso_id)
-                .group_by(ARP.projeto_id)
-            )
-        )
-        
-        projetos_sem_alocacao_result = await self.db.execute(projetos_sem_alocacao_query)
-        projetos_sem_alocacao = [row.projeto_id for row in projetos_sem_alocacao_result]
-        
-        # Para projetos sem alocação, criar alocações temporárias
-        if projetos_sem_alocacao:
-            # Buscar o status "Não Iniciado"
-            status_nao_iniciado_query = select(StatusProjeto.id).where(StatusProjeto.nome == "Não Iniciado")
-            status_result = await self.db.execute(status_nao_iniciado_query)
-            status_nao_iniciado_id = status_result.scalar_one_or_none()
-            
-            # Criar alocações para projetos sem alocação
-            for projeto_id in projetos_sem_alocacao:
-                nova_alocacao = AlocacaoRecursoProjeto(
-                    recurso_id=recurso_id,
-                    projeto_id=projeto_id,
-                    data_inicio_alocacao=date.today(),
-                    status_alocacao_id=status_nao_iniciado_id
-                )
-                self.db.add(nova_alocacao)
-            
-            await self.db.commit()
-            
-            # Atualizar o mapa de alocações
-            alocacoes_query = (
-                select(ARP.projeto_id, func.max(ARP.id).label("alocacao_id"))
-                .where(ARP.recurso_id == recurso_id)
-                .group_by(ARP.projeto_id)
-            )
-            
-            alocacoes_result = await self.db.execute(alocacoes_query)
-            alocacoes_map = {row.projeto_id: row.alocacao_id for row in alocacoes_result}
 
         for row in rows:
             projeto_id = row.projeto_id
             if projeto_id not in projetos_map:
-                # Usar o ID da alocação do mapa se disponível, ou o da query, ou o filtro
-                alocacao_id_efetivo = alocacao_id or alocacoes_map.get(projeto_id) or row.alocacao_id
+                # Usar o ID da alocação disponível (sem lógica de "mais recente")
+                alocacao_id_efetivo = row.alocacao_id or alocacoes_map.get(projeto_id)
                 
                 projetos_map[projeto_id] = {
                     "id": projeto_id,
@@ -466,7 +413,36 @@ class RelatorioService:
                     row.total_realizado or 0
                 )
 
-        # Calcula esforço total planejado
+        # Incluir alocações que não apareceram nos resultados (sem horas planejadas/realizadas no período)
+        for projeto_id, alocacao_id_map in alocacoes_map.items():
+            if projeto_id not in projetos_map:
+                # Buscar informações básicas do projeto
+                projeto_info_query = (
+                    select(P.nome, P.codigo_empresa, S.nome.label("status_nome"))
+                    .select_from(P)
+                    .outerjoin(ARP, ARP.projeto_id == P.id)
+                    .outerjoin(S, S.id == ARP.status_alocacao_id)
+                    .where(P.id == projeto_id)
+                    .where(ARP.id == alocacao_id_map)
+                )
+                projeto_info_result = await self.db.execute(projeto_info_query)
+                projeto_info = projeto_info_result.first()
+                
+                if projeto_info:
+                    projetos_map[projeto_id] = {
+                        "id": projeto_id,
+                        "nome": projeto_info.nome,
+                        "status": projeto_info.status_nome or "",
+                        "alocacao_id": alocacao_id_map,
+                        "acao": acoes_map.get(projeto_id, ""),
+                        "esforco_estimado": None,
+                        "esforco_planejado": 0,
+                        "meses": {
+                            m: {"planejado": 0, "realizado": 0} for m in meses_intervalo
+                        },
+                    }
+
+        # Calcula esforço total planejado e inclui observações
         for p_id, projeto in projetos_map.items():
             # Garante inclusão da observação (ação) agregada
             projeto["acao"] = acoes_map.get(p_id, projeto.get("acao") or "")
@@ -484,7 +460,7 @@ class RelatorioService:
             
             # Atualizar o esforço estimado em cada projeto
             for projeto in projetos_map.values():
-                if projeto["alocacao_id"] in esforco_map:
+                if projeto["alocacao_id"] and projeto["alocacao_id"] in esforco_map:
                     projeto["esforco_estimado"] = esforco_map[projeto["alocacao_id"]]
         
         # 5. Montar linhas de resumo
