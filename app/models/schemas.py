@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel, EmailStr, validator, Field
 
 # Enums
@@ -316,13 +316,13 @@ class HorasPlanejadasBase(BaseSchema):
     alocacao_id: int
     ano: int
     mes: int
-    horas_planejadas: Decimal
+    horas_planejadas: float
 
 class HorasPlanejadasCreate(HorasPlanejadasBase):
     pass
 
 class HorasPlanejadasUpdate(BaseSchema):
-    horas_planejadas: Optional[Decimal] = None
+    horas_planejadas: Optional[float] = None
 
 class HorasPlanejadasResponse(HorasPlanejadasBase):
     id: int
@@ -337,7 +337,7 @@ class HorasPlanejadasListResponse(BaseSchema):
 class HorasPlanejadasPorMesResponse(BaseSchema):
     ano: int
     mes: int
-    horas_planejadas: Decimal
+    horas_planejadas: float
     data_criacao: datetime
     data_atualizacao: datetime
 

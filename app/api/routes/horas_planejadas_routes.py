@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 import logging
+from datetime import datetime
 
 from app.db.session import get_async_db
 from app.services.planejamento_horas_service import PlanejamentoHorasService
@@ -148,9 +149,9 @@ async def update_horas_planejadas(
             alocacao_id=alocacao_id,
             ano=ano,
             mes=mes,
-            horas_planejadas=payload.horas_planejadas,
-            data_criacao=result["data_criacao"].isoformat() if "data_criacao" in result else "",
-            data_atualizacao=result["data_atualizacao"].isoformat() if "data_atualizacao" in result else ""
+            horas_planejadas=float(payload.horas_planejadas),
+            data_criacao=result["data_criacao"] if "data_criacao" in result and result["data_criacao"] else datetime.now(),
+            data_atualizacao=result["data_atualizacao"] if "data_atualizacao" in result and result["data_atualizacao"] else datetime.now()
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
