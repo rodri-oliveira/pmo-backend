@@ -209,7 +209,7 @@ class ProjetoInfo(BaseSchema):
 
 class DisponibilidadeProjetoDetalhe(BaseModel):
     projeto: ProjetoInfo
-    horas_planejadas: int
+    horas_planejadas: float
 
 class DisponibilidadeMensal(BaseSchema):
     mes: int
