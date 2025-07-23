@@ -267,7 +267,7 @@ A documentação da API é gerada automaticamente pelo FastAPI e está disponív
 
 Todos os endpoints da API são prefixados com `/backend/v1`, por exemplo:
 - `/backend/v1/projetos`
-- `/backend/v1/recursos`
+- `/backend/recursos`
 - `/backend/v1/alocacoes`
 
 ## Autenticação e Segurança

@@ -110,7 +110,7 @@ Gerencia as equipes, vinculadas a seções.
     *   **Resposta (200 OK):** `EquipeDTO`.
     *   **Observações:** Considerar regras de negócio (ex: não excluir se houver recursos ativos vinculados).
 
-## 3. Recursos (`/backend/v1/recursos`)
+## 3. Recursos (`/backend/recursos`)
 
 Gerencia os recursos (funcionários).
 
@@ -293,4 +293,3 @@ Endpoint de exemplo, mantido e refatorado.
 *   **Consistência com `esq_frontend.txt`:** Esta cartilha foca nos endpoints do backend. O design visual e a experiência do usuário devem seguir o `esq_frontend.txt`. Por exemplo, as telas de CRUD padrão descritas no `esq_frontend.txt` consumirão os endpoints de CRUD listados aqui para cada entidade.
 
 Esta cartilha deve ser usada como referência inicial. Conforme o desenvolvimento do frontend avança e novas entidades/funcionalidades são adicionadas ao backend, este documento pode precisar ser atualizado.
-

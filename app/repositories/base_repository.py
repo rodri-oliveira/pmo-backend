@@ -61,8 +61,9 @@ class BaseRepository(Generic[T]):
         try:
             obj = self.model(**obj_in)
             self.db.add(obj)
-            await self.db.commit()
+            await self.db.flush()  # Flush para gerar ID, mas não commit
             await self.db.refresh(obj)
+            # Não fazer commit aqui - deixar para o serviço controlar
             return obj
         except SQLAlchemyError as e:
             await self.db.rollback()

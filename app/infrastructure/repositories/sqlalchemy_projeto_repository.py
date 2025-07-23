@@ -52,16 +52,19 @@ class SQLAlchemyProjetoRepository(ProjetoRepository):
             return DomainProjeto.model_validate(self._to_dict(projeto_sql))
         return None
 
-    async def create(self, projeto_data: ProjetoCreateDTO) -> DomainProjeto:
+    async def create(self, projeto_data) -> DomainProjeto:
         try:
-            projeto_dict = projeto_data.dict()  # Converte para dicionário
+            # Verifica se já é um dicionário ou se precisa converter
+            if isinstance(projeto_data, dict):
+                projeto_dict = projeto_data
+            else:
+                projeto_dict = projeto_data.model_dump()  # Usa model_dump() ao invés de dict()
             novo_projeto_sql = Projeto(**projeto_dict)
             self.db_session.add(novo_projeto_sql)
             # Flush para gerar o ID
             await self.db_session.flush()
             await self.db_session.refresh(novo_projeto_sql)
-            # Commit para persistir definitivamente
-            await self.db_session.commit()
+            # Não fazer commit aqui - deixar para o serviço controlar a transação
             return DomainProjeto.model_validate(self._to_dict(novo_projeto_sql))
         except SQLAlchemyError as e:
             # O rollback é gerenciado pelo service layer com o `async with db_session.begin()`
