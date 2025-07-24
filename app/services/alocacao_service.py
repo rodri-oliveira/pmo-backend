@@ -119,6 +119,10 @@ class AlocacaoService:
             logger.info(f"[ALOCACAO_CREATE] Chamando repository.create...")
             alocacao = await self.repository.create(alocacao_data)
             logger.info(f"[ALOCACAO_CREATE] Alocação criada com ID: {alocacao.id}")
+        
+            # IMPORTANTE: Commit explícito para garantir que a nova sessão veja os dados
+            await self.db.commit()
+            logger.info(f"[ALOCACAO_CREATE] Transação commitada")
 
             # Usar uma nova sessão isolada para buscar o objeto completo
             logger.info(f"[ALOCACAO_CREATE] Iniciando busca com nova sessão...")
@@ -146,6 +150,10 @@ class AlocacaoService:
                 logger.info(f"[ALOCACAO_CREATE] Alocação completa obtida: {alocacao_completa.id if alocacao_completa else 'None'}")
 
             logger.info(f"[ALOCACAO_CREATE] Formatando resposta...")
+            if not alocacao_completa:
+                logger.error(f"[ALOCACAO_CREATE] ERRO: Alocação não encontrada após criação! ID: {alocacao.id}")
+                raise ValueError(f"Erro interno: alocação criada mas não encontrada (ID: {alocacao.id})")
+            
             response = self._format_response(alocacao_completa)
             logger.info(f"[ALOCACAO_CREATE] Resposta formatada com sucesso")
             return response

@@ -16,8 +16,7 @@ logging.info("Arquivo alocacao_routes.py foi carregado!")
 
 # Configurar o router para aceitar URLs com e sem barra final
 router = APIRouter(
-    # Restaurar o prefixo, já que removemos em api_main.py
-    prefix="/alocacoes",
+    # REMOVIDO prefixo duplicado - já definido em api_main.py
     tags=["Alocações"],
     # Autenticação é tratada pelo Keycloak no frontend
     include_in_schema=True,
