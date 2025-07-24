@@ -11,6 +11,11 @@ class ApontamentoSQL(Base):
     recurso_id = Column(Integer, ForeignKey("recurso.id", onupdate="CASCADE", ondelete="RESTRICT"), nullable=False, index=True)
     projeto_id = Column(Integer, ForeignKey("projeto.id", onupdate="CASCADE", ondelete="RESTRICT"), nullable=False, index=True)
     jira_issue_key = Column(String(50), nullable=True)
+    jira_parent_key = Column(String(50), nullable=True, index=True)
+    jira_issue_type = Column(String(50), nullable=True, index=True)
+    nome_subtarefa = Column(String(200), nullable=True)
+    projeto_pai_id = Column(Integer, ForeignKey("projeto.id", onupdate="CASCADE", ondelete="SET NULL"), nullable=True, index=True)
+    nome_projeto_pai = Column(String(200), nullable=True)
     data_hora_inicio_trabalho = Column(DateTime(timezone=True), nullable=True)
     data_apontamento = Column(Date, nullable=False, index=True)
     horas_apontadas = Column(DECIMAL(5, 2), nullable=False)
@@ -22,7 +27,8 @@ class ApontamentoSQL(Base):
     data_atualizacao = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     recurso = relationship("RecursoSQL")
-    projeto = relationship("ProjetoSQL")
+    projeto = relationship("ProjetoSQL", foreign_keys=[projeto_id])
+    projeto_pai = relationship("ProjetoSQL", foreign_keys=[projeto_pai_id])
     usuario_admin = relationship("UsuarioSQL", foreign_keys=[id_usuario_admin_criador])
 
     __table_args__ = (

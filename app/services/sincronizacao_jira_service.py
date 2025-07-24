@@ -586,6 +586,33 @@ class SincronizacaoJiraService:
             if not issue_key:
                 logger.warning(f"[WORKLOG_EXTRACT] Worklog sem issue_key: {worklog}")
                 return None
+            
+            # Buscar informações detalhadas da issue para obter hierarquia
+            issue_details = None
+            jira_parent_key = None
+            jira_issue_type = None
+            nome_subtarefa = None
+            
+            try:
+                # Buscar detalhes da issue incluindo parent e issueType
+                issue_details = self.jira_client.get_issue(issue_key)
+                
+                # Extrair tipo da issue
+                issue_type_info = issue_details.get("fields", {}).get("issuetype", {})
+                jira_issue_type = issue_type_info.get("name")
+                
+                # Extrair informações do parent (Epic)
+                parent_info = issue_details.get("fields", {}).get("parent")
+                if parent_info:
+                    jira_parent_key = parent_info.get("key")
+                    nome_subtarefa = issue_details.get("fields", {}).get("summary")
+                    logger.info(f"[WORKLOG_EXTRACT] Issue {issue_key} é subtarefa de {jira_parent_key}")
+                else:
+                    logger.info(f"[WORKLOG_EXTRACT] Issue {issue_key} é um Epic (sem parent)")
+                    
+            except Exception as e:
+                logger.error(f"[WORKLOG_EXTRACT] Erro ao obter detalhes da issue {issue_key}: {str(e)}")
+                # Continuar mesmo sem informações de hierarquia
                 
             # Extrair dados do autor
             author = worklog.get("author", {})
@@ -682,6 +709,53 @@ class SincronizacaoJiraService:
                     logger.error(f"[WORKLOG_EXTRACT] Erro ao criar projeto: {str(e)}")
                     return None
             
+            # Buscar projeto pai se a issue for uma subtarefa
+            projeto_pai = None
+            projeto_pai_id = None
+            
+            if jira_parent_key:
+                # Extrair project_key do parent
+                parent_project_key = jira_parent_key.split('-')[0] if '-' in jira_parent_key else None
+                
+                if parent_project_key:
+                    # Buscar projeto pai pelo jira_project_key
+                    projeto_pai = await self.projeto_repository.get_by_jira_project_key(parent_project_key)
+                    
+                    if not projeto_pai:
+                        # Criar projeto pai se não existir
+                        logger.info(f"[WORKLOG_EXTRACT] Projeto pai não encontrado para {parent_project_key}, criando novo")
+                        
+                        try:
+                            # Buscar detalhes do Epic pai no Jira
+                            parent_issue_details = self.jira_client.get_issue(jira_parent_key)
+                            parent_summary = parent_issue_details.get("fields", {}).get("summary", f"Epic {jira_parent_key}")
+                            
+                            # Buscar status padrão
+                            status_projeto = await self.projeto_repository.get_status_default()
+                            
+                            if status_projeto:
+                                projeto_pai_data = {
+                                    "nome": parent_summary,
+                                    "jira_project_key": jira_parent_key,  # Usar a chave do Epic como identificador
+                                    "status_projeto_id": status_projeto.id,
+                                    "ativo": True
+                                }
+                                
+                                # Vincular à seção se existir
+                                secao = await self.secao_repository.get_by_jira_project_key(parent_project_key)
+                                if secao:
+                                    projeto_pai_data["secao_id"] = secao.id
+                                
+                                projeto_pai = await self.projeto_repository.create(projeto_pai_data)
+                                logger.info(f"[WORKLOG_EXTRACT] Projeto pai criado: {projeto_pai.nome} (id={projeto_pai.id})")
+                            
+                        except Exception as e:
+                            logger.error(f"[WORKLOG_EXTRACT] Erro ao criar projeto pai: {str(e)}")
+                    
+                    if projeto_pai:
+                        projeto_pai_id = projeto_pai.id
+                        logger.info(f"[WORKLOG_EXTRACT] Projeto pai encontrado: {projeto_pai.nome} (id={projeto_pai_id})")
+            
             # Extrair horas apontadas
             # O campo timeSpentSeconds contém o tempo gasto em segundos
             time_spent_seconds = worklog.get("timeSpentSeconds")
@@ -737,11 +811,17 @@ class SincronizacaoJiraService:
                         descricao = "Comentário em formato não suportado"
             
             # Montar o objeto de dados para o apontamento
+            # Montar o objeto de dados para o apontamento
             apontamento_data = {
                 "jira_worklog_id": worklog_id,
                 "recurso_id": recurso.id,
                 "projeto_id": projeto.id,
                 "jira_issue_key": issue_key,
+                "jira_parent_key": jira_parent_key,
+                "jira_issue_type": jira_issue_type,
+                "nome_subtarefa": nome_subtarefa,
+                "projeto_pai_id": projeto_pai_id,
+                "nome_projeto_pai": projeto_pai.nome if projeto_pai else None,
                 "data_hora_inicio_trabalho": data_hora_inicio,
                 "data_apontamento": data_apontamento,
                 "horas_apontadas": horas_apontadas,
