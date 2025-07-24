@@ -12,8 +12,10 @@ from app.db.session import get_db, get_async_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.usuario import UsuarioInDB
 from app.services.sincronizacao_jira_service import SincronizacaoJiraService
+from app.services.sincronizacao_jira_corrigida_service import SincronizacaoJiraCorrigidaService
 from app.services.log_service import LogService
 from app.integrations.jira_client import JiraClient
+from app.schemas.sincronizacao_schemas import SincronizacaoJiraRequest, SincronizacaoJiraResponse
 
 router = APIRouter(tags=["Integração Jira"])
 
@@ -509,5 +511,64 @@ async def importar_sincronizacao_jira(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao iniciar sincronização: {str(e)}"
         )
+
+@router.post("/sincronizar-periodo", response_model=SincronizacaoJiraResponse)
+async def sincronizar_periodo_jira(
+    request: SincronizacaoJiraRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UsuarioInDB = Depends(get_current_admin_user)
+):
+    """
+    Sincroniza worklogs do Jira para um período específico.
+    
+    - **data_inicio**: Data de início da sincronização (YYYY-MM-DD)
+    - **data_fim**: Data de fim da sincronização (YYYY-MM-DD)  
+    - **projetos**: Lista de projetos Jira (opcional, padrão: DTIN, SGI, TIN, SEG)
+    
+    **Protegido**: requer autenticação de admin.
+    
+    **Retorno**: Estatísticas detalhadas da sincronização.
+    
+    **Exemplo de uso:**
+    ```json
+    {
+        "data_inicio": "2024-07-01",
+        "data_fim": "2024-07-24",
+        "projetos": ["DTIN", "SGI"]
+    }
+    ```
+    """
+    try:
+        logger.info(f"[SYNC_ENDPOINT] Usuário {current_user.email} iniciou sincronização: {request.data_inicio} até {request.data_fim}")
+        
+        # Converter dates para datetime
+        data_inicio = datetime.combine(request.data_inicio, datetime.min.time())
+        data_fim = datetime.combine(request.data_fim, datetime.max.time())
+        
+        # Criar service de sincronização
+        sync_service = SincronizacaoJiraCorrigidaService(db)
+        
+        # Executar sincronização
+        resultado = await sync_service.sincronizar_periodo(
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            projetos=request.projetos
+        )
+        
+        # Log do resultado
+        if resultado["status"] == "success":
+            logger.info(f"[SYNC_SUCCESS] Sincronização concluída: {resultado['resultados']}")
+        else:
+            logger.error(f"[SYNC_ERROR] Erro na sincronização: {resultado.get('erro')}")
+        
+        return SincronizacaoJiraResponse(**resultado)
+        
+    except Exception as e:
+        logger.error(f"[SYNC_ENDPOINT_ERROR] Erro no endpoint de sincronização: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro interno na sincronização: {str(e)}"
+        )
+
 
 # Endpoint removido para evitar duplicação

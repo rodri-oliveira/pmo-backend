@@ -539,10 +539,57 @@ async def get_disponibilidade_recurso(
                 hdr.ano, hdr.mes;
         """
         )
+        
+        # Query para buscar horas apontadas por mês e projeto
+        apontamentos_sql = text(
+            """
+            SELECT
+                EXTRACT(YEAR FROM a.data_apontamento) AS ano,
+                EXTRACT(MONTH FROM a.data_apontamento) AS mes,
+                a.projeto_id,
+                p.nome AS projeto_nome,
+                SUM(a.horas_apontadas) AS horas_apontadas
+            FROM
+                apontamento a
+            LEFT JOIN
+                projeto p ON a.projeto_id = p.id
+            WHERE
+                a.recurso_id = :recurso_id
+                AND EXTRACT(YEAR FROM a.data_apontamento) = :ano
+                AND EXTRACT(MONTH FROM a.data_apontamento) BETWEEN :mes_inicio AND :mes_fim
+            GROUP BY
+                EXTRACT(YEAR FROM a.data_apontamento),
+                EXTRACT(MONTH FROM a.data_apontamento),
+                a.projeto_id,
+                p.nome
+            ORDER BY
+                ano, mes, a.projeto_id;
+        """
+        )
 
         params = {"recurso_id": recurso_id, "ano": ano, "mes_inicio": mes_inicio, "mes_fim": mes_fim}
         db_result = (await db.execute(raw_sql, params)).mappings().all()
         logger.info(f"[RAW SQL RESULT] Resultado do banco: {len(db_result)} linhas")
+        
+        # Executar query de apontamentos
+        apontamentos_result = (await db.execute(apontamentos_sql, params)).mappings().all()
+        logger.info(f"[APONTAMENTOS RESULT] Resultado dos apontamentos: {len(apontamentos_result)} linhas")
+        
+        # Criar dicionário de horas apontadas por mês e projeto
+        horas_apontadas_por_mes_projeto = defaultdict(lambda: defaultdict(float))
+        horas_apontadas_por_mes = defaultdict(float)
+        
+        for row in apontamentos_result:
+            mes_key = (int(row['ano']), int(row['mes']))
+            projeto_id = row['projeto_id']
+            horas = float(row['horas_apontadas'] or 0)
+            
+            # Agrupar por mês e projeto
+            if projeto_id:
+                horas_apontadas_por_mes_projeto[mes_key][projeto_id] += horas
+            
+            # Total por mês
+            horas_apontadas_por_mes[mes_key] += horas
 
         # Estrutura para processar os dados
         disponibilidade_por_mes = defaultdict(lambda: {
@@ -571,11 +618,13 @@ async def get_disponibilidade_recurso(
             detalhes_projeto = [
                 DisponibilidadeProjetoDetalhe(
                     projeto=ProjetoInfo(id=pid, nome=pdata["nome"]),
-                    horas_planejadas=pdata["horas"]
+                    horas_planejadas=pdata["horas"],
+                    horas_apontadas=horas_apontadas_por_mes_projeto[ano_mes].get(pid, 0.0)  # NOVO CAMPO
                 ) for pid, pdata in mes_data["alocacoes_detalhadas"].items()
             ]
 
             total_planejado = sum(p.horas_planejadas for p in detalhes_projeto)
+            total_apontado = horas_apontadas_por_mes.get(ano_mes, 0.0)  # NOVO: buscar horas apontadas
             horas_livres = capacidade - total_planejado
             percentual_alocacao = f"{(total_planejado / capacidade * 100):.1f}%" if capacidade > 0 else "0.0%"
 
@@ -584,6 +633,7 @@ async def get_disponibilidade_recurso(
                 ano=ano_val,
                 capacidade_rh=capacidade,
                 total_horas_planejadas=total_planejado,
+                total_horas_apontadas=total_apontado,  # NOVO CAMPO
                 horas_livres=horas_livres,
                 percentual_alocacao=percentual_alocacao,
                 alocacoes_detalhadas=detalhes_projeto

@@ -1,30 +1,12 @@
 """
-Sincronização JIRA Corrigida - Versão Híbrida
-Baseada no script antigo que funcionava, mas com correções para o esquema atual.
-
-REGRAS DE NEGÓCIO:
-1. Jira Project (DTIN) → secao.jira_project_key
-2. Jira Issue (DTIN-7183) → projeto.jira_project_key  
-3. Jira Assignee → recurso.jira_user_id
-4. Cada Jira Worklog → Um apontamento separado
-
-MELHORIAS:
-- Upsert robusto de seção, recurso e projeto
-- Validações de campos obrigatórios
-- Transações seguras
-- Logs detalhados para diagnóstico
+Service para sincronização Jira com parâmetros de data flexíveis
+Baseado no script sincronizacao_jira_corrigida.py
 """
-
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
-from app.services.sincronizacao_jira_service import SincronizacaoJiraService
 from app.db.session import AsyncSessionLocal
 from app.integrations.jira_client import JiraClient
 from app.repositories.apontamento_repository import ApontamentoRepository
@@ -32,32 +14,11 @@ from app.repositories.secao_repository import SecaoRepository
 from app.repositories.projeto_repository import ProjetoRepository
 from app.repositories.recurso_repository import RecursoRepository
 
-# Configurar logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('sincronizacao_jira_corrigida.log')
-    ]
-)
 logger = logging.getLogger(__name__)
 
-# Data inicial padrão para carga completa
-DEFAULT_START_DATE = datetime(2024, 8, 1)
 
-def extract_comment_text(comment):
-    """Extrai texto do comentário JIRA"""
-    if not comment or "content" not in comment:
-        return None
-    for block in comment["content"]:
-        for frag in block.get("content", []):
-            if "text" in frag:
-                return frag["text"]
-    return None
-
-class SincronizacaoJiraCorrigida:
-    """Serviço de sincronização JIRA corrigido"""
+class SincronizacaoJiraCorrigidaService:
+    """Service para sincronização Jira com controle de período"""
     
     def __init__(self, session):
         self.session = session
@@ -75,7 +36,6 @@ class SincronizacaoJiraCorrigida:
             'recursos_atualizados': 0,
             'projetos_criados': 0,
             'projetos_atualizados': 0,
-
             'erros': 0
         }
 
@@ -83,15 +43,8 @@ class SincronizacaoJiraCorrigida:
         """
         Busca uma seção existente baseada no jira_project_key.
         NÃO CRIA novas seções - apenas busca existentes.
-        
-        Args:
-            jira_project_key: Chave do projeto Jira (ex: "DTIN", "SGI")
-            
-        Returns:
-            Objeto seção ou None se não encontrada
         """
         try:
-            # Buscar seção existente
             secao = await self.secao_repo.get_by_jira_project_key(jira_project_key)
             
             if secao:
@@ -106,38 +59,24 @@ class SincronizacaoJiraCorrigida:
             return None
 
     async def upsert_recurso(self, assignee_data: Dict[str, Any]) -> Optional[Any]:
-        """
-        Busca ou cria um recurso baseado nos dados do assignee do Jira.
+        """Busca ou cria um recurso baseado nos dados do assignee do Jira."""
+        jira_user_id = assignee_data.get("accountId")
+        email = assignee_data.get("emailAddress")
+        nome = assignee_data.get("displayName")
+        ativo = assignee_data.get("active", True)
         
-        Args:
-            assignee_data: Dados do assignee do Jira
-            
-        Returns:
-            Objeto recurso ou None se erro
-        """
+        if not email:
+            logger.warning(f"[RECURSO_SKIP] Assignee sem email: {nome}")
+            return None
+        
         try:
-            jira_user_id = assignee_data.get("accountId")
-            email = assignee_data.get("emailAddress")
-            nome = assignee_data.get("displayName")
-            ativo = assignee_data.get("active", True)
-            
-            # Email é obrigatório no schema
-            if not email:
-                logger.warning(f"[RECURSO_SKIP] Assignee sem email: {jira_user_id}")
-                return None
-            
-            recurso = None
-            
-            # Buscar por jira_user_id primeiro
-            if jira_user_id:
-                recurso = await self.recurso_repo.get_by_jira_user_id(jira_user_id)
-            
-            # Se não encontrou, buscar por email
+            # Buscar recurso existente
+            recurso = await self.recurso_repo.get_by_jira_user_id(jira_user_id)
             if not recurso:
                 recurso = await self.recurso_repo.get_by_email(email)
             
             if recurso:
-                # Atualizar dados se necessário
+                # Atualizar se necessário
                 updates = {}
                 if nome and recurso.nome != nome:
                     updates["nome"] = nome
@@ -160,7 +99,7 @@ class SincronizacaoJiraCorrigida:
             
             # Criar novo recurso
             recurso_data = {
-                "nome": nome or email,  # Usar email como fallback
+                "nome": nome or email,
                 "email": email,
                 "jira_user_id": jira_user_id,
                 "ativo": ativo
@@ -177,17 +116,7 @@ class SincronizacaoJiraCorrigida:
             return None
 
     async def upsert_projeto(self, issue_key: str, issue_summary: str, secao_id: int) -> Optional[Any]:
-        """
-        Busca ou cria um projeto baseado na issue do Jira.
-        
-        Args:
-            issue_key: Chave da issue (ex: "DTIN-7183")
-            issue_summary: Resumo da issue
-            secao_id: ID da seção
-            
-        Returns:
-            Objeto projeto ou None se erro
-        """
+        """Busca ou cria um projeto baseado na issue do Jira."""
         try:
             # Buscar projeto existente
             projeto = await self.projeto_repo.get_by_jira_project_key(issue_key)
@@ -212,6 +141,7 @@ class SincronizacaoJiraCorrigida:
             # Criar novo projeto
             projeto_data = {
                 "nome": issue_summary or issue_key,
+                "descricao": f"Projeto criado automaticamente para issue {issue_key}",
                 "jira_project_key": issue_key,
                 "secao_id": secao_id,
                 "status_projeto_id": status_default.id,
@@ -228,16 +158,33 @@ class SincronizacaoJiraCorrigida:
             logger.error(f"[PROJETO_ERROR] Erro ao processar projeto {issue_key}: {str(e)}")
             return None
 
-    async def processar_periodo(self, data_inicio: datetime, data_fim: datetime):
+    async def sincronizar_periodo(
+        self, 
+        data_inicio: datetime, 
+        data_fim: datetime,
+        projetos: List[str] = None
+    ) -> Dict[str, Any]:
         """
-        Processa worklogs do Jira de data_inicio até data_fim com upserts robustos.
+        Sincroniza worklogs do Jira para um período específico.
+        
+        Args:
+            data_inicio: Data de início da sincronização
+            data_fim: Data de fim da sincronização
+            projetos: Lista de projetos para sincronizar (default: DTIN, SGI, TIN, SEG)
+            
+        Returns:
+            Dicionário com estatísticas da sincronização
         """
-        logger.info(f"[INICIO] Processando período: {data_inicio.date()} até {data_fim.date()}")
+        inicio_execucao = datetime.now()
         
         try:
-            # Projetos Jira para sincronizar
-            project_keys = ["SEG", "SGI", "DTIN", "TIN"]
-            project_keys_str = ", ".join(project_keys)
+            logger.info(f"[SYNC_START] Iniciando sincronização: {data_inicio.date()} até {data_fim.date()}")
+            
+            # Projetos padrão se não especificados
+            if not projetos:
+                projetos = ["DTIN", "SGI", "TIN", "SEG"]
+            
+            project_keys_str = ", ".join(projetos)
             
             # JQL com filtro de data nos worklogs
             jql = (
@@ -270,18 +217,40 @@ class SincronizacaoJiraCorrigida:
             # Commit final
             await self.session.commit()
             
-            # Relatório final
-            logger.info("=" * 60)
-            logger.info("RELATÓRIO DE SINCRONIZAÇÃO")
-            logger.info("=" * 60)
-            for key, value in self.stats.items():
-                logger.info(f"{key.upper()}: {value}")
-            logger.info("=" * 60)
+            # Calcular tempo de execução
+            tempo_execucao = datetime.now() - inicio_execucao
+            tempo_str = str(tempo_execucao).split('.')[0]  # Remove microssegundos
+            
+            resultado = {
+                "status": "success",
+                "periodo": {
+                    "inicio": data_inicio.date().isoformat(),
+                    "fim": data_fim.date().isoformat()
+                },
+                "resultados": self.stats.copy(),
+                "tempo_execucao": tempo_str
+            }
+            
+            logger.info(f"[SYNC_SUCCESS] Sincronização concluída em {tempo_str}")
+            return resultado
             
         except Exception as e:
-            logger.error(f"[ERRO_GERAL] Erro na sincronização: {str(e)}")
+            logger.error(f"[SYNC_ERROR] Erro na sincronização: {str(e)}")
             await self.session.rollback()
-            raise
+            
+            tempo_execucao = datetime.now() - inicio_execucao
+            tempo_str = str(tempo_execucao).split('.')[0]
+            
+            return {
+                "status": "error",
+                "periodo": {
+                    "inicio": data_inicio.date().isoformat(),
+                    "fim": data_fim.date().isoformat()
+                },
+                "resultados": self.stats.copy(),
+                "tempo_execucao": tempo_str,
+                "erro": str(e)
+            }
 
     async def _processar_issue(self, issue: Dict[str, Any], data_inicio: datetime, data_fim: datetime):
         """Processa uma issue individual"""
@@ -292,11 +261,6 @@ class SincronizacaoJiraCorrigida:
         
         # 1. Buscar seção existente (prefixo da issue)
         project_prefix = issue_key.split("-")[0] if "-" in issue_key else issue_key
-        
-        # Mapeamento correto: DTIN (Jira) → TIN (Seção)
-        if project_prefix == "DTIN":
-            project_prefix = "TIN"
-        
         secao = await self.buscar_secao(project_prefix)
         if not secao:
             logger.error(f"[ISSUE_SKIP] Seção não encontrada para {issue_key} (prefix: {project_prefix})")
@@ -334,92 +298,52 @@ class SincronizacaoJiraCorrigida:
 
     async def _processar_worklog(self, worklog: Dict[str, Any], issue_key: str, recurso_id: int, projeto_id: int, data_inicio: datetime, data_fim: datetime):
         """Processa um worklog individual"""
-        wl_id_str = worklog.get("id")
-        if not wl_id_str:
-            logger.warning(f"[WORKLOG_SKIP] Worklog sem ID para {issue_key}")
+        worklog_id = worklog.get("id")
+        if not worklog_id:
+            logger.warning(f"[WORKLOG_SKIP] Worklog sem ID para issue {issue_key}")
             return
         
-        # Parsing de datas
-        def parse_dt(s): 
-            return datetime.fromisoformat(s[:-6]) if s else None
-        
-        dt_created = parse_dt(worklog.get("created"))
-        dt_updated = parse_dt(worklog.get("updated"))
-        dt_started = parse_dt(worklog.get("started"))
-        
-        # Validar período
-        if not dt_started or dt_started < data_inicio or dt_started > data_fim:
-            logger.debug(f"[WORKLOG_SKIP] Worklog {wl_id_str} fora do período")
+        # Verificar se o worklog está no período
+        started_str = worklog.get("started", "")
+        if not started_str:
+            logger.warning(f"[WORKLOG_SKIP] Worklog {worklog_id} sem data de início")
             return
         
-        # Calcular horas
-        time_spent_seconds = worklog.get("timeSpentSeconds", 0)
-        horas = time_spent_seconds / 3600
-        
-        # Validar horas
-        if horas <= 0 or horas > 24:
-            logger.warning(f"[WORKLOG_SKIP] Worklog {wl_id_str}: horas inválidas ({horas})")
-            return
-        
-        # Dados do apontamento
-        apontamento_data = {
-            "recurso_id": recurso_id,
-            "projeto_id": projeto_id,
-            "jira_issue_key": issue_key,
-            "data_hora_inicio_trabalho": dt_started,
-            "data_apontamento": dt_started.date(),
-            "horas_apontadas": horas,
-            "descricao": extract_comment_text(worklog.get("comment")),
-            "fonte_apontamento": "JIRA",
-            "data_criacao": dt_created or datetime.now(),
-            "data_atualizacao": dt_updated or datetime.now(),
-            "data_sincronizacao_jira": datetime.now(),
-        }
-        
-        # Criar/atualizar apontamento
-        await self.apontamento_repo.sync_jira_apontamento(wl_id_str, apontamento_data)
-        self.stats['apontamentos_criados'] += 1
-        logger.debug(f"[APONTAMENTO] Criado para worklog {wl_id_str}: {horas}h")
+        try:
+            # Parse da data do worklog
+            started_dt = self._parse_jira_datetime(started_str)
+            if not (data_inicio <= started_dt <= data_fim):
+                return  # Worklog fora do período
+            
+            # Sincronizar apontamento
+            await self.apontamento_repo.sync_apontamento(
+                jira_worklog_id=int(worklog_id),
+                recurso_id=recurso_id,
+                projeto_id=projeto_id,
+                data_apontamento=started_dt.date(),
+                horas_apontadas=worklog.get("timeSpentSeconds", 0) / 3600,
+                descricao=worklog.get("comment", {}).get("content", [{}])[0].get("content", [{}])[0].get("text", "") if worklog.get("comment") else ""
+            )
+            
+            self.stats['apontamentos_criados'] += 1
+            
+        except Exception as e:
+            logger.error(f"[WORKLOG_ERROR] Erro ao processar worklog {worklog_id}: {str(e)}")
+            raise
 
-async def processar_periodo(data_inicio: datetime, data_fim: datetime):
-    """Função principal para processar um período"""
-    async with AsyncSessionLocal() as session:
-        sincronizador = SincronizacaoJiraCorrigida(session)
-        await sincronizador.processar_periodo(data_inicio, data_fim)
-
-async def carga_completa():
-    """Executa carga completa desde 01/08/2024"""
-    data_inicio = DEFAULT_START_DATE
-    data_fim = datetime.now()
-    logger.info(f"[CARGA_COMPLETA] {data_inicio.date()} até {data_fim.date()}")
-    await processar_periodo(data_inicio, data_fim)
-
-async def carga_personalizada(start_str: str, end_str: str):
-    """Executa carga personalizada"""
-    data_inicio = datetime.strptime(start_str, "%Y-%m-%d")
-    data_fim = datetime.strptime(end_str, "%Y-%m-%d")
-    logger.info(f"[CARGA_PERSONALIZADA] {data_inicio.date()} até {data_fim.date()}")
-    await processar_periodo(data_inicio, data_fim)
-
-async def rotina_mensal():
-    """Executa rotina mensal (mês anterior)"""
-    hoje = datetime.now()
-    primeiro_dia_mes_anterior = hoje.replace(day=1) - timedelta(days=1)
-    primeiro_dia_mes_anterior = primeiro_dia_mes_anterior.replace(day=1)
-    ultimo_dia_mes_anterior = hoje.replace(day=1) - timedelta(days=1)
-    
-    logger.info(f"[ROTINA_MENSAL] {primeiro_dia_mes_anterior.date()} até {ultimo_dia_mes_anterior.date()}")
-    await processar_periodo(primeiro_dia_mes_anterior, ultimo_dia_mes_anterior)
-
-if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) == 3:
-        # Período personalizado: python script.py 2024-08-01 2024-08-31
-        asyncio.run(carga_personalizada(sys.argv[1], sys.argv[2]))
-    elif len(sys.argv) == 2 and sys.argv[1] == "mensal":
-        # Rotina mensal: python script.py mensal
-        asyncio.run(rotina_mensal())
-    else:
-        # Carga completa: python script.py
-        asyncio.run(carga_completa())
+    def _parse_jira_datetime(self, datetime_str: str) -> datetime:
+        """Parse de datetime do Jira"""
+        try:
+            # Formato: 2024-07-23T14:30:00.000-0300
+            if datetime_str.endswith('Z'):
+                datetime_str = datetime_str[:-1] + '+00:00'
+            elif '+' in datetime_str[-6:] or '-' in datetime_str[-6:]:
+                # Já tem timezone
+                pass
+            else:
+                datetime_str += '+00:00'
+            
+            return datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+        except Exception as e:
+            logger.error(f"[DATETIME_ERROR] Erro ao fazer parse de {datetime_str}: {str(e)}")
+            return datetime.now()

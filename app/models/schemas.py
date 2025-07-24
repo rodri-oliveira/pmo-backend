@@ -210,12 +210,14 @@ class ProjetoInfo(BaseSchema):
 class DisponibilidadeProjetoDetalhe(BaseModel):
     projeto: ProjetoInfo
     horas_planejadas: float
+    horas_apontadas: float  # NOVO CAMPO POR PROJETO
 
 class DisponibilidadeMensal(BaseSchema):
     mes: int
     ano: int
     capacidade_rh: float
     total_horas_planejadas: float
+    total_horas_apontadas: float  # NOVO CAMPO
     horas_livres: float
     percentual_alocacao: str
     alocacoes_detalhadas: List[DisponibilidadeProjetoDetalhe]
