@@ -371,6 +371,7 @@ class AlocacaoService:
             "data_atualizacao": alocacao.data_atualizacao,
             "recurso_nome": getattr(alocacao.recurso, "nome", None) if hasattr(alocacao, "recurso") and alocacao.recurso else None,
             "projeto_nome": getattr(alocacao.projeto, "nome", None) if hasattr(alocacao, "projeto") and alocacao.projeto else None,
-        "observacao": getattr(alocacao, "observacao", None)
+            "esforco_estimado": getattr(alocacao, "esforco_estimado", None),
+            "observacao": getattr(alocacao, "observacao", None)
         }
         return result

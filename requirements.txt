@@ -9,4 +9,5 @@ passlib[bcrypt]
 python-multipart
 alembic
 PyJWT
+email-validator # Para validação de email do Pydantic
 pandas # Para manipulação de dados nos scripts
