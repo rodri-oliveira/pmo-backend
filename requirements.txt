@@ -10,4 +10,5 @@ python-multipart
 alembic
 PyJWT
 email-validator # Para validação de email do Pydantic
+requests # Para integração com APIs externas (Jira)
 pandas # Para manipulação de dados nos scripts
