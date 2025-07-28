@@ -12,7 +12,6 @@ from app.db.session import get_db, get_async_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.usuario import UsuarioInDB
 from app.services.sincronizacao_jira_service import SincronizacaoJiraService
-from app.services.sincronizacao_jira_corrigida_service import SincronizacaoJiraCorrigidaService
 from app.services.log_service import LogService
 from app.integrations.jira_client import JiraClient
 from app.schemas.sincronizacao_schemas import SincronizacaoJiraRequest, SincronizacaoJiraResponse

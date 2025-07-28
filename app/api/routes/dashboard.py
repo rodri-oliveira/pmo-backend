@@ -520,6 +520,8 @@ async def get_disponibilidade_recurso(
                 hdr.horas_disponiveis_mes AS capacidade_rh,
                 p.id AS projeto_id,
                 p.nome AS projeto_nome,
+                -- Normalizar nome do projeto para matching
+                UPPER(TRIM(REPLACE(p.nome, '_', ''))) AS projeto_nome_normalizado,
                 hpa.horas_planejadas
             FROM
                 horas_disponiveis_rh hdr
@@ -535,20 +537,29 @@ async def get_disponibilidade_recurso(
                 hdr.recurso_id = :recurso_id
                 AND hdr.ano = :ano
                 AND hdr.mes BETWEEN :mes_inicio AND :mes_fim
+                -- Filtrar apenas projetos válidos das seções WEG
+                AND (p.id IS NULL OR p.jira_project_key ~ '^(SEG|SGI|DTIN|TIN|WTMT|WENSAS|WTDPE|WTDQUO|WTDDMF|WPDREAC|WTDNS)-')
             ORDER BY
                 hdr.ano, hdr.mes;
         """
         )
         
-        # Query para buscar horas apontadas por mês e projeto
+        # Query para buscar horas apontadas por mês e projeto PAI (hierarquia Jira)
         apontamentos_sql = text(
             """
             SELECT
                 EXTRACT(YEAR FROM a.data_apontamento) AS ano,
                 EXTRACT(MONTH FROM a.data_apontamento) AS mes,
-                a.projeto_id,
-                p.nome AS projeto_nome,
-                SUM(a.horas_apontadas) AS horas_apontadas
+                -- Usar projeto pai quando disponível, senão usar projeto atual
+                COALESCE(a.projeto_pai_id, a.projeto_id) AS projeto_id,
+                -- Usar nome do projeto pai quando disponível, senão usar nome do projeto atual
+                COALESCE(a.nome_projeto_pai, p.nome) AS projeto_nome,
+                -- Normalizar nome do projeto (remover underscores, espaços extras, maiúsculas)
+                UPPER(TRIM(REPLACE(COALESCE(a.nome_projeto_pai, p.nome), '_', ''))) AS projeto_nome_normalizado,
+                SUM(a.horas_apontadas) AS horas_apontadas,
+                -- Informações adicionais para debug
+                COUNT(CASE WHEN a.jira_parent_key IS NOT NULL THEN 1 END) AS subtarefas_count,
+                COUNT(CASE WHEN a.jira_parent_key IS NULL THEN 1 END) AS tarefas_principais_count
             FROM
                 apontamento a
             LEFT JOIN
@@ -560,10 +571,11 @@ async def get_disponibilidade_recurso(
             GROUP BY
                 EXTRACT(YEAR FROM a.data_apontamento),
                 EXTRACT(MONTH FROM a.data_apontamento),
-                a.projeto_id,
-                p.nome
+                COALESCE(a.projeto_pai_id, a.projeto_id),
+                COALESCE(a.nome_projeto_pai, p.nome),
+                UPPER(TRIM(REPLACE(COALESCE(a.nome_projeto_pai, p.nome), '_', '')))
             ORDER BY
-                ano, mes, a.projeto_id;
+                ano, mes, projeto_id;
         """
         )
 
@@ -582,7 +594,16 @@ async def get_disponibilidade_recurso(
         for row in apontamentos_result:
             mes_key = (int(row['ano']), int(row['mes']))
             projeto_id = row['projeto_id']
+            projeto_nome = row['projeto_nome']
+            projeto_nome_normalizado = row.get('projeto_nome_normalizado', '')
             horas = float(row['horas_apontadas'] or 0)
+            subtarefas_count = int(row.get('subtarefas_count', 0))
+            tarefas_principais_count = int(row.get('tarefas_principais_count', 0))
+            
+            # Log detalhado para debug da hierarquia
+            logger.info(f"[APONTAMENTO_HIERARQUIA] Mês: {mes_key}, Projeto ID: {projeto_id}, "
+                       f"Nome: '{projeto_nome}', Normalizado: '{projeto_nome_normalizado}', "
+                       f"Horas: {horas}, Subtarefas: {subtarefas_count}, Principais: {tarefas_principais_count}")
             
             # Agrupar por mês e projeto
             if projeto_id:
@@ -603,8 +624,17 @@ async def get_disponibilidade_recurso(
 
             if row['projeto_id'] and row['horas_planejadas'] is not None:
                 proj_id = row['projeto_id']
-                disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][proj_id]["horas"] += float(row['horas_planejadas'])
-                disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][proj_id]["nome"] = row['projeto_nome']
+                projeto_nome = row['projeto_nome']
+                projeto_nome_normalizado = row.get('projeto_nome_normalizado', '')
+                horas_planejadas = float(row['horas_planejadas'])
+                
+                # Log detalhado para debug do planejamento
+                logger.info(f"[PLANEJAMENTO_PROJETO] Mês: {mes_key}, Projeto ID: {proj_id}, "
+                           f"Nome: '{projeto_nome}', Normalizado: '{projeto_nome_normalizado}', "
+                           f"Horas Planejadas: {horas_planejadas}")
+                
+                disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][proj_id]["horas"] += horas_planejadas
+                disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][proj_id]["nome"] = projeto_nome
 
         # Monta a resposta final no formato do schema
         lista_mensal = []

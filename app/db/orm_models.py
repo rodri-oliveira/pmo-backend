@@ -124,7 +124,7 @@ class Projeto(Base):
     status = relationship("StatusProjeto", back_populates="projetos")
     secao = relationship("Secao")
     alocacoes = relationship("AlocacaoRecursoProjeto", back_populates="projeto")
-    apontamentos = relationship("Apontamento", back_populates="projeto")
+    apontamentos = relationship("Apontamento", back_populates="projeto", foreign_keys="Apontamento.projeto_id")
     # Associação N:N com equipes
     equipes = relationship(
         "Equipe",
@@ -211,6 +211,14 @@ class Apontamento(Base):
     recurso_id = Column(Integer, ForeignKey("recurso.id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False, index=True)
     projeto_id = Column(Integer, ForeignKey("projeto.id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False, index=True)
     jira_issue_key = Column(String(50), nullable=True, index=True)
+    
+    # Campos de hierarquia Jira
+    jira_parent_key = Column(String(50), nullable=True, index=True)  # Chave do item pai no Jira
+    jira_issue_type = Column(String(50), nullable=True)  # Tipo da issue (Task, Sub-task, Epic, etc)
+    nome_subtarefa = Column(String(255), nullable=True)  # Nome da subtarefa para rastreabilidade
+    projeto_pai_id = Column(Integer, ForeignKey("projeto.id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True, index=True)  # ID do projeto pai
+    nome_projeto_pai = Column(String(200), nullable=True)  # Nome do projeto pai para referência
+    
     data_hora_inicio_trabalho = Column(DateTime, nullable=True)
     data_apontamento = Column(Date, nullable=False, index=True)
     horas_apontadas = Column(DECIMAL(5, 2), nullable=False)
@@ -223,7 +231,8 @@ class Apontamento(Base):
     
     # Relacionamentos
     recurso = relationship("Recurso", back_populates="apontamentos")
-    projeto = relationship("Projeto", back_populates="apontamentos")
+    projeto = relationship("Projeto", back_populates="apontamentos", foreign_keys=[projeto_id])
+    projeto_pai = relationship("Projeto", foreign_keys=[projeto_pai_id])  # Relacionamento com projeto pai
     usuario_criador = relationship("Usuario", back_populates="apontamentos_criados")
     
     # Restrições

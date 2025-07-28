@@ -118,6 +118,17 @@ class ApontamentoRepository(BaseRepository[Apontamento]):
                 "horas_apontadas", "data_criacao", "data_atualizacao"
             ]
             
+            # Campos opcionais de hierarquia Jira (novos campos)
+            campos_hierarquia = [
+                "jira_parent_key", "jira_issue_type", "nome_subtarefa", 
+                "projeto_pai_id", "nome_projeto_pai"
+            ]
+            
+            # Log dos campos de hierarquia recebidos
+            for campo in campos_hierarquia:
+                if campo in data:
+                    logger.info(f"[SYNC_APONTAMENTO] Campo hierarquia {campo}: {data[campo]}")
+            
             for campo in campos_obrigatorios:
                 if campo not in data or data[campo] is None:
                     logger.error(f"[SYNC_APONTAMENTO] Campo obrigatório ausente: {campo}")
