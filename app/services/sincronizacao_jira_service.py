@@ -1,976 +1,1058 @@
-from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
-from sqlalchemy.ext.asyncio import AsyncSession
+"""
+Sincronização JIRA Funcional - Baseado no script que funcionava
+Com melhorias de hierarquia, campos adicionais e upserts robustos.
 
+REGRAS DE NEGÓCIO:
+1. Jira Project (DTIN) → secao.jira_project_key
+2. Jira Issue (DTIN-7183) → projeto.jira_project_key  
+3. Jira Assignee → recurso.jira_user_id
+4. Cada Jira Worklog → Um apontamento separado
+5. Hierarquia: parent/child preservada nos apontamentos
+
+MELHORIAS:
+- Upsert robusto de seção, recurso e projeto
+- Campos adicionais: created, status, customfield_10020
+- Hierarquia Jira preservada
+- Transações seguras
+- Logs detalhados
+"""
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, List
+from dateutil import parser
+
+from app.db.session import AsyncSessionLocal
 from app.integrations.jira_client import JiraClient
 from app.repositories.apontamento_repository import ApontamentoRepository
-from app.repositories.recurso_repository import RecursoRepository
-from app.repositories.projeto_repository import ProjetoRepository
-from app.repositories.sincronizacao_jira_repository import SincronizacaoJiraRepository
 from app.repositories.secao_repository import SecaoRepository
+from app.repositories.projeto_repository import ProjetoRepository
+from app.repositories.recurso_repository import RecursoRepository
 from app.db.orm_models import FonteApontamento
 
-class SincronizacaoJiraService:
-    """Serviço para sincronização de dados com o Jira."""
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('sincronizacao_jira_funcional.log')
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Data inicial padrão para carga completa
+DEFAULT_START_DATE = datetime(2024, 8, 1)
+
+def extract_comment_text(comment):
+    """Extrai texto do comentário JIRA"""
+    if not comment or "content" not in comment:
+        return None
+    for block in comment["content"]:
+        for frag in block.get("content", []):
+            if "text" in frag:
+                return frag["text"]
+    return None
+
+class SincronizacaoJiraFuncional:
+    """Serviço de sincronização JIRA funcional com hierarquia"""
     
-    def __init__(self, db: AsyncSession):
-        self.db = db
+    def __init__(self, session):
+        self.session = session
         self.jira_client = JiraClient()
-        self.apontamento_repository = ApontamentoRepository(db)
-        self.recurso_repository = RecursoRepository(db)
-        self.projeto_repository = ProjetoRepository(db)
-        self.sincronizacao_repository = SincronizacaoJiraRepository(db)
-        self.secao_repository = SecaoRepository(db)
-
-    async def sincronizar_tudo(self, usuario_id: Optional[int] = None) -> Dict[str, Any]:
-        """
-        Sincroniza todos os dados do Jira (projetos, issues, worklogs).
-        Simplificado para usar o método sincronizar_apontamentos que já está implementado.
+        self.apontamento_repo = ApontamentoRepository(session)
+        self.secao_repo = SecaoRepository(session)
+        self.projeto_repo = ProjetoRepository(session)
+        self.recurso_repo = RecursoRepository(session)
         
-        Args:
-            usuario_id: ID do usuário que iniciou a sincronização (opcional)
-            
-        Returns:
-            Dict[str, Any]: Resultado da sincronização
-        """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira.importar_tudo")
-        
-        logger.info(f"[INICIO_SINC] Iniciando sincronização completa com o Jira para usuario_id={usuario_id}")
-        
-        # Verificar configurações do Jira
-        logger.info(f"[JIRA_CONFIG] Base URL: {self.jira_client.base_url}")
-        logger.info(f"[JIRA_CONFIG] Username: {self.jira_client.username}")
-        if self.jira_client.api_token:
-            token_preview = self.jira_client.api_token[:5] + "..." + self.jira_client.api_token[-5:] if len(self.jira_client.api_token) > 10 else "***"
-            logger.info(f"[JIRA_CONFIG] API Token: {token_preview}")
-        else:
-            logger.error(f"[JIRA_CONFIG] API Token não definido!")
-        
-        # Testar conexão com o Jira antes de prosseguir
-        try:
-            logger.info(f"[JIRA_TEST] Testando conexão com o Jira")
-            test_response = self.jira_client._make_request("GET", "/rest/api/3/myself")
-            logger.info(f"[JIRA_TEST] Conexão com o Jira bem-sucedida! Usuário: {test_response.get('displayName', 'N/A')}")
-        except Exception as e:
-            logger.error(f"[JIRA_TEST_ERROR] Erro ao testar conexão com o Jira: {str(e)}")
-            raise Exception(f"Erro ao testar conexão com o Jira: {str(e)}")
-        
-        # Em vez de tentar sincronizar projetos, issues e worklogs separadamente,
-        # vamos usar o método sincronizar_apontamentos que já está implementado
-        try:
-            logger.info(f"[APONTAMENTOS_SYNC] Iniciando sincronização de apontamentos")
-            result = await self.sincronizar_apontamentos(usuario_id)
-            logger.info(f"[APONTAMENTOS_SYNC_RESULT] {result}")
-            
-            return {
-                "status": "success",
-                "message": "Sincronização completa concluída com sucesso",
-                "data": result
-            }
-        except Exception as e:
-            logger.error(f"[ERRO_SINC] Erro na sincronização completa: {str(e)}")
-            raise ValueError(f"Erro na sincronização total com o Jira: {str(e)}")
-    
-    async def obter_sincronizacao(self, id: int):
-        """
-        Obtém uma sincronização pelo ID.
-        
-        Args:
-            id: ID da sincronização
-            
-        Returns:
-            Sincronização encontrada ou None
-        """
-        return await self.sincronizacao_repository.get(id)
-    
-    async def registrar_inicio_sincronizacao(self, usuario_id: Optional[int] = None, tipo_evento: str = "sincronizacao_manual", mensagem: str = "Sincronização iniciada") -> Any:
-        """
-        Registra o início de uma sincronização com o Jira.
-        
-        Args:
-            usuario_id: ID do usuário que iniciou a sincronização (opcional)
-            tipo_evento: Tipo de evento de sincronização
-            mensagem: Mensagem descritiva da sincronização
-            
-        Returns:
-            Objeto de sincronização criado
-        """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira.registrar_inicio_sincronizacao")
-        
-        # Como data_fim não pode ser NULL no banco de dados, usamos a mesma data de início
-        data_atual = datetime.now()
-        
-        # Criar dados para o registro de sincronização
-        dados_sincronizacao = {
-            "data_inicio": data_atual,
-            "data_fim": data_atual,  # Usamos a mesma data de início e atualizamos depois
-            "status": "PROCESSANDO",
-            "mensagem": mensagem,
-            "quantidade_apontamentos_processados": 0,
-            "tipo_evento": tipo_evento
+        # Contadores para relatório
+        self.stats = {
+            'issues_processadas': 0,
+            'apontamentos_criados': 0,
+            'recursos_criados': 0,
+            'recursos_atualizados': 0,
+            'projetos_criados': 0,
+            'projetos_atualizados': 0,
+            'secoes_criadas': 0,
+            'erros': 0
         }
-        
-        # Adicionar usuario_id apenas se for fornecido e não for None
-        if usuario_id is not None:
-            dados_sincronizacao["usuario_id"] = usuario_id
-        
-        logger.info(f"[SINCRONIZACAO_INICIO] Registrando início da sincronização: {mensagem}")
-        sincronizacao = await self.sincronizacao_repository.create(dados_sincronizacao)
-        
-        # Salvar o ID da sincronização no serviço para uso posterior
-        self.sincronizacao_id = sincronizacao.id
-        
-        return sincronizacao
-    
-    async def registrar_fim_sincronizacao(self, status: str = "SUCESSO", mensagem: str = "Sincronização concluída", quantidade_apontamentos_processados: int = 0) -> Any:
+
+    async def upsert_secao(self, jira_project_key: str) -> Optional[Any]:
         """
-        Registra o fim de uma sincronização com o Jira.
+        Busca ou cria uma seção baseada no jira_project_key.
         
         Args:
-            status: Status final da sincronização (SUCESSO, ERRO)
-            mensagem: Mensagem descritiva do resultado
-            quantidade_apontamentos_processados: Quantidade de apontamentos processados
+            jira_project_key: Chave do projeto Jira (ex: "DTIN", "SGI")
             
         Returns:
-            Objeto de sincronização atualizado
+            Objeto seção ou None se erro
         """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira.registrar_fim_sincronizacao")
-        
-        if not hasattr(self, 'sincronizacao_id'):
-            logger.error("[SINCRONIZACAO_FIM] Tentativa de registrar fim de sincronização sem ID definido")
-            raise ValueError("ID de sincronização não definido. Chame registrar_inicio_sincronizacao primeiro.")
-        
-        logger.info(f"[SINCRONIZACAO_FIM] Registrando fim da sincronização {self.sincronizacao_id}: {status} - {mensagem}")
-        
-        # Atualizar registro de sincronização
-        sincronizacao_atualizada = await self.sincronizacao_repository.update(self.sincronizacao_id, {
-            "data_fim": datetime.now(),
-            "status": status,
-            "mensagem": mensagem,
-            "quantidade_apontamentos_processados": quantidade_apontamentos_processados
-        })
-        
-        return sincronizacao_atualizada
-        
-    async def listar_sincronizacoes(self, skip: int = 0, limit: int = 50, status: Optional[str] = None, tipo_evento: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Lista sincronizações Jira com paginação e filtros.
-        Args:
-            skip: Quantidade de registros a pular
-            limit: Quantidade máxima de registros
-            status: Filtro por status
-            tipo_evento: Filtro por tipo de evento
-        Returns:
-            Dict contendo items, total, skip e limit
-        """
-        items, total = await self.sincronizacao_repository.list_with_pagination(skip=skip, limit=limit, status=status, tipo_evento=tipo_evento)
-        return {
-            "items": items,
-            "total": total,
-            "skip": skip,
-            "limit": limit
-        }
-    
-    async def sincronizar_apontamentos(self, usuario_id: Optional[int] = None, data_inicio: Optional[datetime] = None, data_fim: Optional[datetime] = None) -> Dict[str, Any]:
-        """
-        Sincroniza apontamentos com o Jira.
-        
-        Args:
-            usuario_id: ID do usuário que iniciou a sincronização (opcional)
-            data_inicio: Data inicial do período de busca dos worklogs (opcional)
-            data_fim: Data final do período de busca dos worklogs (opcional)
-        Returns:
-            Dict[str, Any]: Resultado da sincronização
-        """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira.sincronizar_apontamentos")
-        from datetime import datetime, timedelta
-
-        # Registrar início da sincronização
-        data_atual = datetime.now()
-        dados_sincronizacao = {
-            "data_inicio": data_atual,
-            "data_fim": data_atual,  # Usamos a mesma data de início e atualizamos depois
-            "status": "PROCESSANDO",
-            "mensagem": "Iniciando sincronização com o Jira",
-            "quantidade_apontamentos_processados": 0
-        }
-        if usuario_id is not None:
-            dados_sincronizacao["usuario_id"] = usuario_id
-        sincronizacao = await self.sincronizacao_repository.create(dados_sincronizacao)
-        sincronizacao_id = sincronizacao["id"] if isinstance(sincronizacao, dict) else sincronizacao.id
-
         try:
-            # Definir período de busca
-            if data_inicio and data_fim:
-                logger.info(f"[SINCRONIZAR_APONTAMENTOS] Buscando worklogs entre {data_inicio.date()} e {data_fim.date()}")
-                worklogs = self.jira_client.get_worklogs_periodo(data_inicio, data_fim)
-            else:
-                # Padrão: últimos 30 dias
-                logger.info("[SINCRONIZAR_APONTAMENTOS] Buscando worklogs recentes dos últimos 30 dias")
-                worklogs = self.jira_client.get_recent_worklogs(days=30)
-            logger.info(f"[SINCRONIZAR_APONTAMENTOS] Encontrados {len(worklogs)} worklogs no período")
-
-            count = 0
-            for worklog in worklogs:
-                try:
-                    worklog_data = await self._extrair_dados_worklog(worklog)
-                    if worklog_data:
-                        await self.apontamento_repository.sync_jira_apontamento(worklog_data["jira_worklog_id"], worklog_data)
-                        count += 1
-                        logger.info(f"[SINCRONIZAR_APONTAMENTOS] Worklog {worklog_data['jira_worklog_id']} sincronizado com sucesso")
-                except Exception as e:
-                    logger.error(f"[SINCRONIZAR_APONTAMENTOS] Erro ao processar worklog: {str(e)}")
-
-            await self.sincronizacao_repository.update(sincronizacao_id, {
-                "data_fim": datetime.now(),
-                "status": "SUCESSO",
-                "mensagem": f"Sincronização concluída com sucesso. {count} apontamentos processados.",
-                "quantidade_apontamentos_processados": count
-            })
-            return {
-                "status": "success",
-                "message": f"Sincronização concluída com sucesso",
-                "apontamentos_processados": count
-            }
-        except Exception as e:
-            await self.sincronizacao_repository.update(sincronizacao_id, {
-                "data_fim": datetime.now(),
-                "status": "ERRO",
-                "mensagem": f"Erro na sincronização: {str(e)}",
-                "quantidade_apontamentos_processados": 0
-            })
-            raise ValueError(f"Erro na sincronização com o Jira: {str(e)}")
+            logger.info(f"[SECAO_UPSERT] Iniciando upsert para projeto Jira: {jira_project_key}")
             
-    async def _sincronizar_projeto(self, projeto_key: str) -> Optional[Dict[str, Any]]:
-        """
-        Sincroniza um projeto do Jira com o banco de dados local.
-        
-        Args:
-            projeto_key: Chave do projeto no Jira
+            # Mapeamento correto: DTIN (Jira) → TIN (Seção)
+            secao_key = jira_project_key
+            if jira_project_key == "DTIN":
+                secao_key = "TIN"
+                logger.info(f"[SECAO_MAPEAMENTO] DTIN → TIN")
             
-        Returns:
-            Optional[Dict[str, Any]]: Dados do projeto sincronizado ou None se falhar
-        """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira._sincronizar_projeto")
-        
-        try:
-            # Verificar se o projeto já existe no banco
-            projeto = await self.projeto_repository.get_by_jira_project_key(projeto_key)
+            logger.info(f"[SECAO_BUSCA] Buscando seção com chave: {secao_key}")
             
-            if projeto:
-                logger.info(f"[SINCRONIZAR_PROJETO] Projeto {projeto_key} já existe no banco")
-                return projeto.__dict__
-                
-            # Buscar detalhes do projeto no Jira
-            projeto_jira = self.jira_client.get_project(projeto_key)
+            # Buscar seção existente
+            secao = await self.secao_repo.get_by_jira_project_key(secao_key)
             
-            if not projeto_jira:
-                logger.warning(f"[SINCRONIZAR_PROJETO] Projeto {projeto_key} não encontrado no Jira")
-                return None
-                
-            # Extrair dados do projeto
-            projeto_nome = projeto_jira.get("name") or f"Projeto {projeto_key}"
+            if secao:
+                logger.info(f"[SECAO_FOUND] Seção encontrada: {secao.nome} (id={secao.id})")
+                return secao
             
-            # Buscar o status padrão para projetos
-            status_projeto = await self.projeto_repository.get_status_default()
+            logger.info(f"[SECAO_CREATE] Seção não encontrada, criando nova seção para: {secao_key}")
             
-            if not status_projeto:
-                logger.error(f"[SINCRONIZAR_PROJETO] Não foi possível encontrar status padrão para projetos")
-                return None
-                
-            # Dados para criar o projeto
-            projeto_data = {
-                "nome": projeto_nome,
-                "jira_project_key": projeto_key,
-                "status_projeto_id": status_projeto.id,
+            # Criar nova seção
+            secao_data = {
+                "nome": f"Seção {secao_key}",
+                "jira_project_key": secao_key,
+                "descricao": f"Seção criada automaticamente para projeto Jira {jira_project_key}",
                 "ativo": True
             }
             
-            # Criar o projeto no banco
-            projeto = await self.projeto_repository.create(projeto_data)
+            logger.info(f"[SECAO_DATA] Dados da seção: {secao_data}")
             
-            logger.info(f"[SINCRONIZAR_PROJETO] Projeto {projeto_key} criado com sucesso")
-            return projeto.__dict__
+            secao = await self.secao_repo.create(secao_data)
+            self.stats['secoes_criadas'] += 1
+            logger.info(f"[SECAO_CREATED] Nova seção criada: {secao.nome} (id={secao.id})")
+            
+            return secao
             
         except Exception as e:
-            logger.error(f"[SINCRONIZAR_PROJETO] Erro ao sincronizar projeto {projeto_key}: {str(e)}")
+            logger.error(f"[SECAO_ERROR] Erro ao processar seção {jira_project_key}: {str(e)}")
+            logger.error(f"[SECAO_ERROR] Traceback: ", exc_info=True)
             return None
-            
-    async def _sincronizar_issue(self, issue_key: str) -> Optional[Dict[str, Any]]:
+
+    async def upsert_recurso(self, assignee_data: Dict[str, Any]) -> Optional[Any]:
         """
-        Sincroniza uma issue do Jira com o banco de dados local.
+        Busca ou cria um recurso baseado nos dados do assignee do Jira.
         
         Args:
-            issue_key: Chave da issue no Jira
+            assignee_data: Dados do assignee do Jira
             
         Returns:
-            Optional[Dict[str, Any]]: Dados da issue sincronizada ou None se falhar
+            Objeto recurso ou None se erro
         """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira._sincronizar_issue")
-        
         try:
-            # Buscar detalhes da issue no Jira
-            issue_jira = self.jira_client.get_issue(issue_key)
+            jira_user_id = assignee_data.get("accountId")
+            email = assignee_data.get("emailAddress")
+            nome = assignee_data.get("displayName")
+            ativo = assignee_data.get("active", True)
             
-            if not issue_jira:
-                logger.warning(f"[SINCRONIZAR_ISSUE] Issue {issue_key} não encontrada no Jira")
+            # Email é obrigatório no schema
+            if not email:
+                logger.warning(f"[RECURSO_SKIP] Assignee sem email: {jira_user_id}")
                 return None
-                
-            # Extrair o project_key da issue_key (formato: PROJECT-123)
-            project_key = issue_key.split('-')[0] if '-' in issue_key else None
             
-            if not project_key:
-                logger.warning(f"[SINCRONIZAR_ISSUE] Não foi possível extrair project_key de {issue_key}")
-                return None
-                
-            # Sincronizar o projeto primeiro
-            projeto = await self._sincronizar_projeto(project_key)
+            recurso = None
             
-            if not projeto:
-                logger.error(f"[SINCRONIZAR_ISSUE] Falha ao sincronizar projeto {project_key} para issue {issue_key}")
-                return None
+            # Buscar por jira_user_id primeiro
+            if jira_user_id:
+                recurso = await self.recurso_repo.get_by_jira_user_id(jira_user_id)
+            
+            # Se não encontrou, buscar por email
+            if not recurso:
+                recurso = await self.recurso_repo.get_by_email(email)
+            
+            if recurso:
+                # Atualizar dados se necessário
+                updates = {}
+                if nome and recurso.nome != nome:
+                    updates["nome"] = nome
+                if email and recurso.email != email:
+                    updates["email"] = email
+                if jira_user_id and recurso.jira_user_id != jira_user_id:
+                    updates["jira_user_id"] = jira_user_id
+                if recurso.ativo != ativo:
+                    updates["ativo"] = ativo
                 
-            # Retornar os dados da issue
-            return {
-                "key": issue_key,
-                "summary": issue_jira.get("fields", {}).get("summary", ""),
-                "projeto_id": projeto.get("id")
+                if updates:
+                    for key, value in updates.items():
+                        setattr(recurso, key, value)
+                    await self.session.commit()
+                    await self.session.refresh(recurso)
+                    self.stats['recursos_atualizados'] += 1
+                    logger.info(f"[RECURSO_UPDATED] Recurso atualizado: {recurso.email} (id={recurso.id})")
+                
+                return recurso
+            
+            # Criar novo recurso
+            recurso_data = {
+                "nome": nome or email,  # Usar email como fallback
+                "email": email,
+                "jira_user_id": jira_user_id,
+                "ativo": ativo
             }
             
-        except Exception as e:
-            logger.error(f"[SINCRONIZAR_ISSUE] Erro ao sincronizar issue {issue_key}: {str(e)}")
-            return None
+            recurso = await self.recurso_repo.create(recurso_data)
+            self.stats['recursos_criados'] += 1
+            logger.info(f"[RECURSO_CREATED] Novo recurso criado: {recurso.email} (id={recurso.id})")
             
-    async def _sincronizar_worklog(self, worklog: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Sincroniza um worklog do Jira com o banco de dados local.
-        
-        Args:
-            worklog: Dados do worklog do Jira
-            
-        Returns:
-            Optional[Dict[str, Any]]: Dados do worklog sincronizado ou None se falhar
-        """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira._sincronizar_worklog")
-        
-        try:
-            # Extrair dados básicos do worklog
-            worklog_id = str(worklog.get("id"))
-            
-            # Verificar se temos o ID do worklog
-            if not worklog_id:
-                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem ID: {worklog}")
-                return None
-                
-            # Extrair informações da issue
-            issue_id = worklog.get("issueId")
-            issue_key = worklog.get("issueKey")
-            
-            # Se não temos a chave da issue, tentar obtê-la do campo issueId
-            if not issue_key and issue_id:
-                logger.info(f"[SINCRONIZAR_WORKLOG] Obtendo issue_key a partir do issue_id: {issue_id}")
-                try:
-                    # Tentar obter a issue pelo ID
-                    issue_data = self.jira_client.get_issue(issue_id)
-                    issue_key = issue_data.get("key")
-                except Exception as e:
-                    logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao obter issue pelo ID {issue_id}: {str(e)}")
-            
-            # Se ainda não temos a chave da issue, não podemos continuar
-            if not issue_key:
-                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem issue_key: {worklog}")
-                return None
-                
-            # Extrair dados do autor
-            author = worklog.get("author", {})
-            author_account_id = author.get("accountId")
-            author_email = author.get("emailAddress")
-            author_display_name = author.get("displayName")
-            
-            # Verificar se temos informações do autor
-            if not author_account_id and not author_email:
-                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem informações do autor: {worklog}")
-                return None
-                
-            # Buscar o recurso pelo jira_user_id ou email
-            recurso = None
-            if author_account_id:
-                recurso = await self.recurso_repository.get_by_jira_user_id(author_account_id)
-                
-            if not recurso and author_email:
-                recurso = await self.recurso_repository.get_by_email(author_email)
-                
-            # Se não encontramos o recurso, criar um novo
-            if not recurso:
-                logger.info(f"[SINCRONIZAR_WORKLOG] Recurso não encontrado para {author_account_id}/{author_email}, criando novo")
-                
-                # Dados para criar o recurso
-                recurso_data = {
-                    "nome": author_display_name or author_email or "Usuário Jira",
-                    "email": author_email or f"{author_account_id}@jira.weg.net",
-                    "jira_user_id": author_account_id,
-                    "ativo": True
-                }
-                
-                try:
-                    recurso = await self.recurso_repository.create(recurso_data)
-                except Exception as e:
-                    logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao criar recurso: {str(e)}")
-                    return None
-            
-            # Buscar o projeto pelo jira_project_key
-            # Extrair o project_key da issue_key (formato: PROJECT-123)
-            project_key = issue_key.split('-')[0] if '-' in issue_key else None
-            
-            if not project_key:
-                logger.warning(f"[SINCRONIZAR_WORKLOG] Não foi possível extrair project_key de {issue_key}")
-                return None
-                
-            projeto = await self.projeto_repository.get_by_jira_project_key(project_key)
-            
-            # Se não encontramos o projeto, criar um novo
-            if not projeto:
-                logger.info(f"[SINCRONIZAR_WORKLOG] Projeto não encontrado para {project_key}, criando novo")
-                
-                # Buscar detalhes do projeto no Jira
-                try:
-                    projeto_jira = self.jira_client.get_project(project_key)
-                    projeto_nome = projeto_jira.get("name") or f"Projeto {project_key}"
-                except Exception as e:
-                    logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao obter projeto do Jira: {str(e)}")
-                    projeto_nome = f"Projeto {project_key}"
-                
-                # Buscar o status padrão para projetos
-                status_projeto = await self.projeto_repository.get_status_default()
-                
-                if not status_projeto:
-                    logger.error(f"[SINCRONIZAR_WORKLOG] Não foi possível encontrar status padrão para projetos")
-                    return None
-                
-                # Dados para criar o projeto
-                projeto_data = {
-                    "nome": projeto_nome,
-                    "jira_project_key": project_key,
-                    "status_projeto_id": status_projeto.id,
-                    "ativo": True
-                }
-                
-                try:
-                    projeto = await self.projeto_repository.create(projeto_data)
-                except Exception as e:
-                    logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao criar projeto: {str(e)}")
-                    return None
-            
-            # Extrair horas apontadas
-            time_spent_seconds = worklog.get("timeSpentSeconds")
-            
-            if not time_spent_seconds:
-                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem timeSpentSeconds: {worklog}")
-                return None
-                
-            # Converter segundos para horas (com precisão de 2 casas decimais)
-            horas_apontadas = round(time_spent_seconds / 3600, 2)
-            
-            # Extrair data e hora do apontamento
-            started = worklog.get("started")  # Formato ISO: 2023-05-29T12:00:00.000+0000
-            
-            if not started:
-                logger.warning(f"[SINCRONIZAR_WORKLOG] Worklog sem data de início: {worklog}")
-                return None
-                
-            # Converter string ISO para datetime
-            from datetime import datetime
-            import dateutil.parser
-            
-            try:
-                data_hora_inicio = dateutil.parser.parse(started)
-                # Remover timezone para compatibilidade com o banco
-                if data_hora_inicio.tzinfo:
-                    data_hora_inicio = data_hora_inicio.replace(tzinfo=None)
-                    
-                # Extrair apenas a data para data_apontamento
-                data_apontamento = data_hora_inicio.date()
-            except Exception as e:
-                logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao converter data: {str(e)}")
-                return None
-            
-            # Extrair descrição do worklog
-            descricao = worklog.get("comment") or ""
-            
-            # Se o comentário for um objeto complexo (como em alguns formatos do Jira)
-            if isinstance(descricao, dict):
-                # Tentar extrair o texto do objeto de comentário
-                if "content" in descricao:
-                    try:
-                        # Extrair texto do formato Atlassian Document Format
-                        texto = []
-                        for item in descricao.get("content", []):
-                            if item.get("type") == "paragraph":
-                                for content in item.get("content", []):
-                                    if content.get("type") == "text":
-                                        texto.append(content.get("text", ""))
-                        descricao = " ".join(texto)
-                    except Exception as e:
-                        logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao extrair texto do comentário: {str(e)}")
-                        descricao = "Comentário em formato não suportado"
-            
-            # Montar o objeto de dados para o apontamento
-            apontamento_data = {
-                "jira_worklog_id": worklog_id,
-                "recurso_id": recurso.id,
-                "projeto_id": projeto.id,
-                "jira_issue_key": issue_key,
-                "data_hora_inicio_trabalho": data_hora_inicio,
-                "data_apontamento": data_apontamento,
-                "horas_apontadas": horas_apontadas,
-                "descricao": descricao,
-                "fonte_apontamento": "JIRA",
-                "data_sincronizacao_jira": datetime.now(),
-                "data_criacao": datetime.now(),
-                "data_atualizacao": datetime.now()
-            }
-            
-            logger.info(f"[SINCRONIZAR_WORKLOG] Dados extraídos com sucesso para worklog {worklog_id}")
-            return apontamento_data
+            return recurso
             
         except Exception as e:
-            logger.error(f"[SINCRONIZAR_WORKLOG] Erro ao sincronizar worklog: {str(e)}")
-            # Logar o worklog para diagnóstico
-            logger.error(f"[SINCRONIZAR_WORKLOG] Worklog problemático: {worklog}")
+            logger.error(f"[RECURSO_ERROR] Erro ao processar recurso: {str(e)}")
             return None
-    
-    async def _extrair_dados_worklog(self, worklog: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+
+    async def upsert_projeto(self, issue_key: str, issue_summary: str, secao_id: int, fields: Dict[str, Any] = None) -> Optional[Any]:
         """
-        Extrai dados de um worklog do Jira para o formato do sistema.
+        Busca ou cria um projeto baseado na issue do Jira com campos adicionais.
         
         Args:
-            worklog: Dados do worklog do Jira
+            issue_key: Chave da issue (ex: "DTIN-7183")
+            issue_summary: Resumo da issue
+            secao_id: ID da seção
+            fields: Campos adicionais do Jira (created, status, customfield_10020)
             
         Returns:
-            Optional[Dict[str, Any]]: Dados formatados para o apontamento ou None se inválido
+            Objeto projeto ou None se erro
         """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira.extrair_dados_worklog")
-        
         try:
-            # Extrair dados básicos
-            worklog_id = str(worklog.get("id"))
+            # Buscar projeto existente
+            projeto = await self.projeto_repo.get_by_jira_project_key(issue_key)
             
-            # Verificar se temos o ID do worklog
-            if not worklog_id:
-                logger.warning(f"[WORKLOG_EXTRACT] Worklog sem ID: {worklog}")
-                return None
-                
-            # Extrair informações da issue
-            issue_id = worklog.get("issueId")
-            issue_key = worklog.get("issueKey")
-            
-            # Se não temos a chave da issue, tentar obtê-la do campo issueId
-            if not issue_key and issue_id:
-                logger.info(f"[WORKLOG_EXTRACT] Obtendo issue_key a partir do issue_id: {issue_id}")
-                try:
-                    # Tentar obter a issue pelo ID
-                    issue_data = self.jira_client.get_issue(issue_id)
-                    issue_key = issue_data.get("key")
-                except Exception as e:
-                    logger.error(f"[WORKLOG_EXTRACT] Erro ao obter issue pelo ID {issue_id}: {str(e)}")
-            
-            # Se ainda não temos a chave da issue, não podemos continuar
-            if not issue_key:
-                logger.warning(f"[WORKLOG_EXTRACT] Worklog sem issue_key: {worklog}")
-                return None
-            
-            # Buscar informações detalhadas da issue para obter hierarquia
-            issue_details = None
-            jira_parent_key = None
-            jira_issue_type = None
-            nome_subtarefa = None
-            
-            try:
-                # Buscar detalhes da issue incluindo parent e issueType
-                issue_details = self.jira_client.get_issue(issue_key)
-                
-                # Extrair tipo da issue
-                issue_type_info = issue_details.get("fields", {}).get("issuetype", {})
-                jira_issue_type = issue_type_info.get("name")
-                
-                # Extrair informações do parent (Epic)
-                parent_info = issue_details.get("fields", {}).get("parent")
-                if parent_info:
-                    jira_parent_key = parent_info.get("key")
-                    nome_subtarefa = issue_details.get("fields", {}).get("summary")
-                    logger.info(f"[WORKLOG_EXTRACT] Issue {issue_key} é subtarefa de {jira_parent_key}")
-                else:
-                    logger.info(f"[WORKLOG_EXTRACT] Issue {issue_key} é um Epic (sem parent)")
-                    
-            except Exception as e:
-                logger.error(f"[WORKLOG_EXTRACT] Erro ao obter detalhes da issue {issue_key}: {str(e)}")
-                # Continuar mesmo sem informações de hierarquia
-                
-            # Extrair dados do autor
-            author = worklog.get("author", {})
-            author_account_id = author.get("accountId")
-            author_email = author.get("emailAddress")
-            author_display_name = author.get("displayName")
-            
-            # Verificar se temos informações do autor
-            if not author_account_id and not author_email:
-                logger.warning(f"[WORKLOG_EXTRACT] Worklog sem informações do autor: {worklog}")
-                return None
-                
-            # Buscar o recurso pelo jira_user_id ou email
-            recurso = None
-            if author_account_id:
-                recurso = await self.recurso_repository.get_by_jira_user_id(author_account_id)
-                
-            if not recurso and author_email:
-                recurso = await self.recurso_repository.get_by_email(author_email)
-                
-            # Se não encontramos o recurso, criar um novo
-            if not recurso:
-                logger.info(f"[WORKLOG_EXTRACT] Recurso não encontrado para {author_account_id}/{author_email}, criando novo")
-                
-                # Dados para criar o recurso
-                recurso_data = {
-                    "nome": author_display_name or author_email or "Usuário Jira",
-                    "email": author_email or f"{author_account_id}@jira.weg.net",
-                    "jira_user_id": author_account_id,
-                    "ativo": True
-                }
-                
-                try:
-                    recurso = await self.recurso_repository.create(recurso_data)
-                except Exception as e:
-                    logger.error(f"[WORKLOG_EXTRACT] Erro ao criar recurso: {str(e)}")
-                    return None
-            
-            # Buscar o projeto pelo jira_project_key
-            # Extrair o project_key da issue_key (formato: PROJECT-123)
-            project_key = issue_key.split('-')[0] if '-' in issue_key else None
-            
-            if not project_key:
-                logger.warning(f"[WORKLOG_EXTRACT] Não foi possível extrair project_key de {issue_key}")
-                return None
-                
-            projeto = await self.projeto_repository.get_by_jira_project_key(project_key)
-            
-            # Atualiza nome do projeto se mudou no Jira
             if projeto:
-                try:
-                    projeto_jira = self.jira_client.get_project(project_key)
-                    projeto_nome = projeto_jira.get("name") or f"Projeto {project_key}"
-                    if projeto.nome != projeto_nome:
-                        await self.projeto_repository.update(projeto.id, {"nome": projeto_nome})
-                except Exception as e:
-                    logger.error(f"[WORKLOG_EXTRACT] Erro ao atualizar nome do projeto {project_key}: {str(e)}")
+                # Atualizar nome se mudou
+                if issue_summary and projeto.nome != issue_summary:
+                    projeto.nome = issue_summary
+                    await self.session.commit()
+                    await self.session.refresh(projeto)
+                    self.stats['projetos_atualizados'] += 1
+                    logger.info(f"[PROJETO_UPDATED] Projeto atualizado: {projeto.nome} (id={projeto.id})")
+                
+                return projeto
             
-            # Se não encontramos o projeto, criar um novo
-            if not projeto:
-                logger.info(f"[WORKLOG_EXTRACT] Projeto não encontrado para {project_key}, criando novo")
-                
-                # Buscar detalhes do projeto no Jira
-                try:
-                    projeto_jira = self.jira_client.get_project(project_key)
-                    projeto_nome = projeto_jira.get("name") or f"Projeto {project_key}"
-                except Exception as e:
-                    logger.error(f"[WORKLOG_EXTRACT] Erro ao obter projeto do Jira: {str(e)}")
-                    projeto_nome = f"Projeto {project_key}"
-                
-                # Buscar o status padrão para projetos
-                status_projeto = await self.projeto_repository.get_status_default()
-                
-                if not status_projeto:
-                    logger.error(f"[WORKLOG_EXTRACT] Não foi possível encontrar status padrão para projetos")
-                    return None
-                
-                # Dados para criar o projeto
-                projeto_data = {
-                    "nome": projeto_nome,
-                    "jira_project_key": project_key,
-                    "status_projeto_id": status_projeto.id,
-                    "ativo": True
-                }
-                
-                # se existir secao, vincula o projeto à secao
-                secao = await self.secao_repository.get_by_jira_project_key(project_key)
-                if secao:
-                    projeto_data["secao_id"] = secao.id
-                
-                try:
-                    projeto = await self.projeto_repository.create(projeto_data)
-                except Exception as e:
-                    logger.error(f"[WORKLOG_EXTRACT] Erro ao criar projeto: {str(e)}")
-                    return None
-            
-            # Buscar projeto pai se a issue for uma subtarefa
-            projeto_pai = None
-            projeto_pai_id = None
-            
-            if jira_parent_key:
-                # Extrair project_key do parent
-                parent_project_key = jira_parent_key.split('-')[0] if '-' in jira_parent_key else None
-                
-                if parent_project_key:
-                    # Buscar projeto pai pelo jira_project_key
-                    projeto_pai = await self.projeto_repository.get_by_jira_project_key(parent_project_key)
-                    
-                    if not projeto_pai:
-                        # Criar projeto pai se não existir
-                        logger.info(f"[WORKLOG_EXTRACT] Projeto pai não encontrado para {parent_project_key}, criando novo")
-                        
-                        try:
-                            # Buscar detalhes do Epic pai no Jira
-                            parent_issue_details = self.jira_client.get_issue(jira_parent_key)
-                            parent_summary = parent_issue_details.get("fields", {}).get("summary", f"Epic {jira_parent_key}")
-                            
-                            # Buscar status padrão
-                            status_projeto = await self.projeto_repository.get_status_default()
-                            
-                            if status_projeto:
-                                projeto_pai_data = {
-                                    "nome": parent_summary,
-                                    "jira_project_key": jira_parent_key,  # Usar a chave do Epic como identificador
-                                    "status_projeto_id": status_projeto.id,
-                                    "ativo": True
-                                }
-                                
-                                # Vincular à seção se existir
-                                secao = await self.secao_repository.get_by_jira_project_key(parent_project_key)
-                                if secao:
-                                    projeto_pai_data["secao_id"] = secao.id
-                                
-                                projeto_pai = await self.projeto_repository.create(projeto_pai_data)
-                                logger.info(f"[WORKLOG_EXTRACT] Projeto pai criado: {projeto_pai.nome} (id={projeto_pai.id})")
-                            
-                        except Exception as e:
-                            logger.error(f"[WORKLOG_EXTRACT] Erro ao criar projeto pai: {str(e)}")
-                    
-                    if projeto_pai:
-                        projeto_pai_id = projeto_pai.id
-                        logger.info(f"[WORKLOG_EXTRACT] Projeto pai encontrado: {projeto_pai.nome} (id={projeto_pai_id})")
-            
-            # Extrair horas apontadas
-            # O campo timeSpentSeconds contém o tempo gasto em segundos
-            time_spent_seconds = worklog.get("timeSpentSeconds")
-            
-            if not time_spent_seconds:
-                logger.warning(f"[WORKLOG_EXTRACT] Worklog sem timeSpentSeconds: {worklog}")
-                return None
-                
-            # Converter segundos para horas (com precisão de 2 casas decimais)
-            horas_apontadas = round(time_spent_seconds / 3600, 2)
-            
-            # Extrair data e hora do apontamento
-            started = worklog.get("started")  # Formato ISO: 2023-05-29T12:00:00.000+0000
-            
-            if not started:
-                logger.warning(f"[WORKLOG_EXTRACT] Worklog sem data de início: {worklog}")
-                return None
-                
-            # Converter string ISO para datetime
-            from datetime import datetime
-            import dateutil.parser
-            
-            try:
-                data_hora_inicio = dateutil.parser.parse(started)
-                # Remover timezone para compatibilidade com o banco
-                if data_hora_inicio.tzinfo:
-                    data_hora_inicio = data_hora_inicio.replace(tzinfo=None)
-                    
-                # Extrair apenas a data para data_apontamento
-                data_apontamento = data_hora_inicio.date()
-            except Exception as e:
-                logger.error(f"[WORKLOG_EXTRACT] Erro ao converter data: {str(e)}")
+            # Buscar status padrão
+            status_default = await self.projeto_repo.get_status_default()
+            if not status_default:
+                logger.error(f"[PROJETO_ERROR] Status padrão não encontrado")
                 return None
             
-            # Extrair descrição do worklog
-            descricao = worklog.get("comment") or ""
+            # ✅ EXTRAIR CAMPOS ADICIONAIS DO JIRA
+            data_criacao = datetime.now()
+            start_date = None
+            jira_status = None
             
-            # Se o comentário for um objeto complexo (como em alguns formatos do Jira)
-            if isinstance(descricao, dict):
-                # Tentar extrair o texto do objeto de comentário
-                if "content" in descricao:
+            if fields:
+                # 1. Data de criação real do Jira
+                created_date = fields.get('created')
+                if created_date:
                     try:
-                        # Extrair texto do formato Atlassian Document Format
-                        texto = []
-                        for item in descricao.get("content", []):
-                            if item.get("type") == "paragraph":
-                                for content in item.get("content", []):
-                                    if content.get("type") == "text":
-                                        texto.append(content.get("text", ""))
-                        descricao = " ".join(texto)
+                        data_criacao = parser.parse(created_date)
+                        if data_criacao.tzinfo is not None:
+                            data_criacao = data_criacao.replace(tzinfo=None)
+                        logger.info(f"[PROJETO] Data criação Jira: {data_criacao}")
                     except Exception as e:
-                        logger.error(f"[WORKLOG_EXTRACT] Erro ao extrair texto do comentário: {str(e)}")
-                        descricao = "Comentário em formato não suportado"
+                        logger.warning(f"[PROJETO] Erro ao parsear created: {e}")
+                
+                # 2. Status do Jira
+                status_data = fields.get('status', {})
+                jira_status = status_data.get('name')
+                if jira_status:
+                    logger.info(f"[PROJETO] Status Jira: {jira_status}")
+                
+                # 3. StartDate do Sprint (customfield_10020)
+                sprint_data = fields.get('customfield_10020', [])
+                if sprint_data and len(sprint_data) > 0:
+                    start_date_str = sprint_data[0].get('startDate')
+                    if start_date_str:
+                        try:
+                            parsed_date = parser.parse(start_date_str)
+                            if parsed_date.tzinfo is not None:
+                                parsed_date = parsed_date.replace(tzinfo=None)
+                            start_date = parsed_date.date()
+                            logger.info(f"[PROJETO] Start date Sprint: {start_date}")
+                        except Exception as e:
+                            logger.warning(f"[PROJETO] Erro ao parsear startDate: {e}")
             
-            # Montar o objeto de dados para o apontamento
-            # Montar o objeto de dados para o apontamento
-            apontamento_data = {
-                "jira_worklog_id": worklog_id,
-                "recurso_id": recurso.id,
-                "projeto_id": projeto.id,
-                "jira_issue_key": issue_key,
-                "jira_parent_key": jira_parent_key,
-                "jira_issue_type": jira_issue_type,
-                "nome_subtarefa": nome_subtarefa,
-                "projeto_pai_id": projeto_pai_id,
-                "nome_projeto_pai": projeto_pai.nome if projeto_pai else None,
-                "data_hora_inicio_trabalho": data_hora_inicio,
-                "data_apontamento": data_apontamento,
-                "horas_apontadas": horas_apontadas,
-                "descricao": descricao,
-                "fonte_apontamento": "JIRA",
-                "data_sincronizacao_jira": datetime.now(),
-                "data_criacao": datetime.now(),
-                "data_atualizacao": datetime.now()
+            # Criar novo projeto com dados completos
+            projeto_data = {
+                "nome": issue_summary or issue_key,
+                "jira_project_key": issue_key,
+                "secao_id": secao_id,
+                "status_projeto_id": status_default.id,
+                "ativo": True,
+                "data_criacao": data_criacao,
+                "data_inicio_prevista": start_date,  # ✅ CORRIGIDO: usar data_inicio_prevista
+                "descricao": f"Status Jira: {jira_status}" if jira_status else None  # ✅ CORRIGIDO: usar descricao
             }
             
-            logger.info(f"[WORKLOG_EXTRACT] Dados extraídos com sucesso para worklog {worklog_id}")
-            return apontamento_data
+            projeto = await self.projeto_repo.create(projeto_data)
+            self.stats['projetos_criados'] += 1
+            logger.info(f"[PROJETO_CREATED] Novo projeto criado: {projeto.nome} (id={projeto.id})")
+            
+            return projeto
             
         except Exception as e:
-            logger.error(f"[WORKLOG_EXTRACT] Erro ao extrair dados do worklog: {str(e)}")
-            # Logar o worklog para diagnóstico
-            logger.error(f"[WORKLOG_EXTRACT] Worklog problemático: {worklog}")
+            logger.error(f"[PROJETO_ERROR] Erro ao processar projeto {issue_key}: {str(e)}")
             return None
+
+    async def processar_periodo(self, data_inicio: datetime, data_fim: datetime):
+        """
+        Processa worklogs do Jira de data_inicio até data_fim com upserts robustos.
+        """
+        logger.info(f"[INICIO] Processando período: {data_inicio.date()} até {data_fim.date()}")
+        
+        try:
+            # Projetos Jira para sincronizar (chaves dos projetos)
+            # IMPORTANTE: Usar as chaves corretas dos projetos no Jira
+            project_keys = [
+                "SEG",   # Seção Segurança
+                "SGI",   # Seção Suporte Global Infraestrutura
+                "DTIN"   # Departamento de TI (mapeado para TIN)
+            ]
             
-            # Extrair dados do worklog para o formato do sistema
-            worklog_data = await self._extrair_dados_worklog(worklog)
+            logger.info(f"[PROJETOS] Sincronizando projetos: {project_keys}")
+            project_keys_str = ', '.join([f'"{key}"' for key in project_keys])
             
-            if not worklog_data:
-                logger.warning(f"[WORKLOG_SYNC] Não foi possível extrair dados do worklog {worklog_id}")
-                return
+            # JQL com filtro de data nos worklogs
+            jql = (
+                f"project IN ({project_keys_str}) "
+                f"AND worklogDate >= '{data_inicio.date()}' "
+                f"AND worklogDate <= '{data_fim.date()}'"
+            )
             
-            # Sincronizar o worklog no banco
-            await self.apontamento_repository.sync_jira_apontamento(worklog_data["jira_worklog_id"], worklog_data)
+            logger.info(f"[JQL] Query: {jql}")
             
-            logger.info(f"[WORKLOG_SYNC] Worklog {worklog_id} sincronizado com sucesso")
+            # Buscar todas as issues com worklogs no período
+            try:
+                issues = await self._buscar_todas_issues_paginacao(
+                    jql, 
+                    fields=["key", "summary", "assignee", "worklog", "project", "created", "status", "customfield_10020", "parent", "issuetype"]
+                )
+                
+                logger.info(f"[ISSUES] Encontradas {len(issues)} issues")
+                
+                # Log detalhado dos projetos encontrados
+                projetos_encontrados = {}
+                for issue in issues:
+                    project_key = issue.get('key', '').split('-')[0] if issue.get('key') else 'UNKNOWN'
+                    projetos_encontrados[project_key] = projetos_encontrados.get(project_key, 0) + 1
+                
+                logger.info(f"[PROJETOS_ENCONTRADOS] {projetos_encontrados}")
+                
+            except Exception as e:
+                logger.error(f"[BUSCA_ISSUES_ERRO] Erro ao buscar issues: {str(e)}")
+                raise
+            
+            for issue in issues:
+                try:
+                    issue_key = issue.get("key", "NO_KEY")
+                    logger.info(f"[ISSUE_PROCESSANDO] Iniciando processamento de {issue_key}")
+                    
+                    await self._processar_issue(issue, data_inicio, data_fim)
+                    self.stats['issues_processadas'] += 1
+                    logger.info(f"[ISSUE_SUCESSO] Issue {issue_key} processada com sucesso")
+                    
+                except Exception as e:
+                    issue_key = issue.get("key", "NO_KEY")
+                    logger.error(f"[ISSUE_ERROR] Erro ao processar issue {issue_key}: {str(e)}")
+                    logger.error(f"[ISSUE_ERROR] Traceback: ", exc_info=True)
+                    self.stats['erros'] += 1
+                    continue
+            
+            # Commit final
+            await self.session.commit()
+            
+            # Relatório final
+            logger.info("=" * 60)
+            logger.info("RELATÓRIO DE SINCRONIZAÇÃO")
+            logger.info("=" * 60)
+            for key, value in self.stats.items():
+                logger.info(f"{key.upper()}: {value}")
+            logger.info("=" * 60)
             
         except Exception as e:
-            logger.error(f"[WORKLOG_SYNC] Erro ao sincronizar worklog {worklog.get('id', 'N/A')}: {str(e)}")
-            # Não propagar a exceção para não interromper o processo de sincronização
+            logger.error(f"[ERRO_GERAL] Erro na sincronização: {str(e)}")
+            await self.session.rollback()
+            raise
+
+    async def sincronizar_periodo(self, dias: int = 7) -> Dict[str, Any]:
+        """Sincroniza últimos X dias (método de compatibilidade)"""
+        data_inicio = datetime.now() - timedelta(days=dias)
+        data_fim = datetime.now()
+        
+        try:
+            await self.processar_periodo(data_inicio, data_fim)
             
-    async def testar_conexao_jira(self) -> Dict[str, Any]:
-        """
-        Testa a conexão com o Jira e retorna informações detalhadas.
+            return {
+                'status': 'SUCESSO',
+                'message': f'Sincronização concluída: {self.stats["apontamentos_criados"]} apontamentos',
+                **self.stats
+            }
+            
+        except Exception as e:
+            return {
+                'status': 'ERRO',
+                'message': str(e),
+                **self.stats
+            }
+
+    async def _processar_issue(self, issue: Dict[str, Any], data_inicio: datetime, data_fim: datetime):
+        """Processa uma issue individual"""
+        issue_key = issue.get("key", "")
+        fields = issue.get("fields", {})
         
-        Returns:
-            Dict[str, Any]: Resultado do teste de conexão
-        """
-        import logging
-        logger = logging.getLogger("sincronizacoes_jira.testar_conexao")
+        logger.info(f"[ISSUE] Processando {issue_key}")
         
-        resultado = {
-            "status": "success",
-            "detalhes": {}
+        # 1. Determinar seção (prefixo da issue)
+        project_prefix = issue_key.split("-")[0] if "-" in issue_key else issue_key
+        secao = await self.upsert_secao(project_prefix)
+        if not secao:
+            logger.error(f"[ISSUE_SKIP] Seção não encontrada para {issue_key}")
+            return
+        
+        # 2. Upsert do projeto (issue = projeto)
+        issue_summary = fields.get("summary", "").strip()
+        projeto = await self.upsert_projeto(issue_key, issue_summary, secao.id, fields)
+        if not projeto:
+            logger.error(f"[ISSUE_SKIP] Projeto não criado para {issue_key}")
+            return
+        
+        # 3. Upsert do recurso (assignee)
+        assignee = fields.get("assignee")
+        if not assignee:
+            logger.warning(f"[ISSUE_SKIP] Issue {issue_key} sem assignee")
+            return
+        
+        recurso = await self.upsert_recurso(assignee)
+        if not recurso:
+            logger.error(f"[ISSUE_SKIP] Recurso não criado para {issue_key}")
+            return
+        
+        # 4. Processar todos os worklogs da issue
+        worklogs = self.jira_client.get_all_worklogs(issue_key)
+        logger.info(f"[WORKLOGS] Issue {issue_key}: {len(worklogs)} worklogs")
+        
+        for worklog in worklogs:
+            try:
+                await self._processar_worklog(worklog, issue_key, recurso.id, projeto.id, data_inicio, data_fim, fields)
+            except Exception as e:
+                wl_id = worklog.get("id", "NO_ID")
+                logger.error(f"[WORKLOG_ERROR] Erro no worklog {wl_id}: {str(e)}")
+                continue
+
+    async def _processar_worklog(self, worklog: Dict[str, Any], issue_key: str, recurso_id: int, projeto_id: int, data_inicio: datetime, data_fim: datetime, fields: Dict[str, Any] = None):
+        """Processa um worklog individual"""
+        wl_id_str = worklog.get("id")
+        if not wl_id_str:
+            logger.warning(f"[WORKLOG_SKIP] Worklog sem ID para {issue_key}")
+            return
+        
+        # Parsing de datas
+        def parse_dt(s): 
+            return datetime.fromisoformat(s[:-6]) if s else None
+        
+        dt_created = parse_dt(worklog.get("created"))
+        dt_updated = parse_dt(worklog.get("updated"))
+        dt_started = parse_dt(worklog.get("started"))
+        
+        # Validar período
+        if not dt_started or dt_started < data_inicio or dt_started > data_fim:
+            logger.debug(f"[WORKLOG_SKIP] Worklog {wl_id_str} fora do período")
+            return
+        
+        # Calcular horas
+        time_spent_seconds = worklog.get("timeSpentSeconds", 0)
+        horas = time_spent_seconds / 3600
+        
+        # Validar horas
+        if horas <= 0 or horas > 24:
+            logger.warning(f"[WORKLOG_SKIP] Worklog {wl_id_str}: horas inválidas ({horas})")
+            return
+        
+        # Extrair campos de hierarquia Jira
+        jira_parent_key = None
+        jira_issue_type = None
+        nome_subtarefa = None
+        projeto_pai_id = None
+        nome_projeto_pai = None
+        
+        if fields:
+            # Detectar hierarquia (qualquer issue com parent)
+            issuetype_data = fields.get("issuetype", {})
+            jira_issue_type = issuetype_data.get("name")
+            is_subtask = issuetype_data.get("subtask", False)
+            parent_info = fields.get("parent")
+            
+            # Processar hierarquia se tiver parent (independente do tipo)
+            if parent_info:
+                jira_parent_key = parent_info.get("key")
+                nome_subtarefa = fields.get("summary")
+                
+                logger.info(f"[HIERARQUIA] Issue {issue_key} tem parent {jira_parent_key} (tipo: {jira_issue_type})")
+                
+                # Buscar ou criar projeto pai se existir
+                if jira_parent_key:
+                    try:
+                        projeto_pai = await self.projeto_repo.get_by_jira_project_key(jira_parent_key)
+                        
+                        if not projeto_pai:
+                            # Projeto pai não existe, vamos buscar no Jira e criar
+                            logger.info(f"[HIERARQUIA] Projeto pai {jira_parent_key} não existe, buscando no Jira...")
+                            
+                            try:
+                                # Buscar issue pai no Jira
+                                parent_issue = self.jira_client.get_issue(jira_parent_key)
+                                if parent_issue:
+                                    parent_fields = parent_issue.get('fields', {})
+                                    parent_summary = parent_fields.get('summary', jira_parent_key)
+                                    
+                                    # Determinar seção do projeto pai
+                                    parent_prefix = jira_parent_key.split("-")[0] if "-" in jira_parent_key else jira_parent_key
+                                    parent_secao = await self.upsert_secao(parent_prefix)
+                                    
+                                    if parent_secao:
+                                        # Criar projeto pai
+                                        projeto_pai = await self.upsert_projeto(jira_parent_key, parent_summary, parent_secao.id, parent_fields)
+                                        logger.info(f"[HIERARQUIA] Projeto pai {jira_parent_key} criado com ID {projeto_pai.id}")
+                                    
+                            except Exception as create_error:
+                                logger.warning(f"[HIERARQUIA] Erro ao criar projeto pai {jira_parent_key}: {str(create_error)}")
+                        
+                        if projeto_pai:
+                            projeto_pai_id = projeto_pai.id
+                            nome_projeto_pai = projeto_pai.nome
+                            logger.info(f"[HIERARQUIA] Projeto pai encontrado: {jira_parent_key} -> ID {projeto_pai_id}")
+                            
+                    except Exception as e:
+                        logger.warning(f"[HIERARQUIA] Erro ao buscar/criar projeto pai {jira_parent_key}: {str(e)}")
+        
+        # Dados do apontamento
+        apontamento_data = {
+            "recurso_id": recurso_id,
+            "projeto_id": projeto_id,
+            "jira_issue_key": issue_key,
+            "data_hora_inicio_trabalho": dt_started,
+            "data_apontamento": dt_started.date(),
+            "horas_apontadas": horas,
+            "descricao": extract_comment_text(worklog.get("comment")),
+            "fonte_apontamento": "JIRA",
+            "data_criacao": dt_created or datetime.now(),
+            "data_atualizacao": dt_updated or datetime.now(),
+            "data_sincronizacao_jira": datetime.now(),
+            # Campos de hierarquia Jira
+            "jira_parent_key": jira_parent_key,
+            "jira_issue_type": jira_issue_type,
+            "nome_subtarefa": nome_subtarefa,
+            "projeto_pai_id": projeto_pai_id,
+            "nome_projeto_pai": nome_projeto_pai,
         }
         
-        # 1. Verificar configurações
-        logger.info("[JIRA_TEST] Verificando configurações do Jira")
-        resultado["detalhes"]["configuracoes"] = {
-            "base_url": self.jira_client.base_url,
-            "username": self.jira_client.username,
-            "api_token": "***" if self.jira_client.api_token else None
+        # Criar/atualizar apontamento
+        await self.apontamento_repo.sync_jira_apontamento(wl_id_str, apontamento_data)
+        self.stats['apontamentos_criados'] += 1
+        logger.debug(f"[APONTAMENTO] Criado para worklog {wl_id_str}: {horas}h")
+
+    async def _buscar_todas_issues_paginacao(self, jql_query: str, fields: list = None):
+        """Busca issues com paginação (copiado do melhorada.py)"""
+        all_issues = []
+        start_at = 0
+        max_results = 100
+        
+        # Campos padrão se não especificados
+        if not fields:
+            fields = ["key", "summary", "assignee", "project", "parent", "issuetype", "timetracking", "timespent", "created", "status", "customfield_10020"]
+        
+        fields_str = ",".join(fields)
+        
+        while True:
+            try:
+                logger.info(f"[PAGINACAO] Buscando issues {start_at} a {start_at + max_results}")
+                
+                # Buscar com campos especificados
+                response = self.jira_client._make_request(
+                    "GET",
+                    f"/rest/api/3/search?jql={jql_query}&startAt={start_at}&maxResults={max_results}&fields={fields_str}"
+                )
+                
+                issues = response.get('issues', [])
+                if not issues:
+                    break
+                
+                all_issues.extend(issues)
+                
+                # Verificar se há mais páginas
+                if len(issues) < max_results:
+                    break
+                    
+                start_at += max_results
+                
+            except Exception as e:
+                logger.error(f"[PAGINACAO_ERRO] {str(e)}")
+                break
+        
+        return all_issues
+
+    async def _processar_issue_completa_com_hierarquia(self, issue: Dict[str, Any]):
+        """Processa issue completa COM HIERARQUIA (baseado no melhorada.py)"""
+        issue_key = issue.get('key')
+        fields = issue.get('fields', {})
+        
+        # Filtrar apenas projetos válidos das seções WEG
+        project_key = issue_key.split('-')[0] if '-' in issue_key else None
+        projetos_validos = ['SEG', 'SGI', 'DTIN', 'TIN']  # ✅ TODAS as seções WEG
+        
+        if not project_key or project_key not in projetos_validos:
+            logger.debug(f"[ISSUE_SKIP] {issue_key} - Projeto {project_key} não é válido para sincronização")
+            return {'apontamentos_processados': 0, 'recursos_criados': 0}
+        
+        logger.info(f"[ISSUE] Processando {issue_key}")
+        
+        # 1. EXTRAIR HIERARQUIA JIRA (baseado no JSON real)
+        issuetype_data = fields.get("issuetype", {})
+        jira_issue_type = issuetype_data.get("name")
+        is_subtask = issuetype_data.get("subtask", False)
+        parent_info = fields.get("parent")
+        
+        # 🔍 DEBUG: Log detalhado dos campos de hierarquia
+        logger.info(f"[HIERARQUIA_DEBUG] {issue_key} - issuetype: {jira_issue_type}, subtask: {is_subtask}, parent_info: {parent_info}")
+        
+        jira_parent_key = None
+        nome_subtarefa = None
+        
+        # Verificar se é subtask pelo campo subtask OU pela presença de parent
+        if parent_info or is_subtask:
+            if parent_info:
+                jira_parent_key = parent_info.get("key")
+            nome_subtarefa = fields.get("summary")
+            logger.info(f"[HIERARQUIA] {issue_key} é subtarefa (parent: {jira_parent_key}, subtask: {is_subtask})")
+        else:
+            logger.info(f"[HIERARQUIA] {issue_key} é Epic/Task principal (tipo: {jira_issue_type}) - SEM PROJETO PAI")
+        
+        # 2. Obter/criar projeto e seção com dados completos do Jira
+        project_data = fields.get('project', {})
+        projeto = await self._obter_ou_criar_projeto(issue_key, project_data, fields)
+        
+        if not projeto:
+            logger.error(f"[PROJETO_ERRO] {issue_key}")
+            return {'apontamentos_processados': 0, 'recursos_criados': 0}
+        
+        # 3. Buscar/criar projeto pai (se for subtarefa)
+        projeto_pai = None
+        projeto_pai_id = None
+        
+        if jira_parent_key:
+            parent_project_key = jira_parent_key.split('-')[0] if '-' in jira_parent_key else None
+            
+            # Filtrar apenas projetos pai válidos das seções WEG
+            projetos_validos = ['SEG', 'SGI', 'DTIN', 'TIN']  # ✅ TODAS as seções WEG
+            
+            if parent_project_key and parent_project_key in projetos_validos:
+                # Buscar projeto pai
+                projeto_pai = await self.projeto_repository.get_by_jira_project_key(jira_parent_key)
+                
+                if not projeto_pai:
+                    # Criar projeto pai baseado no Epic
+                    try:
+                        parent_issue_details = self.jira_client.get_issue(jira_parent_key)
+                        parent_summary = parent_issue_details.get("fields", {}).get("summary", f"Epic {jira_parent_key}")
+                        
+                        status_projeto = await self.projeto_repository.get_status_default()
+                        if status_projeto:
+                            # Mapeamento correto: DTIN (Jira) → TIN (Seção)
+                            secao_pai_key = parent_project_key
+                            if parent_project_key == "DTIN":
+                                secao_pai_key = "TIN"
+                            
+                            # Buscar seção do projeto pai
+                            secao_pai = await self.secao_repository.get_by_jira_project_key(secao_pai_key)
+                            
+                            projeto_pai_data = {
+                                "nome": parent_summary,
+                                "jira_project_key": jira_parent_key,
+                                "status_projeto_id": status_projeto.id,
+                                "secao_id": secao_pai.id if secao_pai else None,
+                                "ativo": True
+                            }
+                            
+                            projeto_pai = await self.projeto_repository.create(projeto_pai_data)
+                            self.stats['projetos_criados'] += 1
+                            logger.info(f"[PROJETO_PAI_CRIADO] {projeto_pai.nome}")
+                    
+                    except Exception as e:
+                        logger.error(f"[PROJETO_PAI_ERRO] {str(e)}")
+                
+                if projeto_pai:
+                    projeto_pai_id = projeto_pai.id
+        
+        # 4. Usar timespent se disponível (corrigido baseado no JSON real)
+        time_spent_seconds = fields.get('timespent', 0)
+        if time_spent_seconds <= 0:
+            # Fallback: tentar timetracking.timeSpentSeconds
+            timetracking = fields.get('timetracking', {})
+            time_spent_seconds = timetracking.get('timeSpentSeconds', 0)
+        
+        if time_spent_seconds > 0:
+            # Usar assignee da issue para timetracking consolidado
+            assignee = fields.get('assignee')
+            if assignee:
+                recurso = await self._obter_ou_criar_recurso(assignee)
+                if recurso:
+                    horas_totais = time_spent_seconds / 3600
+                    await self._criar_apontamento_com_hierarquia(
+                        issue_key, recurso, projeto, horas_totais, 
+                        fields.get('summary', ''),
+                        jira_parent_key, jira_issue_type, nome_subtarefa,
+                        projeto_pai_id, projeto_pai, fields
+                    )
+                    return {'apontamentos_processados': 1, 'recursos_criados': 0}
+        
+        # 5. Fallback: processar worklogs individuais
+        return await self._processar_worklogs_individuais_com_hierarquia(
+            issue_key, projeto, 
+            jira_parent_key, jira_issue_type, nome_subtarefa,
+            projeto_pai_id, projeto_pai
+        )
+
+    async def _criar_apontamento_com_hierarquia(self, issue_key: str, recurso, projeto, 
+                                               horas_totais: float, descricao: str,
+                                               jira_parent_key: str, jira_issue_type: str, nome_subtarefa: str,
+                                               projeto_pai_id: int, projeto_pai, fields: Dict[str, Any] = None):
+        """Cria apontamento COM HIERARQUIA (baseado no melhorada.py)"""
+        worklog_id_consolidado = f"consolidated_{issue_key}"
+        
+        # Verificar se já existe
+        apontamento_existente = await self.apontamento_repository.get_by_jira_worklog_id(worklog_id_consolidado)
+        
+        # ✅ EXTRAIR DATA DE CRIAÇÃO REAL DO JIRA
+        data_criacao = datetime.now()
+        if fields:
+            created_date = fields.get('created')
+            if created_date:
+                try:
+                    data_criacao = parser.parse(created_date)
+                    if data_criacao.tzinfo is not None:
+                        data_criacao = data_criacao.replace(tzinfo=None)
+                    logger.info(f"[APONTAMENTO] Data criação Jira: {data_criacao}")
+                except Exception as e:
+                    logger.warning(f"[APONTAMENTO] Erro ao parsear created: {e}")
+        
+        # DADOS COM HIERARQUIA COMPLETA
+        apontamento_data = {
+            'jira_worklog_id': worklog_id_consolidado,
+            'recurso_id': recurso.id,
+            'projeto_id': projeto.id,
+            'jira_issue_key': issue_key,
+            'jira_parent_key': jira_parent_key,                    # ✅ HIERARQUIA
+            'jira_issue_type': jira_issue_type,                    # ✅ HIERARQUIA
+            'nome_subtarefa': nome_subtarefa,                      # ✅ HIERARQUIA
+            'projeto_pai_id': projeto_pai_id,                      # ✅ HIERARQUIA
+            'nome_projeto_pai': projeto_pai.nome if projeto_pai else None,  # ✅ HIERARQUIA
+            'data_apontamento': datetime.now().date(),
+            'horas_apontadas': horas_totais,
+            'descricao': descricao,
+            'fonte_apontamento': FonteApontamento.JIRA,
+            'data_sincronizacao_jira': datetime.now(),
+            'data_atualizacao': datetime.now()
         }
         
-        if not self.jira_client.api_token:
-            resultado["status"] = "error"
-            resultado["detalhes"]["configuracoes"]["erro"] = "API Token não definido"
-            return resultado
-        
-        # 2. Testar busca de projetos (endpoint principal)
-        logger.info("[JIRA_TEST] Testando busca de projetos com o endpoint /rest/api/3/project/search")
+        if apontamento_existente:
+            # Atualizar
+            for key, value in apontamento_data.items():
+                setattr(apontamento_existente, key, value)
+            await self.db.commit()
+            logger.info(f"[APONTAMENTO] Consolidado atualizado: {issue_key} - {horas_totais}h")
+        else:
+            # Criar novo usando sync_jira_apontamento que faz commit
+            apontamento_data['data_criacao'] = data_criacao
+            worklog_id_consolidado = f"{issue_key}_consolidated_{int(datetime.now().timestamp())}"
+            await self.apontamento_repository.sync_jira_apontamento(worklog_id_consolidado, apontamento_data)
+            self.stats['apontamentos_criados'] += 1
+            logger.info(f"[APONTAMENTO] Consolidado criado: {issue_key} - {horas_totais}h - Hierarquia: {jira_parent_key or 'Epic'}")
+
+    async def _processar_worklogs_individuais_com_hierarquia(self, issue_key: str, projeto,
+                                                            jira_parent_key: str, jira_issue_type: str, nome_subtarefa: str,
+                                                            projeto_pai_id: int, projeto_pai):
+        """Processa worklogs individuais COM HIERARQUIA"""
         try:
-            # Usar o endpoint de busca de projetos com limite de 1 projeto
-            endpoint = "/rest/api/3/project/search?maxResults=1"
-            projetos = self.jira_client._make_request("GET", endpoint)
+            worklogs = self.jira_client.get_all_worklogs(issue_key)
+            logger.info(f"[WORKLOGS] {issue_key}: {len(worklogs)} worklogs")
             
-            resultado["detalhes"]["projetos"] = {
-                "sucesso": True,
-                "total": projetos.get("total", 0),
-                "exemplo": None
-            }
+            apontamentos_processados = 0
             
-            # Verificar se há projetos
-            if projetos.get("values") and len(projetos["values"]) > 0:
-                primeiro_projeto = projetos["values"][0]
-                resultado["detalhes"]["projetos"]["exemplo"] = {
-                    "id": primeiro_projeto.get("id"),
-                    "key": primeiro_projeto.get("key"),
-                    "name": primeiro_projeto.get("name")
-                }
+            for worklog in worklogs:
+                try:
+                    # Cada worklog tem seu próprio author
+                    author = worklog.get('author', {})
+                    if not author:
+                        continue
+                    
+                    recurso = await self._obter_ou_criar_recurso(author)
+                    if not recurso:
+                        continue
+                    
+                    # Processar worklog individual
+                    await self._processar_worklog_individual_com_hierarquia(
+                        worklog, issue_key, recurso, projeto,
+                        jira_parent_key, jira_issue_type, nome_subtarefa,
+                        projeto_pai_id, projeto_pai
+                    )
+                    apontamentos_processados += 1
+                    
+                except Exception as e:
+                    logger.error(f"[WORKLOG_ERRO] {worklog.get('id', 'N/A')}: {str(e)}")
+                    continue
+            
+            return {'apontamentos_processados': apontamentos_processados, 'recursos_criados': 0}
+            
         except Exception as e:
-            resultado["status"] = "error"
-            resultado["detalhes"]["projetos"] = {
-                "sucesso": False,
-                "erro": str(e)
-            }
-            return resultado
+            logger.error(f"[WORKLOGS_ERRO] {issue_key}: {str(e)}")
+            return {'apontamentos_processados': 0, 'recursos_criados': 0}
+
+    async def _processar_worklog_individual_com_hierarquia(self, worklog: Dict[str, Any], issue_key: str, 
+                                                          recurso, projeto,
+                                                          jira_parent_key: str, jira_issue_type: str, nome_subtarefa: str,
+                                                          projeto_pai_id: int, projeto_pai):
+        """Processa worklog individual COM HIERARQUIA (baseado no melhorada.py)"""
+        worklog_id = worklog.get('id')
+        if not worklog_id:
+            return
         
-        # 3. Testar busca de projetos
-        logger.info("[JIRA_TEST] Testando busca de projetos")
+        # Verificar se já existe para UPSERT
+        apontamento_existente = await self.apontamento_repository.get_by_jira_worklog_id(worklog_id)
+        
+        # Extrair dados do worklog
+        time_spent_seconds = worklog.get('timeSpentSeconds', 0)
+        if time_spent_seconds <= 0:
+            return
+        
+        horas_apontadas = time_spent_seconds / 3600
+        
+        # Extrair data
+        started = worklog.get('started')
+        data_apontamento = datetime.now().date()
+        if started:
+            try:
+                data_apontamento = parser.parse(started).date()
+            except:
+                pass
+        
+        # DADOS COM HIERARQUIA COMPLETA
+        apontamento_data = {
+            'jira_worklog_id': worklog_id,
+            'recurso_id': recurso.id,
+            'projeto_id': projeto.id,
+            'jira_issue_key': issue_key,
+            'jira_parent_key': jira_parent_key,                    # ✅ HIERARQUIA
+            'jira_issue_type': jira_issue_type,                    # ✅ HIERARQUIA
+            'nome_subtarefa': nome_subtarefa,                      # ✅ HIERARQUIA
+            'projeto_pai_id': projeto_pai_id,                      # ✅ HIERARQUIA
+            'nome_projeto_pai': projeto_pai.nome if projeto_pai else None,  # ✅ HIERARQUIA
+            'data_apontamento': data_apontamento,
+            'horas_apontadas': horas_apontadas,
+            'descricao': extract_comment_text(worklog.get('comment')),
+            'fonte_apontamento': FonteApontamento.JIRA,
+            'data_sincronizacao_jira': datetime.now(),
+            'data_atualizacao': datetime.now()
+        }
+        
         try:
-            # Usar o endpoint de busca de projetos com limite de 1 projeto
-            endpoint = "/rest/api/3/project/search?maxResults=1"
-            projetos = self.jira_client._make_request("GET", endpoint)
-            
-            resultado["detalhes"]["projetos"] = {
-                "sucesso": True,
-                "total": projetos.get("total", 0),
-                "exemplo": None
-            }
-            
-            # Verificar se há projetos
-            if projetos.get("values") and len(projetos["values"]) > 0:
-                primeiro_projeto = projetos["values"][0]
-                resultado["detalhes"]["projetos"]["exemplo"] = {
-                    "id": primeiro_projeto.get("id"),
-                    "key": primeiro_projeto.get("key"),
-                    "name": primeiro_projeto.get("name")
-                }
+            if apontamento_existente:
+                # UPSERT: Atualizar apontamento existente
+                logger.info(f"[WORKLOG_UPDATE] Atualizando apontamento existente: {worklog_id}")
+                for key, value in apontamento_data.items():
+                    setattr(apontamento_existente, key, value)
+                await self.session.commit()
+                logger.info(f"[WORKLOG_UPDATE_SUCESSO] Individual atualizado: {worklog_id} - {horas_apontadas}h - Hierarquia: {jira_parent_key or 'Epic'}")
+            else:
+                # UPSERT: Criar novo apontamento
+                logger.info(f"[WORKLOG_CREATE] Criando novo apontamento: {worklog_id}")
+                apontamento_data['data_criacao'] = datetime.now()
+                await self.apontamento_repo.sync_jira_apontamento(worklog_id, apontamento_data)
+                self.stats['apontamentos_criados'] += 1
+                logger.info(f"[WORKLOG_CREATE_SUCESSO] Individual criado: {worklog_id} - {horas_apontadas}h - Hierarquia: {jira_parent_key or 'Epic'}")
+                
         except Exception as e:
-            resultado["status"] = "error"
-            resultado["detalhes"]["projetos"] = {
-                "sucesso": False,
-                "erro": str(e)
-            }
-            return resultado
-        
-        # 4. Testar busca de worklogs recentes
-        logger.info("[JIRA_TEST] Testando busca de worklogs recentes")
+            logger.error(f"[WORKLOG_SAVE_ERROR] Erro ao salvar worklog {worklog_id}: {str(e)}")
+            logger.error(f"[WORKLOG_SAVE_ERROR] Traceback: ", exc_info=True)
+            await self.session.rollback()
+            raise
+
+    async def _obter_ou_criar_projeto(self, issue_key: str, project_data: Dict[str, Any], fields: Dict[str, Any] = None) -> Optional[Any]:
+        """Obter/criar projeto e seção com dados completos do Jira"""
         try:
-            # Usar o endpoint de busca de worklogs atualizados nos últimos 7 dias
-            from datetime import datetime, timedelta
-            since_date = datetime.now() - timedelta(days=7)
-            worklogs = self.jira_client.get_worklogs_updated_since(since_date)
+            # Buscar projeto existente pela issue_key
+            projeto = await self.projeto_repository.get_by_jira_project_key(issue_key)
+            if projeto:
+                return projeto
             
-            resultado["detalhes"]["worklogs"] = {
-                "sucesso": True,
-                "total": len(worklogs),
-                "exemplo": None
+            # Extrair dados do projeto Jira
+            project_key = project_data.get('key', '')
+            project_name = project_data.get('name', issue_key)
+            
+            # Mapeamento correto: DTIN (Jira) → TIN (Seção)
+            secao_key = project_key
+            if project_key == "DTIN":
+                secao_key = "TIN"
+            
+            # Buscar seção pelo secao_key mapeado
+            secao = await self.secao_repository.get_by_jira_project_key(secao_key)
+            
+            # Buscar status padrão
+            status_projeto = await self.projeto_repository.get_status_default()
+            if not status_projeto:
+                logger.error(f"[PROJETO] Status padrão não encontrado")
+                return None
+            
+            # ✅ EXTRAIR CAMPOS ADICIONAIS DO JIRA
+            data_criacao = datetime.now()
+            start_date = None
+            jira_status = None
+            
+            if fields:
+                # 1. Data de criação real do Jira
+                created_date = fields.get('created')
+                if created_date:
+                    try:
+                        data_criacao = parser.parse(created_date)
+                        if data_criacao.tzinfo is not None:
+                            data_criacao = data_criacao.replace(tzinfo=None)
+                        logger.info(f"[PROJETO] Data criação Jira: {data_criacao}")
+                    except Exception as e:
+                        logger.warning(f"[PROJETO] Erro ao parsear created: {e}")
+                
+                # 2. Status do Jira
+                status_data = fields.get('status', {})
+                jira_status = status_data.get('name')
+                if jira_status:
+                    logger.info(f"[PROJETO] Status Jira: {jira_status}")
+                
+                # 3. StartDate do Sprint (customfield_10020)
+                sprint_data = fields.get('customfield_10020', [])
+                if sprint_data and len(sprint_data) > 0:
+                    start_date_str = sprint_data[0].get('startDate')
+                    if start_date_str:
+                        try:
+                            parsed_date = parser.parse(start_date_str)
+                            if parsed_date.tzinfo is not None:
+                                parsed_date = parsed_date.replace(tzinfo=None)
+                            start_date = parsed_date.date()
+                            logger.info(f"[PROJETO] Start date Sprint: {start_date}")
+                        except Exception as e:
+                            logger.warning(f"[PROJETO] Erro ao parsear startDate: {e}")
+            
+            # Criar projeto com dados completos
+            projeto_data = {
+                'nome': project_name,
+                'jira_project_key': issue_key,
+                'status_projeto_id': status_projeto.id,
+                'secao_id': secao.id if secao else None,
+                'ativo': True,
+                'data_criacao': data_criacao,
+                'data_inicio_prevista': start_date,  # ✅ CORRIGIDO: usar data_inicio_prevista
+                'descricao': f"Status Jira: {jira_status}" if jira_status else None  # ✅ CORRIGIDO: usar descricao
             }
             
-            # Verificar se há worklogs
-            if worklogs and len(worklogs) > 0:
-                primeiro_worklog = worklogs[0]
-                resultado["detalhes"]["worklogs"]["exemplo"] = {
-                    "id": primeiro_worklog.get("id"),
-                    "issueId": primeiro_worklog.get("issueId"),
-                    "issueKey": primeiro_worklog.get("issueKey"),
-                    "author": primeiro_worklog.get("author", {}).get("displayName")
-                }
+            projeto = await self.projeto_repository.create(projeto_data)
+            self.stats['projetos_criados'] += 1
+            logger.info(f"[PROJETO] Criado: {projeto.nome}")
+            
+            return projeto
+            
         except Exception as e:
-            resultado["status"] = "error"
-            resultado["detalhes"]["worklogs"] = {
-                "sucesso": False,
-                "erro": str(e)
+            logger.error(f"[PROJETO_ERRO] {issue_key}: {str(e)}")
+            return None
+
+    async def _obter_ou_criar_recurso(self, assignee_data: Dict[str, Any]):
+        """Obter/criar recurso (copiado do melhorada.py)"""
+        try:
+            account_id = assignee_data.get('accountId')
+            email = assignee_data.get('emailAddress')
+            display_name = assignee_data.get('displayName')
+            
+            if not email:
+                logger.warning(f"[RECURSO] Assignee sem email: {display_name}")
+                return None
+            
+            # Buscar recurso existente
+            recurso = await self.recurso_repository.get_by_jira_user_id(account_id)
+            if not recurso:
+                recurso = await self.recurso_repository.get_by_email(email)
+            
+            if recurso:
+                return recurso
+            
+            # Criar novo recurso
+            recurso_data = {
+                'nome': display_name or email,
+                'email': email,
+                'jira_user_id': account_id,
+                'ativo': True
             }
-        
-        return resultado
+            
+            recurso = await self.recurso_repository.create(recurso_data)
+            self.stats['recursos_criados'] += 1
+            logger.info(f"[RECURSO] Criado: {recurso.email}")
+            
+            return recurso
+            
+        except Exception as e:
+            logger.error(f"[RECURSO_ERRO] {str(e)}")
+            return None
+
+# FUNÇÕES DE EXECUÇÃO BASEADAS NO CÓDIGO QUE FUNCIONAVA
+async def processar_periodo(data_inicio: datetime, data_fim: datetime):
+    """Função principal para processar um período"""
+    async with AsyncSessionLocal() as session:
+        sincronizador = SincronizacaoJiraFuncional(session)
+        await sincronizador.processar_periodo(data_inicio, data_fim)
+
+async def carga_completa():
+    """Executa carga completa desde 01/08/2024"""
+    data_inicio = DEFAULT_START_DATE
+    data_fim = datetime.now()
+    logger.info(f"[CARGA_COMPLETA] {data_inicio.date()} até {data_fim.date()}")
+    await processar_periodo(data_inicio, data_fim)
+
+async def carga_personalizada(start_str: str, end_str: str):
+    """Executa carga personalizada"""
+    data_inicio = datetime.strptime(start_str, "%Y-%m-%d")
+    data_fim = datetime.strptime(end_str, "%Y-%m-%d")
+    logger.info(f"[CARGA_PERSONALIZADA] {data_inicio.date()} até {data_fim.date()}")
+    await processar_periodo(data_inicio, data_fim)
+
+async def rotina_mensal():
+    """Executa rotina mensal (mês anterior)"""
+    hoje = datetime.now()
+    primeiro_dia_mes_anterior = hoje.replace(day=1) - timedelta(days=1)
+    primeiro_dia_mes_anterior = primeiro_dia_mes_anterior.replace(day=1)
+    ultimo_dia_mes_anterior = hoje.replace(day=1) - timedelta(days=1)
+    
+    logger.info(f"[ROTINA_MENSAL] {primeiro_dia_mes_anterior.date()} até {ultimo_dia_mes_anterior.date()}")
+    await processar_periodo(primeiro_dia_mes_anterior, ultimo_dia_mes_anterior)
+
+async def sincronizar_dias(dias: int = 7):
+    """Executa sincronização dos últimos X dias (compatibilidade)"""
+    data_inicio = datetime.now() - timedelta(days=dias)
+    data_fim = datetime.now()
+    logger.info(f"[SYNC_DIAS] Sincronizando últimos {dias} dias")
+    await processar_periodo(data_inicio, data_fim)
+
+if __name__ == "__main__":
+    import sys
+    
+    if len(sys.argv) == 3:
+        # Período personalizado: python script.py 2024-08-01 2024-08-31
+        asyncio.run(carga_personalizada(sys.argv[1], sys.argv[2]))
+    elif len(sys.argv) == 2 and sys.argv[1] == "mensal":
+        # Rotina mensal: python script.py mensal
+        asyncio.run(rotina_mensal())
+    elif len(sys.argv) == 2 and sys.argv[1].isdigit():
+        # Últimos X dias: python script.py 7
+        asyncio.run(sincronizar_dias(int(sys.argv[1])))
+    else:
+        # Carga completa: python script.py
+        asyncio.run(carga_completa())
+    
+    print("✅ Sincronização concluída com sucesso!")
