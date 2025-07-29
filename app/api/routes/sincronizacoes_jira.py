@@ -570,4 +570,115 @@ async def sincronizar_periodo_jira(
         )
 
 
+@router.post("/sincronizar-mes-ano", response_model=Dict[str, Any])
+async def sincronizar_mes_ano_jira(
+    mes_inicio: int = Query(..., ge=1, le=12, description="Mês de início (1-12)"),
+    ano_inicio: int = Query(..., ge=2020, le=2030, description="Ano de início"),
+    mes_fim: int = Query(..., ge=1, le=12, description="Mês de fim (1-12)"),
+    ano_fim: int = Query(..., ge=2020, le=2030, description="Ano de fim"),
+    projetos: Optional[List[str]] = Query(None, description="Lista de projetos Jira (ex: DTIN,SGI,TIN,SEG)"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UsuarioInDB = Depends(get_current_admin_user)
+):
+    """
+    Sincroniza worklogs do Jira por período de mês/ano.
+    
+    - **mes_inicio**: Mês de início (1-12)
+    - **ano_inicio**: Ano de início
+    - **mes_fim**: Mês de fim (1-12)  
+    - **ano_fim**: Ano de fim
+    - **projetos**: Lista de projetos Jira (opcional, padrão: DTIN, SGI, TIN, SEG)
+    
+    **Protegido**: requer autenticação de admin.
+    
+    **Exemplo de uso:**
+    ```
+    POST /api/jira/sincronizar-mes-ano?mes_inicio=1&ano_inicio=2025&mes_fim=7&ano_fim=2025&projetos=DTIN&projetos=SGI
+    ```
+    """
+    try:
+        from calendar import monthrange
+        
+        logger.info(f"[SYNC_MES_ANO] Usuário {current_user.email} iniciou sincronização: {mes_inicio}/{ano_inicio} até {mes_fim}/{ano_fim}")
+        
+        # Converter mês/ano para datas
+        data_inicio = datetime(ano_inicio, mes_inicio, 1)
+        
+        # Último dia do mês de fim
+        ultimo_dia = monthrange(ano_fim, mes_fim)[1]
+        data_fim = datetime(ano_fim, mes_fim, ultimo_dia, 23, 59, 59)
+        
+        # Usar projetos padrão se não especificados
+        if not projetos:
+            projetos = ["DTIN", "SGI", "TIN", "SEG"]
+        
+        # Registrar início da sincronização
+        from app.services.sincronizacao_jira_service import SincronizacaoJiraService
+        sincronizacao_service = SincronizacaoJiraService(db)
+        
+        sincronizacao = await sincronizacao_service.registrar_inicio_sincronizacao(
+            usuario_id=current_user.id,
+            tipo_evento="sincronizacao_mes_ano",
+            mensagem=f"Sincronização de {mes_inicio}/{ano_inicio} até {mes_fim}/{ano_fim} iniciada"
+        )
+        
+        # Executar sincronização em background
+        async def executar_sync_mes_ano():
+            try:
+                from app.services.sincronizacao_jira_funcional_service import SincronizacaoJiraFuncional
+                sync_service = SincronizacaoJiraFuncional()
+                
+                resultado = await sync_service.sincronizar_periodo(
+                    data_inicio=data_inicio,
+                    data_fim=data_fim,
+                    projetos=projetos
+                )
+                
+                # Atualizar status da sincronização
+                await sincronizacao_service.finalizar_sincronizacao(
+                    sincronizacao.id,
+                    "concluida",
+                    f"Sincronização concluída: {resultado.get('total_processados', 0)} worklogs processados"
+                )
+                
+                logger.info(f"[SYNC_MES_ANO_SUCCESS] Concluída: {resultado}")
+                
+            except Exception as e:
+                logger.error(f"[SYNC_MES_ANO_ERROR] Erro: {str(e)}")
+                await sincronizacao_service.finalizar_sincronizacao(
+                    sincronizacao.id,
+                    "erro",
+                    f"Erro na sincronização: {str(e)}"
+                )
+        
+        background_tasks.add_task(executar_sync_mes_ano)
+        
+        # Registrar log de atividade
+        from app.services.log_service import LogService
+        log_service = LogService(db)
+        await log_service.registrar_log(
+            tipo="SINCRONIZACAO_JIRA_MES_ANO",
+            descricao=f"Sincronização {mes_inicio}/{ano_inicio} até {mes_fim}/{ano_fim} iniciada por {current_user.nome}",
+            usuario_id=current_user.id
+        )
+        
+        return {
+            "status": "success",
+            "mensagem": f"Sincronização de {mes_inicio}/{ano_inicio} até {mes_fim}/{ano_fim} iniciada com sucesso",
+            "sincronizacao_id": sincronizacao.id,
+            "periodo": {
+                "data_inicio": data_inicio.isoformat(),
+                "data_fim": data_fim.isoformat(),
+                "projetos": projetos
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"[SYNC_MES_ANO_ERROR] Erro no endpoint: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao iniciar sincronização: {str(e)}"
+        )
+
 # Endpoint removido para evitar duplicação

@@ -101,10 +101,45 @@ class ImportadorExcelPlanejamento:
             pass
         return None
     
+    def _normalizar_nome(self, valor: str) -> str:
+        """Remove acentos, espaços duplicados, converte para upper e remove underscores."""
+        import unicodedata, re as _re
+        if not valor:
+            return ""
+        valor = unicodedata.normalize('NFKD', valor)
+        valor = ''.join([c for c in valor if not unicodedata.combining(c)])  # remove acentos
+        valor = valor.replace('_', ' ')
+        valor = _re.sub(r"\s+", " ", valor)  # espaços duplicados
+        return valor.strip().upper()
+
     def buscar_equipe_por_nome(self, nome: str) -> Optional[Equipe]:
-        """Busca equipe por nome."""
+        """
+        Busca equipe por nome tentando primeiro correspondência direta (ILIKE) e,
+        caso não encontre, utiliza similaridade de nomes para achar o melhor match.
+        """
         try:
-            return self.session.query(Equipe).filter(Equipe.nome.ilike(f'%{nome}%')).first()
+            if not nome:
+                return None
+            # 1. Tentativa direta usando ILIKE
+            equipe = self.session.query(Equipe).filter(Equipe.nome.ilike(f'%{nome}%')).first()
+            if equipe:
+                return equipe
+            # 2. Similaridade
+            from difflib import SequenceMatcher
+            nome_norm = self._normalizar_nome(nome)
+            melhores = []
+            for eq in self.session.query(Equipe).all():
+                eq_norm = self._normalizar_nome(eq.nome)
+                ratio = SequenceMatcher(None, nome_norm, eq_norm).ratio()
+                melhores.append((ratio, eq))
+            if melhores:
+                melhores.sort(key=lambda t: t[0], reverse=True)
+                melhor_ratio, melhor_eq = melhores[0]
+                if melhor_ratio >= 0.7:  # limiar configurável
+                    logger.info(f"[EQUIPE_MATCH_FUZZY] '{nome}' correspondido a '{melhor_eq.nome}' com score {melhor_ratio:.2f}")
+                    return melhor_eq
+            logger.warning(f"[EQUIPE_NAO_ENCONTRADA] Nome procurado: '{nome}' (normalizado: '{nome_norm}')")
+            return None
         except Exception as e:
             logger.error(f"Erro ao buscar equipe: {e}")
             return None
@@ -118,16 +153,54 @@ class ImportadorExcelPlanejamento:
             return None
     
     def criar_ou_atualizar_recurso(self, nome: str, email: str, equipe: Equipe) -> Optional[Recurso]:
-        """Cria ou atualiza recurso."""
+        """Cria ou atualiza um recurso baseado no email único"""
         try:
-            # Buscar recurso existente
-            recurso = self.session.query(Recurso).filter(Recurso.nome == nome).first()
+            # Validar dados básicos
+            if not nome or not nome.strip():
+                logger.error(f"[RECURSO_ERRO] Nome do recurso está vazio")
+                return None
+                
+            if not email or not email.strip():
+                logger.error(f"[RECURSO_ERRO] Email do recurso '{nome}' está vazio")
+                return None
             
-            if recurso:
-                logger.info(f"Recurso encontrado: {nome}")
-                return recurso
+            # Usar email exatamente como está na planilha
+            email = email.strip()
+            
+            # Buscar recurso existente pelo email (chave única)
+            recurso_existente = self.session.query(Recurso).filter(Recurso.email == email).first()
+            
+            if recurso_existente:
+                logger.info(f"[RECURSO_EXISTE] Recurso encontrado pelo email: {recurso_existente.nome}")
+                
+                # Atualizar apenas campos vazios/nulos
+                atualizado = False
+                
+                # Atualizar nome se estiver vazio
+                if not recurso_existente.nome or recurso_existente.nome.strip() == '':
+                    recurso_existente.nome = nome
+                    atualizado = True
+                    logger.info(f"[RECURSO_UPDATE] Nome atualizado para: {nome}")
+                
+                # Atualizar equipe se não tiver (ou se for None)
+                if (not recurso_existente.equipe_principal_id or recurso_existente.equipe_principal_id is None) and equipe:
+                    recurso_existente.equipe_principal_id = equipe.id
+                    atualizado = True
+                    logger.info(f"[RECURSO_UPDATE] Equipe atualizada para: {equipe.nome} (ID: {equipe.id})")
+                elif recurso_existente.equipe_principal_id:
+                    logger.info(f"[RECURSO_INFO] Recurso já tem equipe: {recurso_existente.equipe_principal_id}")
+                elif not equipe:
+                    logger.warning(f"[RECURSO_WARNING] Equipe não encontrada para atualizar recurso")
+                
+                if atualizado:
+                    self.session.flush()
+                    self.estatisticas.setdefault('recursos_atualizados', 0)
+                    self.estatisticas['recursos_atualizados'] += 1
+                
+                return recurso_existente
             
             # Criar novo recurso
+            logger.info(f"[RECURSO_NOVO] Criando novo recurso: {nome} ({email})")
             novo_recurso = Recurso(
                 nome=nome,
                 email=email,
@@ -137,21 +210,36 @@ class ImportadorExcelPlanejamento:
             
             self.session.add(novo_recurso)
             self.session.flush()
+            self.estatisticas.setdefault('recursos_inseridos', 0)
+            self.estatisticas['recursos_inseridos'] += 1
             
-            logger.info(f"Recurso criado: {nome}")
             return novo_recurso
             
         except Exception as e:
-            logger.error(f"Erro ao criar/atualizar recurso: {e}")
+            # Fazer rollback da sessão em caso de erro
+            self.session.rollback()
+            logger.error(f"[RECURSO_ERRO] Erro ao criar/atualizar recurso '{nome}': {e}")
+            logger.error(f"[RECURSO_ERRO] Tipo do erro: {type(e).__name__}")
+            logger.error(f"[RECURSO_ERRO] Detalhes: nome='{nome}', email='{email}', equipe={equipe.nome if equipe else 'None'}")
+            
             return None
     
     def inserir_projeto(self, nome_projeto: str) -> Optional[Projeto]:
-        """Insere projeto se não existir."""
+        """Insere ou busca um projeto existente"""
         try:
-            # Verificar se projeto já existe
-            projeto_existente = self.session.query(Projeto).filter(Projeto.nome == nome_projeto).first()
+            # Truncar nome do projeto para respeitar limite do banco (200 caracteres)
+            nome_truncado = nome_projeto[:200] if len(nome_projeto) > 200 else nome_projeto
+            
+            if len(nome_projeto) > 200:
+                logger.warning(f"[PROJETO_TRUNCADO] Nome muito longo ({len(nome_projeto)} chars), truncado para 200: '{nome_projeto[:50]}...'")
+            
+            # Verificar se o projeto já existe
+            projeto_existente = self.session.query(Projeto).filter(
+                Projeto.nome == nome_truncado
+            ).first()
+            
             if projeto_existente:
-                logger.info(f"Projeto já existe: {nome_projeto}")
+                logger.info(f"Projeto já existe: {nome_truncado}")
                 return projeto_existente
             
             # Buscar seção padrão
@@ -168,9 +256,9 @@ class ImportadorExcelPlanejamento:
             
             # Criar novo projeto
             novo_projeto = Projeto(
-                nome=nome_projeto.strip(),
-                secao_id=secao.id,
+                nome=nome_truncado,
                 status_projeto_id=status_padrao.id,
+                secao_id=secao.id,
                 data_inicio_prevista=date(2025, 1, 1),
                 ativo=True
             )
@@ -184,7 +272,10 @@ class ImportadorExcelPlanejamento:
             return novo_projeto
             
         except Exception as e:
+            # Fazer rollback da sessão em caso de erro
+            self.session.rollback()
             logger.error(f"Erro ao inserir projeto '{nome_projeto}': {e}")
+            logger.error(f"[PROJETO_ERRO] Tipo do erro: {type(e).__name__}")
             self.estatisticas['erros'] += 1
             return None
     
@@ -425,12 +516,29 @@ class ImportadorExcelPlanejamento:
             
             # 2. Extrair nome da equipe
             nome_equipe = self.extrair_equipe_do_arquivo()
+            logger.info(f"[EQUIPE_DEBUG] Nome da equipe extraído do arquivo: '{nome_equipe}'")
             
             # 3. Extrair email do recurso
             email_recurso = self.extrair_email_recurso(df)
             
+            # Se não encontrou email válido, gerar baseado no nome
+            if not email_recurso or email_recurso == 'nan' or email_recurso == self.nome_aba:
+                email_recurso = f"{self.nome_aba.lower().replace(' ', '.')}@weg.net"
+                logger.warning(f"[EMAIL_GERADO] Email não encontrado na planilha, gerado: {email_recurso}")
+            else:
+                logger.info(f"[EMAIL_PLANILHA] Email encontrado na planilha: {email_recurso}")
+            
             # 4. Buscar equipe
             equipe = self.buscar_equipe_por_nome(nome_equipe)
+            if equipe:
+                logger.info(f"[EQUIPE_ENCONTRADA] Equipe encontrada: {equipe.nome} (ID: {equipe.id})")
+            else:
+                logger.warning(f"[EQUIPE_NAO_ENCONTRADA] Nenhuma equipe encontrada para: '{nome_equipe}'")
+                # Listar equipes disponíveis para debug
+                equipes_disponiveis = self.session.query(Equipe).all()
+                logger.info(f"[EQUIPES_DISPONIVEIS] Total: {len(equipes_disponiveis)}")
+                for eq in equipes_disponiveis[:5]:  # Mostrar apenas as 5 primeiras
+                    logger.info(f"  - {eq.nome} (ID: {eq.id})")
             
             # 5. Criar ou atualizar recurso
             recurso = self.criar_ou_atualizar_recurso(self.nome_aba, email_recurso, equipe)

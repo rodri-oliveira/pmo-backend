@@ -35,7 +35,6 @@ from app.repositories.projeto_repository import ProjetoRepository
 from app.repositories.recurso_repository import RecursoRepository
 from app.db.orm_models import FonteApontamento
 
-
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
