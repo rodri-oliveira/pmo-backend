@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
+from difflib import SequenceMatcher
 
 from app.db.session import get_async_db
 from app.db.orm_models import Projeto, Secao
@@ -26,6 +27,46 @@ from app.models.schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+def encontrar_melhor_match_nome(nome_procurado: str, nomes_disponiveis: List[str], threshold: float = 0.6) -> Optional[str]:
+    """
+    Encontra o melhor match por similaridade entre nomes de projetos.
+    
+    Args:
+        nome_procurado: Nome do projeto a ser procurado
+        nomes_disponiveis: Lista de nomes disponíveis para matching
+        threshold: Limiar mínimo de similaridade (0.0 a 1.0)
+        
+    Returns:
+        Nome com melhor match ou None se não encontrar match acima do threshold
+    """
+    if not nome_procurado or not nomes_disponiveis:
+        return None
+    
+    melhor_match = None
+    melhor_score = 0.0
+    
+    nome_procurado_norm = nome_procurado.strip().upper()
+    
+    for nome_disponivel in nomes_disponiveis:
+        nome_disponivel_norm = nome_disponivel.strip().upper()
+        
+        # Calcular similaridade
+        score = SequenceMatcher(None, nome_procurado_norm, nome_disponivel_norm).ratio()
+        
+        # Log para debug
+        logger.debug(f"[SIMILARITY] '{nome_procurado_norm}' vs '{nome_disponivel_norm}': {score:.3f}")
+        
+        if score > melhor_score and score >= threshold:
+            melhor_score = score
+            melhor_match = nome_disponivel
+    
+    if melhor_match:
+        logger.info(f"[MATCH_ENCONTRADO] '{nome_procurado}' → '{melhor_match}' (score: {melhor_score:.3f})")
+    else:
+        logger.warning(f"[MATCH_NAO_ENCONTRADO] '{nome_procurado}' (threshold: {threshold})")
+    
+    return melhor_match
 
 @router.get("/projetos-ativos-por-secao", tags=["Dashboard"]) 
 async def get_projetos_ativos_por_secao(db: AsyncSession = Depends(get_async_db)):
@@ -587,15 +628,15 @@ async def get_disponibilidade_recurso(
         apontamentos_result = (await db.execute(apontamentos_sql, params)).mappings().all()
         logger.info(f"[APONTAMENTOS RESULT] Resultado dos apontamentos: {len(apontamentos_result)} linhas")
         
-        # Criar dicionário de horas apontadas por mês e projeto
-        horas_apontadas_por_mes_projeto = defaultdict(lambda: defaultdict(float))
+        # Criar dicionário de horas apontadas por mês e projeto (usando nome normalizado para matching)
+        horas_apontadas_por_mes_projeto_nome = defaultdict(lambda: defaultdict(float))
         horas_apontadas_por_mes = defaultdict(float)
         
         for row in apontamentos_result:
             mes_key = (int(row['ano']), int(row['mes']))
             projeto_id = row['projeto_id']
             projeto_nome = row['projeto_nome']
-            projeto_nome_normalizado = row.get('projeto_nome_normalizado', '')
+            projeto_nome_normalizado = row.get('projeto_nome_normalizado', '').strip()
             horas = float(row['horas_apontadas'] or 0)
             subtarefas_count = int(row.get('subtarefas_count', 0))
             tarefas_principais_count = int(row.get('tarefas_principais_count', 0))
@@ -605,17 +646,17 @@ async def get_disponibilidade_recurso(
                        f"Nome: '{projeto_nome}', Normalizado: '{projeto_nome_normalizado}', "
                        f"Horas: {horas}, Subtarefas: {subtarefas_count}, Principais: {tarefas_principais_count}")
             
-            # Agrupar por mês e projeto
-            if projeto_id:
-                horas_apontadas_por_mes_projeto[mes_key][projeto_id] += horas
+            # Agrupar por mês e NOME NORMALIZADO (não por ID) para matching correto
+            if projeto_nome_normalizado:
+                horas_apontadas_por_mes_projeto_nome[mes_key][projeto_nome_normalizado] += horas
             
             # Total por mês
             horas_apontadas_por_mes[mes_key] += horas
 
-        # Estrutura para processar os dados
+        # Estrutura para processar os dados (usando nome normalizado como chave)
         disponibilidade_por_mes = defaultdict(lambda: {
             "capacidade_rh": 0,
-            "alocacoes_detalhadas": defaultdict(lambda: {"horas": 0.0, "nome": ""})
+            "alocacoes_detalhadas": defaultdict(lambda: {"horas": 0.0, "nome": "", "projeto_id": None})
         })
 
         for row in db_result:
@@ -625,7 +666,7 @@ async def get_disponibilidade_recurso(
             if row['projeto_id'] and row['horas_planejadas'] is not None:
                 proj_id = row['projeto_id']
                 projeto_nome = row['projeto_nome']
-                projeto_nome_normalizado = row.get('projeto_nome_normalizado', '')
+                projeto_nome_normalizado = row.get('projeto_nome_normalizado', '').strip()
                 horas_planejadas = float(row['horas_planejadas'])
                 
                 # Log detalhado para debug do planejamento
@@ -633,8 +674,11 @@ async def get_disponibilidade_recurso(
                            f"Nome: '{projeto_nome}', Normalizado: '{projeto_nome_normalizado}', "
                            f"Horas Planejadas: {horas_planejadas}")
                 
-                disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][proj_id]["horas"] += horas_planejadas
-                disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][proj_id]["nome"] = projeto_nome
+                # Usar nome normalizado como chave para matching
+                if projeto_nome_normalizado:
+                    disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][projeto_nome_normalizado]["horas"] += horas_planejadas
+                    disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][projeto_nome_normalizado]["nome"] = projeto_nome
+                    disponibilidade_por_mes[mes_key]["alocacoes_detalhadas"][projeto_nome_normalizado]["projeto_id"] = proj_id
 
         # Monta a resposta final no formato do schema
         lista_mensal = []
@@ -645,13 +689,30 @@ async def get_disponibilidade_recurso(
             if capacidade == 0:
                 continue
 
-            detalhes_projeto = [
-                DisponibilidadeProjetoDetalhe(
-                    projeto=ProjetoInfo(id=pid, nome=pdata["nome"]),
-                    horas_planejadas=pdata["horas"],
-                    horas_apontadas=horas_apontadas_por_mes_projeto[ano_mes].get(pid, 0.0)  # NOVO CAMPO
-                ) for pid, pdata in mes_data["alocacoes_detalhadas"].items()
-            ]
+            detalhes_projeto = []
+            for nome_normalizado, pdata in mes_data["alocacoes_detalhadas"].items():
+                projeto_id = pdata["projeto_id"]
+                projeto_nome = pdata["nome"]
+                horas_planejadas = pdata["horas"]
+                
+                # Buscar horas apontadas usando matching por similaridade
+                nomes_apontamentos_disponiveis = list(horas_apontadas_por_mes_projeto_nome[ano_mes].keys())
+                nome_match = encontrar_melhor_match_nome(nome_normalizado, nomes_apontamentos_disponiveis, threshold=0.6)
+                
+                horas_apontadas = 0.0
+                if nome_match:
+                    horas_apontadas = horas_apontadas_por_mes_projeto_nome[ano_mes].get(nome_match, 0.0)
+                    logger.info(f"[MATCHING_SUCESSO] Mês: {ano_mes}, Planejamento: '{nome_normalizado}' → "
+                               f"Apontamento: '{nome_match}', Planejadas: {horas_planejadas}, Apontadas: {horas_apontadas}")
+                else:
+                    logger.warning(f"[MATCHING_FALHOU] Mês: {ano_mes}, Planejamento: '{nome_normalizado}', "
+                                  f"Planejadas: {horas_planejadas}, Apontadas: 0.0 (sem match)")
+                
+                detalhes_projeto.append(DisponibilidadeProjetoDetalhe(
+                    projeto=ProjetoInfo(id=projeto_id, nome=projeto_nome),
+                    horas_planejadas=horas_planejadas,
+                    horas_apontadas=horas_apontadas
+                ))
 
             total_planejado = sum(p.horas_planejadas for p in detalhes_projeto)
             total_apontado = horas_apontadas_por_mes.get(ano_mes, 0.0)  # NOVO: buscar horas apontadas
