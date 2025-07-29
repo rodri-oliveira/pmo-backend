@@ -164,11 +164,35 @@ class ImportadorExcelPlanejamento:
                 logger.error(f"[RECURSO_ERRO] Email do recurso '{nome}' está vazio")
                 return None
             
-            # Usar email exatamente como está na planilha
+            # Sanitizar email: se não tiver '@', assume domínio weg.net
             email = email.strip()
+            if '@' not in email:
+                email = f"{email.lower()}@weg.net"
             
             # Buscar recurso existente pelo email (chave única)
             recurso_existente = self.session.query(Recurso).filter(Recurso.email == email).first()
+
+            # Se não achou por email, tentar achar por similaridade de nome
+            if not recurso_existente:
+                from difflib import SequenceMatcher
+                nome_norm = self._normalizar_nome(nome)
+                candidatos = []
+                for rec in self.session.query(Recurso).all():
+                    rec_norm = self._normalizar_nome(rec.nome)
+                    ratio = SequenceMatcher(None, nome_norm, rec_norm).ratio()
+                    candidatos.append((ratio, rec))
+                if candidatos:
+                    candidatos.sort(key=lambda t: t[0], reverse=True)
+                    best_ratio, best_rec = candidatos[0]
+                    if best_ratio >= 0.85:
+                        logger.info(f"[RECURSO_MATCH_FUZZY] '{nome}' correspondido a '{best_rec.nome}' (ID {best_rec.id}) score {best_ratio:.2f}")
+                        recurso_existente = best_rec
+                        # Se o recurso não tem email ou email dummy, atualiza
+                        if (not best_rec.email or '@' not in best_rec.email):
+                            best_rec.email = email
+                            self.session.flush()
+                            self.estatisticas.setdefault('recursos_atualizados', 0)
+                            self.estatisticas['recursos_atualizados'] += 1
             
             if recurso_existente:
                 logger.info(f"[RECURSO_EXISTE] Recurso encontrado pelo email: {recurso_existente.nome}")
@@ -335,7 +359,8 @@ class ImportadorExcelPlanejamento:
             nova_alocacao = AlocacaoRecursoProjeto(
                 recurso_id=recurso.id,
                 projeto_id=projeto.id,
-                equipe_id=equipe.id if equipe else None,
+                # Se equipe não fornecida, usar equipe principal do recurso
+                equipe_id=(equipe.id if equipe else recurso.equipe_principal_id),
                 status_alocacao_id=status.id if status else None,
                 observacao=observacao if observacao and observacao.strip() else None,
                 data_inicio_alocacao=date(2025, 1, 1),
