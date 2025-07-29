@@ -131,7 +131,7 @@ class ImportadorExcelPlanejamento:
             novo_recurso = Recurso(
                 nome=nome,
                 email=email,
-                equipe_id=equipe.id if equipe else None,
+                equipe_principal_id=equipe.id if equipe else None,
                 ativo=True
             )
             
