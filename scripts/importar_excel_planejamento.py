@@ -1,7 +1,10 @@
+import pandas as pd
+
 # Substitua APENAS os métodos abaixo na classe ImportadorExcelPlanejamento
 
 def processar_linha_projeto(self, linha: pd.Series, recurso: Recurso, 
-                           equipe: Equipe, colunas_horas: List[str], df: pd.DataFrame = None, linha_index: int = None) -> bool:
+                           equipe: Equipe, colunas_horas: List[str], col_esforco: int, 
+                           df: pd.DataFrame = None, linha_index: int = None) -> bool:
     """
     Processa uma linha de projeto da planilha.
     
@@ -10,6 +13,7 @@ def processar_linha_projeto(self, linha: pd.Series, recurso: Recurso,
         recurso: Objeto Recurso
         equipe: Objeto Equipe
         colunas_horas: Lista com nomes das colunas de horas
+        col_esforco: Índice da coluna de esforço estimado
         df: DataFrame completo (para acessar por posição absoluta)
         linha_index: Índice da linha no DataFrame
         
@@ -29,14 +33,12 @@ def processar_linha_projeto(self, linha: pd.Series, recurso: Recurso,
         
         try:
             # Método 1: Tentar extrair da coluna F usando o DataFrame completo
-            if df is not None and linha_index is not None:
-                # Verificar se temos colunas suficientes
-                if len(df.columns) > 5:  # Coluna F = índice 5
-                    valor_bruto = df.iloc[linha_index, 5]
-                    esforco_str = str(valor_bruto).strip()
-                    logger.debug(f"Método 1 - DataFrame[{linha_index}, 5]: '{esforco_str}' (tipo: {type(valor_bruto)})")
-                else:
-                    logger.warning(f"DataFrame tem apenas {len(df.columns)} colunas, coluna F não existe!")
+            if df is not None and linha_index is not None and col_esforco is not None and col_esforco < len(df.columns):
+                try:
+                    esforco_str = str(df.iloc[linha_index, col_esforco]).strip()  # Coluna esforço dinâmica
+                    logger.debug(f"Método 1 - DataFrame[{linha_index}, {col_esforco}]: '{esforco_str}'")
+                except:
+                    logger.warning(f"Erro ao acessar coluna {col_esforco} no DataFrame")
             
             # Método 2 (fallback): Tentar extrair da linha atual
             if not esforco_str or esforco_str in ['', 'nan', 'NaN', 'None']:
@@ -301,21 +303,28 @@ def processar_aba(self) -> bool:
         projetos_processados = 0
         
         for index, linha in df.iterrows():
-            if index >= 6:  # Linha 7+ (índice 6+)
-                # Verificar se há nome de projeto
-                nome_projeto_temp = str(linha.iloc[0]).strip() if len(linha) > 0 else ''
-                
-                if nome_projeto_temp and nome_projeto_temp not in ['', 'nan', 'NaN']:
-                    logger.info(f"\n--- Processando linha {index + 1} ---")
-                    logger.info(f"Projeto detectado: '{nome_projeto_temp}'")
-                    
-                    if self.processar_linha_projeto(linha, recurso, equipe, colunas_horas, df, index):
-                        projetos_processados += 1
-                        logger.info(f"✓ Projeto processado com sucesso")
-                    else:
-                        logger.error(f"✗ Falha ao processar projeto")
-                else:
-                    logger.debug(f"Linha {index + 1} ignorada (sem projeto): '{nome_projeto_temp}'")
+             # Nome do possível projeto na coluna A
+             nome_projeto_temp = str(linha.iloc[0]).strip() if len(linha) > 0 else ''
+
+             # Ignorar cabeçalhos ou agrupadores conhecidos
+             cabecalhos_ignorar = {
+                 '', 'nan', 'NaN', 'None',
+                 'epic', 'ações', 'horas disponíveis', 'total de esforço (hrs)'
+             }
+
+             if nome_projeto_temp.lower() in cabecalhos_ignorar:
+                 logger.debug(f"Linha {index + 1} ignorada (cabeçalho): '{nome_projeto_temp}'")
+                 continue
+
+             # Processar linha considerada projeto
+             logger.info(f"\n--- Processando linha {index + 1} ---")
+             logger.info(f"Projeto detectado: '{nome_projeto_temp}'")
+
+             if self.processar_linha_projeto(linha, recurso, equipe, colunas_horas, 5, df, index):
+                 projetos_processados += 1
+                 logger.info("✓ Projeto processado com sucesso")
+             else:
+                 logger.error("✗ Falha ao processar projeto")
         
         logger.info(f"=== RESUMO DO PROCESSAMENTO ===")
         logger.info(f"Total de projetos processados: {projetos_processados}")
