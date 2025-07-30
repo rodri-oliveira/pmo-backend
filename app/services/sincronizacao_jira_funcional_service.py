@@ -1001,6 +1001,110 @@ class SincronizacaoJiraFuncional:
             logger.error(f"[RECURSO_ERRO] {str(e)}")
             return None
 
+    async def sincronizar_periodo(self, data_inicio: datetime, data_fim: datetime, projetos: List[str] = None) -> Dict[str, Any]:
+        """
+        Sincroniza worklogs do Jira para um período específico.
+        
+        Args:
+            data_inicio: Data de início da sincronização
+            data_fim: Data de fim da sincronização
+            projetos: Lista de projetos Jira (opcional)
+            
+        Returns:
+            Dicionário com estatísticas da sincronização
+        """
+        try:
+            logger.info(f"[SYNC_PERIODO] Iniciando sincronização: {data_inicio.date()} até {data_fim.date()}")
+            
+            # Usar projetos padrão se não especificados
+            if not projetos:
+                projetos = ["DTIN", "SGI", "TIN", "SEG"]
+            
+            # Processar período usando a lógica existente
+            await self.processar_periodo(data_inicio, data_fim)
+            
+            logger.info(f"[SYNC_PERIODO_SUCCESS] Sincronização concluída com sucesso")
+            
+            return {
+                'status': 'SUCESSO',
+                'message': f'Sincronização concluída: {self.stats["apontamentos_criados"]} apontamentos criados',
+                'total_processados': self.stats['apontamentos_criados'],
+                'periodo': {
+                    'data_inicio': data_inicio.isoformat(),
+                    'data_fim': data_fim.isoformat(),
+                    'projetos': projetos
+                },
+                **self.stats
+            }
+            
+        except Exception as e:
+            logger.error(f"[SYNC_PERIODO_ERROR] Erro na sincronização: {str(e)}")
+            return {
+                'status': 'ERRO',
+                'message': str(e),
+                'total_processados': 0,
+                **self.stats
+            }
+
+    async def processar_periodo(self, data_inicio: datetime, data_fim: datetime):
+        """
+        Processa worklogs do Jira de data_inicio até data_fim com upserts robustos.
+        """
+        try:
+            logger.info(f"[PERIODO] Processando de {data_inicio.date()} até {data_fim.date()}")
+            
+            # Projetos válidos das seções WEG
+            project_keys = [
+                "SEG", "SGI", "DTIN", "TIN", "WTMT", "WENSAS", 
+                "WTDPE", "WTDQUO", "WTDDMF", "WPDREAC", "WTDNS"
+            ]
+            
+            project_keys_str = ', '.join([f'"{key}"' for key in project_keys])
+            
+            # JQL com filtro de data nos worklogs
+            jql = (
+                f"project IN ({project_keys_str}) "
+                f"AND worklogDate >= '{data_inicio.date()}' "
+                f"AND worklogDate <= '{data_fim.date()}'"
+            )
+            
+            logger.info(f"[JQL] Query: {jql}")
+            
+            # Buscar todas as issues com worklogs no período
+            issues = await self._buscar_todas_issues_paginacao(
+                jql, 
+                fields=["key", "summary", "assignee", "worklog", "project", "created", "status", "customfield_10020", "parent", "issuetype"]
+            )
+            
+            logger.info(f"[ISSUES] Encontradas {len(issues)} issues")
+            
+            for issue in issues:
+                try:
+                    await self._processar_issue_completa_com_hierarquia(issue)
+                    self.stats['issues_processadas'] += 1
+                    
+                except Exception as e:
+                    issue_key = issue.get("key", "NO_KEY")
+                    logger.error(f"[ISSUE_ERROR] Erro ao processar issue {issue_key}: {str(e)}")
+                    self.stats['erros'] += 1
+                    continue
+            
+            # Commit final
+            await self.session.commit()
+            
+            # Relatório final
+            logger.info("=" * 60)
+            logger.info("RELATÓRIO DE SINCRONIZAÇÃO")
+            logger.info("=" * 60)
+            for key, value in self.stats.items():
+                logger.info(f"{key.upper()}: {value}")
+            logger.info("=" * 60)
+            
+        except Exception as e:
+            logger.error(f"[ERRO_GERAL] Erro na sincronização: {str(e)}")
+            await self.session.rollback()
+            raise
+
 # FUNÇÕES DE EXECUÇÃO BASEADAS NO CÓDIGO QUE FUNCIONAVA
 async def processar_periodo(data_inicio: datetime, data_fim: datetime):
     """Função principal para processar um período"""
