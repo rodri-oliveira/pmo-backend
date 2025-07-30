@@ -93,15 +93,10 @@ class SincronizacaoJiraFuncional:
             Objeto seção ou None se erro
         """
         try:
-            logger.info(f"[SECAO_UPSERT] Iniciando upsert para projeto Jira: {jira_project_key}")
-            
             # Mapeamento correto: DTIN (Jira) → TIN (Seção)
             secao_key = jira_project_key
             if jira_project_key == "DTIN":
                 secao_key = "TIN"
-                logger.info(f"[SECAO_MAPEAMENTO] DTIN → TIN")
-            
-            logger.info(f"[SECAO_BUSCA] Buscando seção com chave: {secao_key}")
             
             # Buscar seção existente
             secao = await self.secao_repo.get_by_jira_project_key(secao_key)
@@ -109,8 +104,6 @@ class SincronizacaoJiraFuncional:
             if secao:
                 logger.info(f"[SECAO_FOUND] Seção encontrada: {secao.nome} (id={secao.id})")
                 return secao
-            
-            logger.info(f"[SECAO_CREATE] Seção não encontrada, criando nova seção para: {secao_key}")
             
             # Criar nova seção
             secao_data = {
@@ -120,8 +113,6 @@ class SincronizacaoJiraFuncional:
                 "ativo": True
             }
             
-            logger.info(f"[SECAO_DATA] Dados da seção: {secao_data}")
-            
             secao = await self.secao_repo.create(secao_data)
             self.stats['secoes_criadas'] += 1
             logger.info(f"[SECAO_CREATED] Nova seção criada: {secao.nome} (id={secao.id})")
@@ -130,7 +121,6 @@ class SincronizacaoJiraFuncional:
             
         except Exception as e:
             logger.error(f"[SECAO_ERROR] Erro ao processar seção {jira_project_key}: {str(e)}")
-            logger.error(f"[SECAO_ERROR] Traceback: ", exc_info=True)
             return None
 
     async def upsert_recurso(self, assignee_data: Dict[str, Any]) -> Optional[Any]:
@@ -304,15 +294,16 @@ class SincronizacaoJiraFuncional:
         logger.info(f"[INICIO] Processando período: {data_inicio.date()} até {data_fim.date()}")
         
         try:
-            # Projetos Jira para sincronizar (chaves dos projetos)
-            # IMPORTANTE: Usar as chaves corretas dos projetos no Jira
+            # Projetos Jira para sincronizar (nomes completos)
             project_keys = [
-                "SEG",   # Seção Segurança
-                "SGI",   # Seção Suporte Global Infraestrutura
-                "DTIN"   # Departamento de TI (mapeado para TIN)
+                "SGI"
             ]
-            
-            logger.info(f"[PROJETOS] Sincronizando projetos: {project_keys}")
+            # project_keys = [
+            #     "SEG Seção Segurança da Informação e Riscos TI",
+            #     "SGI - Seção Suporte Global Infraestrutura", 
+            #     "DTIN",
+            #     "Technology Business Management - TI"
+            # ]
             project_keys_str = ', '.join([f'"{key}"' for key in project_keys])
             
             # JQL com filtro de data nos worklogs
@@ -325,39 +316,21 @@ class SincronizacaoJiraFuncional:
             logger.info(f"[JQL] Query: {jql}")
             
             # Buscar todas as issues com worklogs no período
-            try:
-                issues = await self._buscar_todas_issues_paginacao(
-                    jql, 
-                    fields=["key", "summary", "assignee", "worklog", "project", "created", "status", "customfield_10020", "parent", "issuetype"]
-                )
-                
-                logger.info(f"[ISSUES] Encontradas {len(issues)} issues")
-                
-                # Log detalhado dos projetos encontrados
-                projetos_encontrados = {}
-                for issue in issues:
-                    project_key = issue.get('key', '').split('-')[0] if issue.get('key') else 'UNKNOWN'
-                    projetos_encontrados[project_key] = projetos_encontrados.get(project_key, 0) + 1
-                
-                logger.info(f"[PROJETOS_ENCONTRADOS] {projetos_encontrados}")
-                
-            except Exception as e:
-                logger.error(f"[BUSCA_ISSUES_ERRO] Erro ao buscar issues: {str(e)}")
-                raise
+            issues = await self._buscar_todas_issues_paginacao(
+                jql, 
+                fields=["key", "summary", "assignee", "worklog", "project", "created", "status", "customfield_10020", "parent", "issuetype"]
+            )
+            
+            logger.info(f"[ISSUES] Encontradas {len(issues)} issues")
             
             for issue in issues:
                 try:
-                    issue_key = issue.get("key", "NO_KEY")
-                    logger.info(f"[ISSUE_PROCESSANDO] Iniciando processamento de {issue_key}")
-                    
                     await self._processar_issue(issue, data_inicio, data_fim)
                     self.stats['issues_processadas'] += 1
-                    logger.info(f"[ISSUE_SUCESSO] Issue {issue_key} processada com sucesso")
                     
                 except Exception as e:
                     issue_key = issue.get("key", "NO_KEY")
                     logger.error(f"[ISSUE_ERROR] Erro ao processar issue {issue_key}: {str(e)}")
-                    logger.error(f"[ISSUE_ERROR] Traceback: ", exc_info=True)
                     self.stats['erros'] += 1
                     continue
             
@@ -601,7 +574,7 @@ class SincronizacaoJiraFuncional:
         
         # Filtrar apenas projetos válidos das seções WEG
         project_key = issue_key.split('-')[0] if '-' in issue_key else None
-        projetos_validos = ['SEG', 'SGI', 'DTIN', 'TIN']  # ✅ TODAS as seções WEG
+        projetos_validos = ['SEG', 'SGI', 'DTIN', 'TIN', 'WTMT', 'WENSAS', 'WTDPE', 'WTDQUO', 'WTDDMF', 'WPDREAC', 'WTDNS']  # ✅ TODAS as seções WEG
         
         if not project_key or project_key not in projetos_validos:
             logger.debug(f"[ISSUE_SKIP] {issue_key} - Projeto {project_key} não é válido para sincronização")
@@ -646,7 +619,7 @@ class SincronizacaoJiraFuncional:
             parent_project_key = jira_parent_key.split('-')[0] if '-' in jira_parent_key else None
             
             # Filtrar apenas projetos pai válidos das seções WEG
-            projetos_validos = ['SEG', 'SGI', 'DTIN', 'TIN']  # ✅ TODAS as seções WEG
+            projetos_validos = ['SEG', 'SGI', 'DTIN', 'TIN', 'WTMT', 'WENSAS', 'WTDPE', 'WTDQUO', 'WTDDMF', 'WPDREAC', 'WTDNS']  # ✅ TODAS as seções WEG
             
             if parent_project_key and parent_project_key in projetos_validos:
                 # Buscar projeto pai
@@ -857,27 +830,18 @@ class SincronizacaoJiraFuncional:
             'data_atualizacao': datetime.now()
         }
         
-        try:
-            if apontamento_existente:
-                # UPSERT: Atualizar apontamento existente
-                logger.info(f"[WORKLOG_UPDATE] Atualizando apontamento existente: {worklog_id}")
-                for key, value in apontamento_data.items():
-                    setattr(apontamento_existente, key, value)
-                await self.session.commit()
-                logger.info(f"[WORKLOG_UPDATE_SUCESSO] Individual atualizado: {worklog_id} - {horas_apontadas}h - Hierarquia: {jira_parent_key or 'Epic'}")
-            else:
-                # UPSERT: Criar novo apontamento
-                logger.info(f"[WORKLOG_CREATE] Criando novo apontamento: {worklog_id}")
-                apontamento_data['data_criacao'] = datetime.now()
-                await self.apontamento_repo.sync_jira_apontamento(worklog_id, apontamento_data)
-                self.stats['apontamentos_criados'] += 1
-                logger.info(f"[WORKLOG_CREATE_SUCESSO] Individual criado: {worklog_id} - {horas_apontadas}h - Hierarquia: {jira_parent_key or 'Epic'}")
-                
-        except Exception as e:
-            logger.error(f"[WORKLOG_SAVE_ERROR] Erro ao salvar worklog {worklog_id}: {str(e)}")
-            logger.error(f"[WORKLOG_SAVE_ERROR] Traceback: ", exc_info=True)
-            await self.session.rollback()
-            raise
+        if apontamento_existente:
+            # UPSERT: Atualizar apontamento existente
+            for key, value in apontamento_data.items():
+                setattr(apontamento_existente, key, value)
+            await self.db.commit()
+            logger.info(f"[WORKLOG] Individual atualizado: {worklog_id} - {horas_apontadas}h - Hierarquia: {jira_parent_key or 'Epic'}")
+        else:
+            # UPSERT: Criar novo apontamento
+            apontamento_data['data_criacao'] = datetime.now()
+            await self.apontamento_repository.sync_jira_apontamento(worklog_id, apontamento_data)
+            self.stats['apontamentos_criados'] += 1
+            logger.info(f"[WORKLOG] Individual criado: {worklog_id} - {horas_apontadas}h - Hierarquia: {jira_parent_key or 'Epic'}")
 
     async def _obter_ou_criar_projeto(self, issue_key: str, project_data: Dict[str, Any], fields: Dict[str, Any] = None) -> Optional[Any]:
         """Obter/criar projeto e seção com dados completos do Jira"""
