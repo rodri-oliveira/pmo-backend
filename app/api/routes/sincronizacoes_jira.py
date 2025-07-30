@@ -626,14 +626,28 @@ async def sincronizar_mes_ano_jira(
         # Executar sincronização em background
         async def executar_sync_mes_ano():
             try:
-                from app.services.sincronizacao_jira_funcional_service import SincronizacaoJiraFuncional
-                sync_service = SincronizacaoJiraFuncional()
+                # 🔥 USANDO O SCRIPT CORRIGIDO QUE JÁ FUNCIONA
+                import sys
+                import os
+                sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'scripts'))
                 
-                resultado = await sync_service.sincronizar_periodo(
-                    data_inicio=data_inicio,
-                    data_fim=data_fim,
-                    projetos=projetos
-                )
+                from scripts.sincronizacao_jira_funcional import SincronizacaoJiraFuncional
+                from app.db.session import AsyncSessionLocal
+                
+                # Usar sessão do banco
+                async with AsyncSessionLocal() as session:
+                    sync_service = SincronizacaoJiraFuncional(session)
+                    
+                    # Executar processamento do período
+                    await sync_service.processar_periodo(data_inicio, data_fim)
+                    
+                    # Preparar resultado baseado nas estatísticas
+                    resultado = {
+                        'status': 'SUCESSO',
+                        'message': f'Sincronização concluída: {sync_service.stats["apontamentos_criados"]} apontamentos criados',
+                        'total_processados': sync_service.stats['apontamentos_criados'],
+                        'stats': sync_service.stats
+                    }
                 
                 # Atualizar status da sincronização
                 await sincronizacao_service.finalizar_sincronizacao(

@@ -1053,44 +1053,70 @@ class SincronizacaoJiraFuncional:
         try:
             logger.info(f"[PERIODO] Processando de {data_inicio.date()} até {data_fim.date()}")
             
-            # Projetos válidos das seções WEG
+            # 🔥 CORREÇÃO: Projetos válidos das seções WEG (PROCESSAMENTO INDIVIDUAL)
             project_keys = [
                 "SEG", "SGI", "DTIN", "TIN", "WTMT", "WENSAS", 
                 "WTDPE", "WTDQUO", "WTDDMF", "WPDREAC", "WTDNS"
             ]
             
-            project_keys_str = ', '.join([f'"{key}"' for key in project_keys])
+            logger.info(f"[DEBUG] Projetos sendo sincronizados: {project_keys}")
             
-            # JQL com filtro de data nos worklogs
-            jql = (
-                f"project IN ({project_keys_str}) "
-                f"AND worklogDate >= '{data_inicio.date()}' "
-                f"AND worklogDate <= '{data_fim.date()}'"
-            )
-            
-            logger.info(f"[JQL] Query: {jql}")
-            
-            # Buscar todas as issues com worklogs no período
-            issues = await self._buscar_todas_issues_paginacao(
-                jql, 
-                fields=["key", "summary", "assignee", "worklog", "project", "created", "status", "customfield_10020", "parent", "issuetype"]
-            )
-            
-            logger.info(f"[ISSUES] Encontradas {len(issues)} issues")
-            
-            for issue in issues:
+            # 🔥 CORREÇÃO: Processar cada projeto INDIVIDUALMENTE
+            for projeto_key in project_keys:
                 try:
-                    await self._processar_issue_completa_com_hierarquia(issue)
-                    self.stats['issues_processadas'] += 1
+                    logger.info(f"[PROJETO] ==================== PROCESSANDO {projeto_key} ====================")
+                    
+                    # JQL específico para este projeto
+                    jql = (
+                        f'project = "{projeto_key}" '
+                        f"AND worklogDate >= '{data_inicio.date()}' "
+                        f"AND worklogDate <= '{data_fim.date()}'"
+                    )
+                    
+                    logger.info(f"[JQL] {projeto_key}: {jql}")
+                    
+                    # Buscar issues deste projeto específico
+                    issues = await self._buscar_todas_issues_paginacao(
+                        jql, 
+                        fields=["key", "summary", "assignee", "worklog", "project", "created", "status", "customfield_10020", "parent", "issuetype"]
+                    )
+                    
+                    logger.info(f"[ISSUES] {projeto_key}: Encontradas {len(issues)} issues")
+                    
+                    if not issues:
+                        logger.warning(f"[PROJETO] {projeto_key}: Nenhuma issue encontrada no período")
+                        continue
+                    
+                    # Processar issues deste projeto
+                    issues_processadas = 0
+                    for issue in issues:
+                        try:
+                            issue_key = issue.get("key", "NO_KEY")
+                            logger.info(f"[PROCESSANDO] {projeto_key}: {issue_key}")
+                            
+                            await self._processar_issue_completa_com_hierarquia(issue)
+                            issues_processadas += 1
+                            
+                            logger.info(f"[PROCESSADO] ✅ {projeto_key}: {issue_key} processado com sucesso")
+                            
+                        except Exception as e:
+                            issue_key = issue.get("key", "NO_KEY")
+                            logger.error(f"[ISSUE_ERROR] ❌ {projeto_key}: Erro ao processar {issue_key}: {str(e)}")
+                            import traceback
+                            logger.error(f"[ISSUE_ERROR] Traceback: {traceback.format_exc()}")
+                            self.stats['erros'] += 1
+                            continue
+                    
+                    # Commit após cada projeto (transação individual)
+                    await self.session.commit()
+                    self.stats['issues_processadas'] += issues_processadas
+                    
+                    logger.info(f"[PROJETO] ✅ {projeto_key}: {issues_processadas} issues processadas com sucesso")
                     
                 except Exception as e:
-                    issue_key = issue.get("key", "NO_KEY")
-                    logger.error(f"[ISSUE_ERROR] Erro ao processar issue {issue_key}: {str(e)}")
-                    self.stats['erros'] += 1
+                    logger.error(f"[PROJETO_ERROR] ❌ Erro ao processar projeto {projeto_key}: {str(e)}")
+                    await self.session.rollback()
                     continue
-            
-            # Commit final
-            await self.session.commit()
             
             # Relatório final
             logger.info("=" * 60)
