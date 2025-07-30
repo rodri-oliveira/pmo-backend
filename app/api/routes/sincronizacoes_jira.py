@@ -16,6 +16,9 @@ from app.services.log_service import LogService
 from app.integrations.jira_client import JiraClient
 from app.schemas.sincronizacao_schemas import SincronizacaoJiraRequest, SincronizacaoJiraResponse
 
+# Configurar logger específico para este módulo
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["Integração Jira"])
 
 class SincronizacaoJiraOut(BaseModel):
@@ -613,20 +616,12 @@ async def sincronizar_mes_ano_jira(
         if not projetos:
             projetos = ["DTIN", "SGI", "TIN", "SEG"]
         
-        # Registrar início da sincronização
-        from app.services.sincronizacao_jira_service import SincronizacaoJiraService
-        sincronizacao_service = SincronizacaoJiraService(db)
-        
-        sincronizacao = await sincronizacao_service.registrar_inicio_sincronizacao(
-            usuario_id=current_user.id,
-            tipo_evento="sincronizacao_mes_ano",
-            mensagem=f"Sincronização de {mes_inicio}/{ano_inicio} até {mes_fim}/{ano_fim} iniciada"
-        )
-        
-        # Executar sincronização em background
+        # 🔥 EXECUTAR SINCRONIZAÇÃO DIRETAMENTE COM O SCRIPT QUE FUNCIONA
         async def executar_sync_mes_ano():
             try:
-                # 🔥 USANDO O SCRIPT CORRIGIDO QUE JÁ FUNCIONA
+                logger.info(f"[SYNC_SCRIPT] Iniciando sincronização com script que funciona...")
+                
+                # Importar o script que funciona
                 import sys
                 import os
                 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'scripts'))
@@ -641,46 +636,20 @@ async def sincronizar_mes_ano_jira(
                     # Executar processamento do período
                     await sync_service.processar_periodo(data_inicio, data_fim)
                     
-                    # Preparar resultado baseado nas estatísticas
-                    resultado = {
-                        'status': 'SUCESSO',
-                        'message': f'Sincronização concluída: {sync_service.stats["apontamentos_criados"]} apontamentos criados',
-                        'total_processados': sync_service.stats['apontamentos_criados'],
-                        'stats': sync_service.stats
-                    }
-                
-                # Atualizar status da sincronização
-                await sincronizacao_service.finalizar_sincronizacao(
-                    sincronizacao.id,
-                    "concluida",
-                    f"Sincronização concluída: {resultado.get('total_processados', 0)} worklogs processados"
-                )
-                
-                logger.info(f"[SYNC_MES_ANO_SUCCESS] Concluída: {resultado}")
+                    logger.info(f"[SYNC_SCRIPT_SUCCESS] Concluída: {sync_service.stats['apontamentos_criados']} apontamentos criados")
                 
             except Exception as e:
-                logger.error(f"[SYNC_MES_ANO_ERROR] Erro: {str(e)}")
-                await sincronizacao_service.finalizar_sincronizacao(
-                    sincronizacao.id,
-                    "erro",
-                    f"Erro na sincronização: {str(e)}"
-                )
+                logger.error(f"[SYNC_SCRIPT_ERROR] Erro: {str(e)}")
         
+        # Executar em background
         background_tasks.add_task(executar_sync_mes_ano)
         
-        # Registrar log de atividade
-        from app.services.log_service import LogService
-        log_service = LogService(db)
-        await log_service.registrar_log(
-            tipo="SINCRONIZACAO_JIRA_MES_ANO",
-            descricao=f"Sincronização {mes_inicio}/{ano_inicio} até {mes_fim}/{ano_fim} iniciada por {current_user.nome}",
-            usuario_id=current_user.id
-        )
+        # Log simples
+        logger.info(f"[SYNC_ENDPOINT] Sincronização {mes_inicio}/{ano_inicio} até {mes_fim}/{ano_fim} agendada")
         
         return {
             "status": "success",
             "mensagem": f"Sincronização de {mes_inicio}/{ano_inicio} até {mes_fim}/{ano_fim} iniciada com sucesso",
-            "sincronizacao_id": sincronizacao.id,
             "periodo": {
                 "data_inicio": data_inicio.isoformat(),
                 "data_fim": data_fim.isoformat(),
