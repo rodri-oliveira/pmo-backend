@@ -578,8 +578,8 @@ async def get_disponibilidade_recurso(
                 hdr.recurso_id = :recurso_id
                 AND hdr.ano = :ano
                 AND hdr.mes BETWEEN :mes_inicio AND :mes_fim
-                -- Filtrar apenas projetos válidos das seções WEG
-                AND (p.id IS NULL OR p.jira_project_key ~ '^(SEG|SGI|DTIN|TIN|WTMT|WENSAS|WTDPE|WTDQUO|WTDDMF|WPDREAC|WTDNS)-')
+                -- Incluir todos os projetos (removido filtro restritivo de jira_project_key)
+                -- AND (p.id IS NULL OR p.jira_project_key ~ '^(SEG|SGI|DTIN|TIN|WTMT|WENSAS|WTDPE|WTDQUO|WTDDMF|WPDREAC|WTDNS)-')
             ORDER BY
                 hdr.ano, hdr.mes;
         """
