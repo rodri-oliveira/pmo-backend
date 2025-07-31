@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, 
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+import uuid
+import asyncio
 
 from app.core.security import get_current_admin_user
 from app.db.session import get_db, get_async_db
@@ -18,6 +20,59 @@ from app.schemas.sincronizacao_schemas import SincronizacaoJiraRequest, Sincroni
 
 # Configurar logger específico para este módulo
 logger = logging.getLogger(__name__)
+
+# 🔥 SISTEMA DE STATUS EM MEMÓRIA PARA SINCRONIZAÇÕES
+sync_status_store: Dict[str, Dict[str, Any]] = {}
+
+def create_sync_status(sync_id: str, total_projects: int = 4) -> None:
+    """Cria um novo status de sincronização"""
+    sync_status_store[sync_id] = {
+        "status": "running",
+        "processed_count": 0,
+        "total_count": total_projects,
+        "message": "Iniciando sincronização...",
+        "error": None,
+        "start_time": datetime.now().isoformat(),
+        "end_time": None
+    }
+    logger.info(f"[SYNC_STATUS] Criado status para sync_id: {sync_id}")
+
+def update_sync_status(sync_id: str, **kwargs) -> None:
+    """Atualiza o status de uma sincronização"""
+    if sync_id in sync_status_store:
+        sync_status_store[sync_id].update(kwargs)
+        logger.info(f"[SYNC_STATUS] Atualizado sync_id {sync_id}: {kwargs}")
+    else:
+        logger.warning(f"[SYNC_STATUS] Tentativa de atualizar sync_id inexistente: {sync_id}")
+
+def get_sync_status(sync_id: str) -> Dict[str, Any]:
+    """Obtém o status de uma sincronização"""
+    try:
+        logger.info(f"[STATUS_CONSULTA] Buscando status para sync_id: {sync_id}")
+        
+        if sync_id not in sync_status_store:
+            logger.warning(f"[STATUS_NOT_FOUND] sync_id não encontrado: {sync_id}")
+            return {
+                "status": "not_found",
+                "processed_count": 0,
+                "total_count": 0,
+                "message": "Sincronização não encontrada",
+                "error": None
+            }
+        
+        result = sync_status_store[sync_id]
+        logger.info(f"[STATUS_RESULT] Status encontrado: {result}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"[STATUS_ERROR] Erro ao buscar status {sync_id}: {str(e)}")
+        return {
+            "status": "error",
+            "processed_count": 0,
+            "total_count": 0,
+            "message": "Erro interno ao consultar status",
+            "error": str(e)
+        }
 
 router = APIRouter(tags=["Integração Jira"])
 
@@ -597,7 +652,7 @@ async def sincronizar_mes_ano_jira(
     
     **Exemplo de uso:**
     ```
-    POST /api/jira/sincronizar-mes-ano?mes_inicio=1&ano_inicio=2025&mes_fim=7&ano_fim=2025&projetos=DTIN&projetos=SGI
+    POST /backend/sincronizacoes-jira/sincronizar-mes-ano?mes_inicio=1&ano_inicio=2025&mes_fim=7&ano_fim=2025&projetos=DTIN&projetos=SGI
     ```
     """
     try:
@@ -616,10 +671,22 @@ async def sincronizar_mes_ano_jira(
         if not projetos:
             projetos = ["DTIN", "SGI", "TIN", "SEG"]
         
+        # 🔥 GERAR SYNC_ID ÚNICO
+        sync_id = str(uuid.uuid4())
+        
+        # 🔥 CRIAR STATUS INICIAL
+        create_sync_status(sync_id, total_projects=len(projetos))
+        
         # 🔥 EXECUTAR SINCRONIZAÇÃO DIRETAMENTE COM O SCRIPT QUE FUNCIONA
         async def executar_sync_mes_ano():
             try:
-                logger.info(f"[SYNC_SCRIPT] Iniciando sincronização com script que funciona...")
+                logger.info(f"[SYNC_SCRIPT] Iniciando sincronização {sync_id} com script que funciona...")
+                
+                # Atualizar status: processando
+                update_sync_status(sync_id, 
+                    message=f"Processando sincronização para {len(projetos)} projetos...",
+                    status="running"
+                )
                 
                 # Importar o script que funciona
                 import sys
@@ -636,10 +703,26 @@ async def sincronizar_mes_ano_jira(
                     # Executar processamento do período
                     await sync_service.processar_periodo(data_inicio, data_fim)
                     
-                    logger.info(f"[SYNC_SCRIPT_SUCCESS] Concluída: {sync_service.stats['apontamentos_criados']} apontamentos criados")
+                    # Atualizar status: concluído
+                    apontamentos_criados = sync_service.stats.get('apontamentos_criados', 0)
+                    update_sync_status(sync_id,
+                        status="completed",
+                        processed_count=len(projetos),
+                        message=f"Sincronização concluída! {apontamentos_criados} apontamentos criados.",
+                        end_time=datetime.now().isoformat()
+                    )
+                    
+                    logger.info(f"[SYNC_SCRIPT_SUCCESS] Concluída {sync_id}: {apontamentos_criados} apontamentos criados")
                 
             except Exception as e:
-                logger.error(f"[SYNC_SCRIPT_ERROR] Erro: {str(e)}")
+                logger.error(f"[SYNC_SCRIPT_ERROR] Erro {sync_id}: {str(e)}")
+                # Atualizar status: erro
+                update_sync_status(sync_id,
+                    status="error",
+                    message=f"Erro durante sincronização: {str(e)}",
+                    error=str(e),
+                    end_time=datetime.now().isoformat()
+                )
         
         # Executar em background
         background_tasks.add_task(executar_sync_mes_ano)
@@ -649,6 +732,8 @@ async def sincronizar_mes_ano_jira(
         
         return {
             "status": "success",
+            "sync_id": sync_id,
+            "status_url": f"/backend/sincronizacoes-jira/sincronizar-status/{sync_id}",
             "mensagem": f"Sincronização de {mes_inicio}/{ano_inicio} até {mes_fim}/{ano_fim} iniciada com sucesso",
             "periodo": {
                 "data_inicio": data_inicio.isoformat(),
@@ -664,4 +749,12 @@ async def sincronizar_mes_ano_jira(
             detail=f"Erro ao iniciar sincronização: {str(e)}"
         )
 
-# Endpoint removido para evitar duplicação
+@router.get("/sincronizar-status/{sync_id}", response_model=Dict[str, Any])
+async def obter_status_sincronizacao(
+    sync_id: str = Path(..., description="ID da sincronização"),
+    current_user: UsuarioInDB = Depends(get_current_admin_user)
+):
+    """Retorna o status atual da sincronização"""
+    return get_sync_status(sync_id)
+
+# -- fim do arquivo --

@@ -298,8 +298,7 @@ class SincronizacaoJiraFuncional:
             project_keys = [
                 "SEG",
                 "SGI",
-                "DTIN",
-                "TIN"
+                "DTIN"
             ]
             
             logger.info(f"[DEBUG] Projetos sendo sincronizados: {project_keys}")
@@ -598,7 +597,7 @@ class SincronizacaoJiraFuncional:
         
         # Filtrar apenas projetos válidos das seções WEG
         project_key = issue_key.split('-')[0] if '-' in issue_key else None
-        projetos_validos = ['SEG', 'SGI', 'DTIN', 'TIN', 'WTMT', 'WENSAS', 'WTDPE', 'WTDQUO', 'WTDDMF', 'WPDREAC', 'WTDNS']  # ✅ TODAS as seções WEG
+        projetos_validos = ['SEG', 'SGI', 'DTIN']  # ✅ TODAS as seções WEG
         
         if not project_key or project_key not in projetos_validos:
             logger.debug(f"[ISSUE_SKIP] {issue_key} - Projeto {project_key} não é válido para sincronização")
@@ -643,7 +642,7 @@ class SincronizacaoJiraFuncional:
             parent_project_key = jira_parent_key.split('-')[0] if '-' in jira_parent_key else None
             
             # Filtrar apenas projetos pai válidos das seções WEG
-            projetos_validos = ['SEG', 'SGI', 'DTIN', 'TIN', 'WTMT', 'WENSAS', 'WTDPE', 'WTDQUO', 'WTDDMF', 'WPDREAC', 'WTDNS']  # ✅ TODAS as seções WEG
+            projetos_validos = ['SEG', 'SGI', 'DTIN']  # ✅ TODAS as seções WEG
             
             if parent_project_key and parent_project_key in projetos_validos:
                 # Buscar projeto pai
