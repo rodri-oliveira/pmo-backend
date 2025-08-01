@@ -301,6 +301,13 @@ class SincronizacaoJiraFuncional:
                 "DTIN"
             ]
             
+            # 🏷️ LABELS POR PROJETO - Descobertas via análise JQL
+            LABELS_POR_PROJETO = {
+                "DTIN": ["TIN-Projetos", "TIN-Melhorias"],
+                "SEG": ["SEG-Projetos", "SEG-Melhorias", "SEG-Rotinas"],
+                "SGI": ["SGI-Projetos", "SGI-Melhorias"]
+            }
+            
             logger.info(f"[DEBUG] Projetos sendo sincronizados: {project_keys}")
             
             # 🔥 CORREÇÃO: Processar cada projeto INDIVIDUALMENTE
@@ -308,12 +315,27 @@ class SincronizacaoJiraFuncional:
                 try:
                     logger.info(f"[PROJETO] ==================== PROCESSANDO {projeto_key} ====================")
                     
-                    # JQL específico para este projeto
-                    jql = (
+                    # JQL expandida: worklog + épicos com labels
+                    jql_worklog = (
                         f'project = "{projeto_key}" '
                         f"AND worklogDate >= '{data_inicio.date()}' "
                         f"AND worklogDate <= '{data_fim.date()}'"
                     )
+                    
+                    # Adicionar épicos com labels se existirem para este projeto
+                    labels = LABELS_POR_PROJETO.get(projeto_key, [])
+                    if labels:
+                        labels_str = ', '.join([f'"{label}"' for label in labels])
+                        jql_epicos = (
+                            f'(project = "{projeto_key}" '
+                            f'AND issuetype = Epic '
+                            f'AND labels in ({labels_str}))'
+                        )
+                        # Combinar ambas as queries com OR
+                        jql = f"({jql_worklog}) OR {jql_epicos}"
+                    else:
+                        # Se não tem labels, usar só a query de worklog
+                        jql = jql_worklog
                     
                     logger.info(f"[JQL] {projeto_key}: {jql}")
                     
