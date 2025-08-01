@@ -45,11 +45,32 @@ def populate_horas_disponiveis_rh():
         horas_data = []
         for recurso_id in recursos:
             for _, row in df_dias_uteis.iterrows():
+                mes = row['mes']
+                dias_uteis = row['dias_uteis']
+                
+                # AJUSTE: Férias forçadas - Saída 23/dez, volta 04/jan
+                # Dezembro: excluir dias úteis de 23/dez em diante
+                # Janeiro: excluir dias úteis até 03/jan
+                if mes == 12:  # Dezembro
+                    # Estimar que aproximadamente 7 dias úteis são perdidos (23-31 dez)
+                    dias_ferias_dez = 7
+                    dias_uteis_ajustados = max(0, dias_uteis - dias_ferias_dez)
+                    horas_mes = dias_uteis_ajustados * JORNADA_HORAS
+                    logging.info(f"Dezembro: Férias 23/dez-31/dez - {dias_uteis} dias -> {dias_uteis_ajustados} dias úteis -> {horas_mes}h")
+                elif mes == 1:  # Janeiro
+                    # Estimar que aproximadamente 3 dias úteis são perdidos (01-03 jan)
+                    dias_ferias_jan = 3
+                    dias_uteis_ajustados = max(0, dias_uteis - dias_ferias_jan)
+                    horas_mes = dias_uteis_ajustados * JORNADA_HORAS
+                    logging.info(f"Janeiro: Férias 01/jan-03/jan - {dias_uteis} dias -> {dias_uteis_ajustados} dias úteis -> {horas_mes}h")
+                else:
+                    horas_mes = dias_uteis * JORNADA_HORAS  # Horas normais
+                
                 horas_data.append({
                     'recurso_id': recurso_id,
                     'ano': row['ano'],
-                    'mes': row['mes'],
-                    'horas_disponiveis_mes': row['dias_uteis'] * JORNADA_HORAS
+                    'mes': mes,
+                    'horas_disponiveis_mes': horas_mes
                 })
         df_horas = pd.DataFrame(horas_data)
         

@@ -71,22 +71,25 @@ def encontrar_melhor_match_nome(nome_procurado: str, nomes_disponiveis: List[str
 @router.get("/projetos-ativos-por-secao", tags=["Dashboard"]) 
 async def get_projetos_ativos_por_secao(db: AsyncSession = Depends(get_async_db)):
     """
-    Retorna o total de projetos ativos para as seções SGI, SEG e TIN usando SQL puro.
+    Retorna o total de projetos que possuem alocações com status "Em andamento" para as seções SGI, SEG e TIN.
     """
-    logger.info("--- EXECUTANDO ENDPOINT /projetos-ativos-por-secao ---")
+    logger.info("--- EXECUTANDO ENDPOINT /projetos-ativos-por-secao (BASEADO EM ALOCAÇÕES) ---")
     try:
         id_para_sigla = {1: "SGI", 2: "SEG", 3: "TIN"}
         result = {sigla: 0 for sigla in id_para_sigla.values()}
 
         raw_sql = text("""
-            SELECT secao_id, COUNT(id) as total
-            FROM projeto
-            WHERE ativo = TRUE AND secao_id IN (1, 2, 3)
-            GROUP BY secao_id
+            SELECT p.secao_id, COUNT(DISTINCT p.id) as total
+            FROM projeto p
+            INNER JOIN alocacao_recurso_projeto arp ON p.id = arp.projeto_id
+            WHERE p.ativo = TRUE 
+                AND p.secao_id IN (1, 2, 3)
+                AND arp.status_alocacao_id = 3
+            GROUP BY p.secao_id
         """)
 
         db_result = (await db.execute(raw_sql)).mappings().all()
-        logger.info(f"[RAW SQL RESULT] Resultado do banco: {db_result}")
+        logger.info(f"[RAW SQL RESULT] Projetos com alocações em andamento: {db_result}")
 
         for row in db_result:
             sigla = id_para_sigla.get(row['secao_id'])
@@ -344,22 +347,25 @@ async def get_alocacao_projeto(
 @router.get("/equipes-ativas-por-secao", tags=["Dashboard"])
 async def get_equipes_ativas_por_secao(db: AsyncSession = Depends(get_async_db)):
     """
-    Retorna o total de equipes ativas para as seções SGI, SEG e TIN.
+    Retorna o total de equipes que possuem alocações com status "Em andamento" para as seções SGI, SEG e TIN.
     """
-    logger.info("--- EXECUTANDO ENDPOINT /equipes-ativas-por-secao ---")
+    logger.info("--- EXECUTANDO ENDPOINT /equipes-ativas-por-secao (BASEADO EM ALOCAÇÕES) ---")
     try:
         id_para_sigla = {1: "SGI", 2: "SEG", 3: "TIN"}
         result = {sigla: 0 for sigla in id_para_sigla.values()}
 
         raw_sql = text("""
-            SELECT secao_id, COUNT(id) as total
-            FROM equipe
-            WHERE ativo = TRUE AND secao_id IN (1, 2, 3)
-            GROUP BY secao_id
+            SELECT e.secao_id, COUNT(DISTINCT e.id) as total
+            FROM equipe e
+            INNER JOIN alocacao_recurso_projeto arp ON e.id = arp.equipe_id
+            WHERE e.ativo = TRUE 
+                AND e.secao_id IN (1, 2, 3)
+                AND arp.status_alocacao_id = 3
+            GROUP BY e.secao_id
         """)
 
         db_result = (await db.execute(raw_sql)).mappings().all()
-        logger.info(f"[RAW SQL RESULT] Resultado do banco (equipes): {db_result}")
+        logger.info(f"[RAW SQL RESULT] Equipes com alocações em andamento: {db_result}")
 
         for row in db_result:
             sigla = id_para_sigla.get(row['secao_id'])
@@ -381,21 +387,24 @@ async def get_equipes_ativas_por_secao(db: AsyncSession = Depends(get_async_db))
 async def get_horas_por_secao(db: AsyncSession = Depends(get_async_db)):
     """
     Retorna o total de horas planejadas e apontadas por seção para o ano corrente.
+    Considera apenas alocações com status "Em andamento" (ID 3).
     """
-    logger.info("--- EXECUTANDO ENDPOINT /horas-por-secao ---")
+    logger.info("--- EXECUTANDO ENDPOINT /horas-por-secao (BASEADO EM ALOCAÇÕES EM ANDAMENTO) ---")
     try:
         ano_corrente = datetime.now().year
         id_para_sigla = {1: "SGI", 2: "SEG", 3: "TIN"}
         
         result = { sigla: {"planejado": 0, "apontado": 0} for sigla in id_para_sigla.values() }
 
-        # Query para horas planejadas
+        # Query para horas planejadas (apenas alocações em andamento)
         sql_planejado = text(f"""
             SELECT p.secao_id, SUM(hp.horas_planejadas) as total
             FROM horas_planejadas_alocacao hp
             JOIN alocacao_recurso_projeto arp ON hp.alocacao_id = arp.id
             JOIN projeto p ON arp.projeto_id = p.id
-            WHERE hp.ano = {ano_corrente} AND p.secao_id IN (1, 2, 3)
+            WHERE hp.ano = {ano_corrente} 
+                AND p.secao_id IN (1, 2, 3)
+                AND arp.status_alocacao_id = 3
             GROUP BY p.secao_id
         """)
         db_planejado = (await db.execute(sql_planejado)).mappings().all()
@@ -404,12 +413,17 @@ async def get_horas_por_secao(db: AsyncSession = Depends(get_async_db)):
             if sigla:
                 result[sigla]["planejado"] = float(row['total'] or 0)
 
-        # Query para horas apontadas
+        # Query para horas apontadas (apenas projetos com alocações em andamento)
         sql_apontado = text(f"""
             SELECT p.secao_id, SUM(a.horas_apontadas) as total
             FROM apontamento a
             JOIN projeto p ON a.projeto_id = p.id
-            WHERE EXTRACT(YEAR FROM a.data_apontamento) = {ano_corrente} AND p.secao_id IN (1, 2, 3)
+            WHERE EXTRACT(YEAR FROM a.data_apontamento) = {ano_corrente} 
+                AND p.secao_id IN (1, 2, 3)
+                AND EXISTS (
+                    SELECT 1 FROM alocacao_recurso_projeto arp 
+                    WHERE arp.projeto_id = p.id AND arp.status_alocacao_id = 3
+                )
             GROUP BY p.secao_id
         """)
         db_apontado = (await db.execute(sql_apontado)).mappings().all()
@@ -418,7 +432,7 @@ async def get_horas_por_secao(db: AsyncSession = Depends(get_async_db)):
             if sigla:
                 result[sigla]["apontado"] = float(row['total'] or 0)
 
-        logger.info(f"[FINAL] Resultado de horas por seção: {result}")
+        logger.info(f"[FINAL] Resultado de horas por seção (alocações em andamento): {result}")
         return result
 
     except Exception as e:
@@ -432,16 +446,16 @@ async def get_horas_por_secao(db: AsyncSession = Depends(get_async_db)):
 @router.get("/status-projetos-por-secao", tags=["Dashboard"])
 async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)):
     """
-    Retorna a contagem e o percentual de projetos por status para cada seção.
+    Retorna a contagem e o percentual de alocações por status para cada seção.
+    Considera apenas alocações com status "Em andamento" (ID 3).
     Garante que todos os status ativos sejam retornados para cada seção, mesmo que com contagem zero.
-    Considera apenas projetos ativos.
     """
-    logger.info("--- EXECUTANDO ENDPOINT /status-projetos-por-secao (LÓGICA COMPLETA) ---")
+    logger.info("--- EXECUTANDO ENDPOINT /status-projetos-por-secao (BASEADO EM ALOCAÇÕES EM ANDAMENTO) ---")
     try:
         id_para_sigla = {1: "SGI", 2: "SEG", 3: "TIN"}
         
         result = {
-            sigla: {"total_projetos": 0, "status": {}}
+            sigla: {"total_alocacoes": 0, "status": {}}
             for sigla in id_para_sigla.values()
         }
 
@@ -460,33 +474,35 @@ async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)
                 FROM Secoes s
                 CROSS JOIN StatusAtivos sa
             ),
-            ContagemProjetos AS (
+            ContagemAlocacoes AS (
                 SELECT
                     p.secao_id,
-                    p.status_projeto_id,
-                    COUNT(p.id) AS quantidade
+                    arp.status_alocacao_id,
+                    COUNT(arp.id) AS quantidade
                 FROM
-                    projeto p
+                    alocacao_recurso_projeto arp
+                INNER JOIN projeto p ON arp.projeto_id = p.id
                 WHERE
                     p.ativo = TRUE
                     AND p.secao_id IN (1, 2, 3)
+                    AND arp.status_alocacao_id = 3
                 GROUP BY
-                    p.secao_id, p.status_projeto_id
+                    p.secao_id, arp.status_alocacao_id
             )
             SELECT
                 c.secao_id,
                 c.status_nome,
-                COALESCE(cp.quantidade, 0) AS quantidade
+                COALESCE(ca.quantidade, 0) AS quantidade
             FROM
                 Combinacoes c
             LEFT JOIN
-                ContagemProjetos cp ON c.secao_id = cp.secao_id AND c.status_id = cp.status_projeto_id
+                ContagemAlocacoes ca ON c.secao_id = ca.secao_id AND c.status_id = ca.status_alocacao_id
             ORDER BY
                 c.secao_id, c.status_nome
         """)
         
         db_result = (await db.execute(sql_query)).mappings().all()
-        logger.info(f"[RAW SQL RESULT] Resultado do banco (status projetos completo): {db_result}")
+        logger.info(f"[RAW SQL RESULT] Resultado do banco (status alocações em andamento): {db_result}")
 
         for row in db_result:
             secao_id = row['secao_id']
@@ -498,20 +514,20 @@ async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)
             quantidade = int(row['quantidade'])
             
             result[sigla]["status"][status_nome] = {"quantidade": quantidade}
-            result[sigla]["total_projetos"] += quantidade
+            result[sigla]["total_alocacoes"] += quantidade
 
         for sigla, data in result.items():
-            total_projetos = data["total_projetos"]
-            if total_projetos > 0:
+            total_alocacoes = data["total_alocacoes"]
+            if total_alocacoes > 0:
                 for status_nome, status_data in data["status"].items():
                     quantidade = status_data["quantidade"]
-                    percentual = round((quantidade / total_projetos) * 100, 2)
+                    percentual = round((quantidade / total_alocacoes) * 100, 2)
                     result[sigla]["status"][status_nome]["percentual"] = percentual
             else:
                 for status_data in data["status"].values():
                     status_data["percentual"] = 0
         
-        logger.info(f"[FINAL] Resultado de status de projetos por seção: {result}")
+        logger.info(f"[FINAL] Resultado de status de alocações em andamento por seção: {result}")
         return result
 
     except Exception as e:
