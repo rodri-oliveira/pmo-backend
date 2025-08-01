@@ -447,10 +447,10 @@ async def get_horas_por_secao(db: AsyncSession = Depends(get_async_db)):
 async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)):
     """
     Retorna a contagem e o percentual de alocações por status para cada seção.
-    Considera apenas alocações com status "Em andamento" (ID 3).
+    Mostra TODOS os status das alocações e seus percentuais.
     Garante que todos os status ativos sejam retornados para cada seção, mesmo que com contagem zero.
     """
-    logger.info("--- EXECUTANDO ENDPOINT /status-projetos-por-secao (BASEADO EM ALOCAÇÕES EM ANDAMENTO) ---")
+    logger.info("--- EXECUTANDO ENDPOINT /status-projetos-por-secao (TODOS OS STATUS DAS ALOCAÇÕES) ---")
     try:
         id_para_sigla = {1: "SGI", 2: "SEG", 3: "TIN"}
         
@@ -485,7 +485,6 @@ async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)
                 WHERE
                     p.ativo = TRUE
                     AND p.secao_id IN (1, 2, 3)
-                    AND arp.status_alocacao_id = 3
                 GROUP BY
                     p.secao_id, arp.status_alocacao_id
             )
