@@ -211,14 +211,10 @@ async def get_planejado_vs_realizado(
     
     relatorio_service = RelatorioService(db)
     
-    result = await relatorio_service.get_analise_planejado_vs_realizado(
+    result = await relatorio_service.get_disponibilidade_recursos(
         ano=ano,
         mes=mes,
-        projeto_id=projeto_id,
-        recurso_id=recurso_id,
-        equipe_id=equipe_id,
-        secao_id=secao_id,
-        agrupar_por_projeto=agrupar_por_projeto
+        recurso_id=recurso_id
     )
     return {"items": result}
 
