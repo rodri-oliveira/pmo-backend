@@ -380,13 +380,15 @@ class DashboardJiraService:
             # Buscar issues do Jira
             issues = await self._buscar_issues_paginacao(jql)
             
-            # Processar contadores por status
+            # Processar contadores por status com normalização
             status_counts = {}
             total = len(issues)
             
             for issue in issues:
-                status = issue.get("fields", {}).get("status", {}).get("name", "Unknown")
-                status_counts[status] = status_counts.get(status, 0) + 1
+                raw_status = issue.get("fields", {}).get("status", {}).get("name", "Unknown")
+                # NORMALIZAR STATUS para evitar duplicações
+                normalized_status = self._normalize_status(raw_status)
+                status_counts[normalized_status] = status_counts.get(normalized_status, 0) + 1
             
             # Converter para formato de resposta
             items = []
@@ -398,7 +400,10 @@ class DashboardJiraService:
                     percentual=round(percentual, 1)
                 ))
             
-            logger.info(f"[DEMANDAS_RESULT] Total: {total}, Status: {status_counts}")
+            # Ordenar por quantidade decrescente
+            items.sort(key=lambda x: x.quantidade, reverse=True)
+            
+            logger.info(f"[DEMANDAS_RESULT] Total: {total}, Status normalizados: {status_counts}")
             
             return DashboardResponse(
                 tipo="demandas",
@@ -422,13 +427,15 @@ class DashboardJiraService:
             # Buscar issues do Jira
             issues = await self._buscar_issues_paginacao(jql)
             
-            # Processar contadores por status
+            # Processar contadores por status com normalização
             status_counts = {}
             total = len(issues)
             
             for issue in issues:
-                status = issue.get("fields", {}).get("status", {}).get("name", "Unknown")
-                status_counts[status] = status_counts.get(status, 0) + 1
+                raw_status = issue.get("fields", {}).get("status", {}).get("name", "Unknown")
+                # NORMALIZAR STATUS para evitar duplicações
+                normalized_status = self._normalize_status(raw_status)
+                status_counts[normalized_status] = status_counts.get(normalized_status, 0) + 1
             
             # Converter para formato de resposta
             items = []
@@ -440,7 +447,10 @@ class DashboardJiraService:
                     percentual=round(percentual, 1)
                 ))
             
-            logger.info(f"[MELHORIAS_RESULT] Total: {total}, Status: {status_counts}")
+            # Ordenar por quantidade decrescente
+            items.sort(key=lambda x: x.quantidade, reverse=True)
+            
+            logger.info(f"[MELHORIAS_RESULT] Total: {total}, Status normalizados: {status_counts}")
             
             return DashboardResponse(
                 tipo="melhorias",
@@ -453,6 +463,52 @@ class DashboardJiraService:
             logger.error(f"[MELHORIAS_ERROR] Erro ao buscar melhorias: {str(e)}")
             raise
     
+    def _normalize_status(self, raw_status: str) -> str:
+        """Normaliza status do Jira para evitar duplicações"""
+        if not raw_status:
+            return "Unknown"
+        
+        # Normalizar para minúsculas e remover espaços extras
+        normalized = raw_status.strip().lower()
+        
+        # Mapeamento de status similares para um padrão único
+        status_mapping = {
+            # To Do variations
+            "to do": "To Do",
+            "todo": "To Do",
+            "backlog": "To Do",
+            
+            # In Progress variations  
+            "in progress": "In Progress",
+            "em andamento": "In Progress",
+            "doing": "In Progress",
+            "development": "In Progress",
+            
+            # Done variations
+            "done": "Done",
+            "concluído": "Done",
+            "concluido": "Done",
+            "finished": "Done",
+            "completed": "Done",
+            "resolved": "Done",
+            "closed": "Done",
+            
+            # On Hold variations
+            "on hold": "On Hold",
+            "standby": "On Hold",
+            "paused": "On Hold",
+            "waiting": "On Hold",
+            
+            # Cancelled variations
+            "cancelled": "Cancelled",
+            "canceled": "Cancelled",
+            "cancelado": "Cancelled",
+            "rejected": "Cancelled"
+        }
+        
+        # Retornar status normalizado ou manter original se não encontrado
+        return status_mapping.get(normalized, raw_status)
+    
     async def get_recursos_alocados_dashboard(self, filters: DashboardFilters) -> DashboardResponse:
         """Obtém dados do dashboard de Recursos Alocados (Atividades)"""
         try:
@@ -464,13 +520,15 @@ class DashboardJiraService:
             # Buscar issues do Jira com limite menor para recursos alocados (evita travamento)
             issues = await self._buscar_issues_paginacao(jql, max_issues=2000)
             
-            # Processar contadores por status
+            # Processar contadores por status com normalização
             status_counts = {}
             total = len(issues)
             
             for issue in issues:
-                status = issue.get("fields", {}).get("status", {}).get("name", "Unknown")
-                status_counts[status] = status_counts.get(status, 0) + 1
+                raw_status = issue.get("fields", {}).get("status", {}).get("name", "Unknown")
+                # NORMALIZAR STATUS para evitar duplicações
+                normalized_status = self._normalize_status(raw_status)
+                status_counts[normalized_status] = status_counts.get(normalized_status, 0) + 1
             
             # Converter para formato de resposta
             items = []
@@ -482,7 +540,10 @@ class DashboardJiraService:
                     percentual=round(percentual, 1)
                 ))
             
-            logger.info(f"[RECURSOS_RESULT] Total: {total}, Status: {status_counts}")
+            # Ordenar por quantidade decrescente
+            items.sort(key=lambda x: x.quantidade, reverse=True)
+            
+            logger.info(f"[RECURSOS_RESULT] Total: {total}, Status normalizados: {status_counts}")
             
             return DashboardResponse(
                 tipo="recursos_alocados",

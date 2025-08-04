@@ -31,12 +31,11 @@ async def get_demandas_dashboard(
     data_fim: Optional[str] = Query(None, description="Data de fim (YYYY-MM-DD)"),
     ano: Optional[int] = Query(2025, description="Ano para filtro padrão"),
     recursos: Optional[List[str]] = Query(None, description="Lista de jira_user_ids"),
-    use_cache: bool = Query(True, description="Usar cache (True) ou consulta direta ao Jira (False)"),
     db: AsyncSession = Depends(get_async_db)
 ):
     """Endpoint para obter dashboard de Demandas (Portfólio)"""
     try:
-        logger.info(f"[DEMANDAS_ENDPOINT] Recebendo requisição com parâmetros: secao={secao}, use_cache={use_cache}")
+        logger.info(f"[DEMANDAS_ENDPOINT] Recebendo requisição com parâmetros: secao={secao}")
         
         # Validar e processar seção
         secao_processada = None
@@ -68,23 +67,16 @@ async def get_demandas_dashboard(
             recursos=recursos
         )
         
-        if use_cache:
-            # Usar cache (rápido)
-            query_service = DashboardJiraQueryService(db)
-            resultado = await query_service.get_demandas_dashboard_cached(filtros)
-            
-            # Se cache está vazio e seção foi especificada, sugerir sincronização
-            if resultado.total == 0 and secao_processada:
-                logger.warning(f"[DEMANDAS_CACHE_EMPTY] Cache vazio para seção {secao_processada}. Considere sincronizar primeiro.")
-                # Adicionar informação útil na resposta
-                resultado.filtros_aplicados["cache_status"] = "empty"
-                resultado.filtros_aplicados["sugestao"] = f"Execute POST /backend/dashboard-cache/sync com secoes=['{secao_processada}'] para popular o cache"
-        else:
-            # Consulta direta ao Jira (lento)
-            service = DashboardJiraService()
-            resultado = await service.get_demandas_dashboard(filtros)
+        # SEMPRE buscar dados da tabela dashboard_jira_snapshot
+        query_service = DashboardJiraQueryService(db)
+        resultado = await query_service.get_demandas_dashboard_cached(filtros)
         
-        logger.info(f"[DEMANDAS_SUCCESS] Dashboard retornado com {len(resultado.items)} itens (cache: {use_cache})")
+        # Se dados não encontrados, sugerir sincronização
+        if resultado.total == 0 and secao_processada:
+            logger.warning(f"[DEMANDAS_EMPTY] Nenhum dado encontrado para seção {secao_processada}. Considere sincronizar primeiro.")
+            resultado.filtros_aplicados["sugestao"] = f"Execute POST /backend/dashboard-jira/sync/sync/flexible?secoes={secao_processada}&overwrite=true para sincronizar dados"
+        
+        logger.info(f"[DEMANDAS_SUCCESS] Dashboard retornado com {len(resultado.items)} itens da tabela dashboard_jira_snapshot")
         return resultado
         
     except HTTPException:
@@ -104,7 +96,7 @@ async def get_melhorias_dashboard(
     data_fim: Optional[str] = Query(None, description="Data de fim (YYYY-MM-DD)"),
     ano: Optional[int] = Query(2025, description="Ano para filtro padrão"),
     recursos: Optional[List[str]] = Query(None, description="Lista de jira_user_ids"),
-    use_cache: bool = Query(True, description="Usar cache (True) ou consulta direta ao Jira (False)"),
+    # Removido use_cache - SEMPRE usa dados da tabela dashboard_jira_snapshot
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -123,11 +115,16 @@ async def get_melhorias_dashboard(
             ano=ano
         )
         
-        # Executar consulta
-        service = DashboardJiraService()
-        result = await service.get_melhorias_dashboard(filters)
+        # SEMPRE buscar dados da tabela dashboard_jira_snapshot
+        query_service = DashboardJiraQueryService(db)
+        result = await query_service.get_melhorias_dashboard_cached(filters)
         
-        logger.info(f"[MELHORIAS_DASHBOARD] Resultado: {result.total} melhorias encontradas")
+        # Se dados não encontrados, sugerir sincronização
+        if result.total == 0 and secao:
+            logger.warning(f"[MELHORIAS_EMPTY] Nenhum dado encontrado para seção {secao}. Considere sincronizar primeiro.")
+            result.filtros_aplicados["sugestao"] = f"Execute POST /backend/dashboard-jira/sync/sync/flexible?secoes={secao}&overwrite=true para sincronizar dados"
+        
+        logger.info(f"[MELHORIAS_DASHBOARD] Resultado: {result.total} melhorias encontradas da tabela dashboard_jira_snapshot")
         return result
         
     except Exception as e:
@@ -168,11 +165,16 @@ async def get_recursos_alocados_dashboard(
             ano=ano
         )
         
-        # Executar consulta
-        service = DashboardJiraService()
-        result = await service.get_recursos_alocados_dashboard(filters)
+        # SEMPRE buscar dados da tabela dashboard_jira_snapshot
+        query_service = DashboardJiraQueryService(db)
+        result = await query_service.get_recursos_alocados_dashboard_cached(filters)
         
-        logger.info(f"[RECURSOS_DASHBOARD] Resultado: {result.total} atividades encontradas")
+        # Se dados não encontrados, sugerir sincronização
+        if result.total == 0 and secao:
+            logger.warning(f"[RECURSOS_EMPTY] Nenhum dado encontrado para seção {secao}. Considere sincronizar primeiro.")
+            result.filtros_aplicados["sugestao"] = f"Execute POST /backend/dashboard-jira/sync/sync/flexible?secoes={secao}&overwrite=true para sincronizar dados"
+        
+        logger.info(f"[RECURSOS_DASHBOARD] Resultado: {result.total} atividades encontradas da tabela dashboard_jira_snapshot")
         return result
         
     except Exception as e:

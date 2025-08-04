@@ -46,12 +46,8 @@ class DashboardJiraQueryService:
         if filters.secao:
             query = query.where(DashboardJiraSnapshot.secao == filters.secao)
         
-        # Buscar snapshot mais recente
+        # Buscar snapshot mais recente (SEM LIMITAÇÃO DE TEMPO)
         query = query.order_by(DashboardJiraSnapshot.data_snapshot.desc())
-        
-        # Limitar por data se necessário (pegar apenas snapshots recentes)
-        limite_tempo = datetime.now() - timedelta(hours=24)  # Máximo 24h de idade
-        query = query.where(DashboardJiraSnapshot.data_snapshot >= limite_tempo)
         
         # Executar query
         result = await self.db_session.execute(query)
@@ -59,12 +55,29 @@ class DashboardJiraQueryService:
         
         if not snapshots:
             logger.warning(f"[CACHE_EMPTY] Nenhum snapshot encontrado para {dashboard_tipo} com filtros {filters}")
-            return DashboardResponse(
-                tipo=dashboard_tipo,
-                total=0,
-                items=[],
-                filtros_aplicados=filters.__dict__
-            )
+            
+            # FALLBACK: Consultar diretamente do Jira se cache vazio
+            logger.info(f"[CACHE_FALLBACK] Executando fallback para consulta direta ao Jira")
+            from app.services.dashboard_jira_service import DashboardJiraService
+            
+            jira_service = DashboardJiraService()
+            if dashboard_tipo == "demandas":
+                resultado = await jira_service.get_demandas_dashboard(filters)
+            elif dashboard_tipo == "melhorias":
+                resultado = await jira_service.get_melhorias_dashboard(filters)
+            elif dashboard_tipo == "recursos_alocados":
+                resultado = await jira_service.get_recursos_alocados_dashboard(filters)
+            else:
+                # Se tipo desconhecido, retornar vazio
+                resultado = DashboardResponse(
+                    tipo=dashboard_tipo,
+                    total=0,
+                    items=[],
+                    filtros_aplicados=filters.__dict__
+                )
+            
+            logger.info(f"[CACHE_FALLBACK_SUCCESS] Dados obtidos do Jira: {resultado.total} issues")
+            return resultado
         
         # Agrupar por data_snapshot mais recente
         snapshot_mais_recente = snapshots[0].data_snapshot
