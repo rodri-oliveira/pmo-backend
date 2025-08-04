@@ -93,11 +93,21 @@ class DashboardJiraSyncService:
         
         return count > 0
     
-    async def _sync_secao_completa(self, secao: SecaoEnum) -> int:
-        """Sincroniza todos os tipos de dashboard para uma seção"""
-        logger.info(f"[SYNC_SECAO_COMPLETA] Iniciando sincronização completa da seção {secao}")
+    async def _sync_secao_completa(self, secao: SecaoEnum, overwrite: bool = True) -> int:
+        """Sincroniza todos os tipos de dashboard para uma seção
         
-        # Limpar snapshots antigos da seção
+        Args:
+            secao: Seção a ser sincronizada
+            overwrite: Se True, limpa dados existentes antes de salvar (padrão: True)
+        """
+        logger.info(f"[SYNC_SECAO_COMPLETA] Iniciando sincronização completa da seção {secao} - overwrite: {overwrite}")
+        
+        # SOBRECREVER: Limpar snapshots atuais da seção inteira
+        if overwrite:
+            removidos = await self._limpar_snapshots_secao_atual(secao.value)
+            logger.info(f"[OVERWRITE] Removidos {removidos} snapshots existentes da seção {secao}")
+        
+        # Limpar snapshots antigos (mais de 7 dias)
         await self._limpar_snapshots_antigos(secao)
         
         total_registros = 0
@@ -141,6 +151,34 @@ class DashboardJiraSyncService:
         
         return total_registros
     
+    async def _limpar_snapshots_secao_atual(self, secao: str, dashboard_tipo: str = None):
+        """Remove snapshots atuais da seção para evitar duplicação (SOBRECREVER)"""
+        try:
+            if dashboard_tipo:
+                # Limpar apenas um tipo específico
+                stmt = delete(DashboardJiraSnapshot).where(
+                    DashboardJiraSnapshot.secao == secao,
+                    DashboardJiraSnapshot.dashboard_tipo == dashboard_tipo
+                )
+                logger.info(f"[OVERWRITE] Limpando snapshots: {secao} - {dashboard_tipo}")
+            else:
+                # Limpar toda a seção
+                stmt = delete(DashboardJiraSnapshot).where(
+                    DashboardJiraSnapshot.secao == secao
+                )
+                logger.info(f"[OVERWRITE] Limpando TODOS os snapshots da seção: {secao}")
+            
+            result = await self.db_session.execute(stmt)
+            await self.db_session.commit()
+            
+            logger.info(f"[OVERWRITE] Removidos {result.rowcount} snapshots para sobrecrever")
+            return result.rowcount
+            
+        except Exception as e:
+            logger.error(f"[OVERWRITE_ERROR] Erro ao limpar snapshots: {str(e)}")
+            await self.db_session.rollback()
+            raise
+
     async def _limpar_snapshots_antigos(self, secao: SecaoEnum, dias_manter: int = 7):
         """Remove snapshots antigos para liberar espaço"""
         limite_tempo = datetime.now() - timedelta(days=dias_manter)
@@ -187,11 +225,19 @@ class DashboardJiraSyncService:
         await self.db_session.commit()
         return registros_salvos
     
-    async def sync_secao_especifica(self, secao: SecaoEnum, force_refresh: bool = False) -> Dict[str, Any]:
-        """Sincroniza apenas uma seção específica"""
-        logger.info(f"[SYNC_ESPECIFICA] Sincronizando seção específica: {secao}")
+    async def sync_secao_especifica(self, secao: SecaoEnum, force_refresh: bool = False, overwrite: bool = True) -> Dict[str, Any]:
+        """Sincroniza apenas uma seção específica
         
-        if not force_refresh and await self._tem_snapshot_recente(secao):
+        Args:
+            secao: Seção a ser sincronizada
+            force_refresh: Se True, força sincronização mesmo com cache recente
+            overwrite: Se True, sobrecreve dados existentes (evita duplicação)
+        """
+        logger.info(f"[SYNC_ESPECIFICA] Sincronizando seção específica: {secao} - overwrite: {overwrite}")
+        
+        # Se overwrite=True, sempre executa (ignora snapshot recente)
+        # Se overwrite=False, só executa se force_refresh=True ou não tem snapshot recente
+        if not overwrite and not force_refresh and await self._tem_snapshot_recente(secao):
             return {
                 "secao": secao,
                 "status": "skipped",
@@ -199,7 +245,7 @@ class DashboardJiraSyncService:
             }
         
         try:
-            registros = await self._sync_secao_completa(secao)
+            registros = await self._sync_secao_completa(secao, overwrite=overwrite)
             return {
                 "secao": secao,
                 "status": "success",

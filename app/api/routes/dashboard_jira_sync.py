@@ -278,3 +278,103 @@ async def trigger_auto_sync(
 
 # Importar AsyncSessionLocal para uso no auto_sync
 from app.db.session import AsyncSessionLocal
+
+@router.post("/sync/flexible")
+async def trigger_sync_flexible(
+    secoes: Optional[str] = Query(None, description="Seções separadas por vírgula (ex: DTIN,SEG,SGI) ou vazio para todas"),
+    force_refresh: bool = Query(False, description="Forçar sincronização mesmo se cache recente"),
+    overwrite: bool = Query(True, description="Sobrecrever dados existentes (evita duplicação)"),
+    background_tasks: BackgroundTasks = None,
+    run_async: bool = Query(False, description="Executar em background")
+):
+    """
+    Endpoint FLEXÍVEL para sincronização do dashboard Jira
+    
+    Exemplos:
+    - Todas as seções: não informar 'secoes' ou secoes=""
+    - Uma seção: secoes="DTIN"
+    - Múltiplas seções: secoes="DTIN,SEG,SGI" ou secoes="DTIN,SEG"
+    
+    Args:
+        secoes: Lista de seções separadas por vírgula ou vazio para todas
+        force_refresh: Se True, força sincronização mesmo com cache recente
+        overwrite: Se True, sobrecreve dados existentes (evita duplicação)
+        run_async: Se True, executa em background
+    """
+    try:
+        # Processar seções
+        if not secoes or secoes.strip() == "":
+            # Todas as seções
+            secoes_lista = ['DTIN', 'SEG', 'SGI']
+            logger.info(f"[SYNC_FLEXIBLE] Sincronizando TODAS as seções: {secoes_lista}")
+        else:
+            # Seções específicas
+            secoes_lista = [s.strip().upper() for s in secoes.split(',') if s.strip()]
+            
+            # Validar seções
+            secoes_validas = {'DTIN', 'SEG', 'SGI'}
+            secoes_invalidas = set(secoes_lista) - secoes_validas
+            if secoes_invalidas:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Seções inválidas: {list(secoes_invalidas)}. Válidas: {list(secoes_validas)}"
+                )
+            
+            logger.info(f"[SYNC_FLEXIBLE] Sincronizando seções específicas: {secoes_lista}")
+        
+        script = DashboardJiraSyncScript()
+        
+        if run_async and background_tasks:
+            # Executar em background
+            for secao in secoes_lista:
+                background_tasks.add_task(script.executar_sincronizacao_secao, secao, force_refresh)
+            
+            return {
+                "status": "started",
+                "message": f"Sincronização iniciada em background para {len(secoes_lista)} seções",
+                "secoes": secoes_lista,
+                "timestamp": datetime.now(),
+                "force_refresh": force_refresh,
+                "overwrite": overwrite
+            }
+        else:
+            # Executar síncrono
+            resultados = []
+            inicio_total = datetime.now()
+            
+            for secao in secoes_lista:
+                try:
+                    resultado = await script.executar_sincronizacao_secao(secao, force_refresh=force_refresh)
+                    resultados.append(resultado)
+                    logger.info(f"[SYNC_FLEXIBLE] Seção {secao} concluída com sucesso")
+                except Exception as e:
+                    logger.error(f"[SYNC_FLEXIBLE_ERROR] Erro na seção {secao}: {str(e)}")
+                    resultados.append({
+                        "secao": secao,
+                        "status": "error",
+                        "erro": str(e),
+                        "timestamp": datetime.now()
+                    })
+            
+            fim_total = datetime.now()
+            duracao_total = (fim_total - inicio_total).total_seconds()
+            
+            # Status geral
+            sucessos = sum(1 for r in resultados if r.get('status') == 'success')
+            status_geral = "completed" if sucessos == len(secoes_lista) else "partial"
+            
+            return {
+                "status": status_geral,
+                "message": f"Sincronização flexível concluída: {sucessos}/{len(secoes_lista)} seções",
+                "secoes": secoes_lista,
+                "timestamp": fim_total,
+                "duracao_segundos": duracao_total,
+                "resultados": resultados,
+                "stats": script.get_stats()
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SYNC_FLEXIBLE_ERROR] Erro no endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro na sincronização flexível: {str(e)}")

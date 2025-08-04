@@ -85,13 +85,14 @@ class DashboardJiraSyncScript:
             if self.stats['inicio']:
                 self.stats['duracao_segundos'] = (self.stats['fim'] - self.stats['inicio']).total_seconds()
     
-    async def executar_sincronizacao_secao(self, secao: str, force_refresh: bool = False) -> Dict[str, Any]:
+    async def executar_sincronizacao_secao(self, secao: str, force_refresh: bool = False, overwrite: bool = True) -> Dict[str, Any]:
         """
         Executa sincronização de uma seção específica
         
         Args:
             secao: Seção a ser sincronizada (DTIN, SEG, SGI)
             force_refresh: Se True, força nova sincronização
+            overwrite: Se True, sobrecreve dados existentes (evita duplicação)
             
         Returns:
             Dict com resultado da sincronização
