@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr, validator, Field
 
 # Enums
@@ -368,3 +368,44 @@ class HorasDisponiveisResponse(BaseModel):
     recurso_id: int
     periodo: Dict[str, str]
     horas_por_mes: List[MesHoras]
+
+
+# Schemas para Dashboard Jira - Indicadores do Departamento
+
+class SecaoEnum(str, Enum):
+    """Enum para seções disponíveis"""
+    DTIN = "DTIN"
+    SEG = "SEG"
+    SGI = "SGI"
+
+class DashboardFilters(BaseModel):
+    """Filtros para os dashboards do Jira"""
+    data_inicio: Optional[str] = Field(None, description="Data de início no formato YYYY-MM-DD")
+    data_fim: Optional[str] = Field(None, description="Data de fim no formato YYYY-MM-DD")
+    secao: Optional[SecaoEnum] = Field(None, description="Seção: DTIN, SEG ou SGI")
+    recursos: Optional[List[str]] = Field(None, description="Lista de jira_user_ids (accountIds)")
+    ano: Optional[int] = Field(2025, description="Ano para filtro padrão se datas não especificadas")
+
+class DashboardItem(BaseModel):
+    """Item do dashboard com contadores por status"""
+    status: str
+    quantidade: int
+    percentual: float
+
+class DashboardResponse(BaseModel):
+    """Resposta do dashboard"""
+    tipo: str = Field(..., description="Tipo: demandas, melhorias ou recursos_alocados")
+    total: int
+    items: List[DashboardItem]
+    filtros_aplicados: Dict[str, Any]
+
+class RecursoDisponivel(BaseModel):
+    """Recurso disponível para filtros"""
+    account_id: str
+    display_name: str
+    email: str = ""
+
+class RecursosDisponiveisResponse(BaseModel):
+    """Lista de recursos disponíveis por seção"""
+    secao: Optional[str] = None
+    recursos: List[RecursoDisponivel]

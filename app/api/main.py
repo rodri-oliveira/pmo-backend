@@ -18,6 +18,9 @@ from app.api.routes import (
     status_projeto_routes,
     filtros,
     dashboard,
+    dashboard_jira,
+    dashboard_jira_sync,
+    dashboard_cache,
     matriz_planejamento,
     relatorios_dinamico,
     sincronizacoes_jira
@@ -42,6 +45,9 @@ api_router.include_router(filtros.router, prefix="/filtros", tags=["Filtros"])
 api_router.include_router(relatorios_dinamico.router, prefix="/relatorios-dinamico", tags=["Relatórios Dinâmicos"])
 api_router.include_router(sincronizacoes_jira.router, prefix="/sincronizacoes-jira", tags=["Sincronizações Jira"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+api_router.include_router(dashboard_jira.router, prefix="/dashboard-jira", tags=["Dashboard Jira"])
+api_router.include_router(dashboard_jira_sync.router, prefix="/dashboard-jira/sync", tags=["Dashboard Jira Sync"])
+api_router.include_router(dashboard_cache.router, prefix="/dashboard-cache", tags=["Dashboard Cache Frontend"])
 
 logger.info("Todas as rotas foram incluídas no api_router.")
 # Força o salvamento do arquivo para limpar o cache de importação

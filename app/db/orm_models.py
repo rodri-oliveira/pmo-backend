@@ -314,4 +314,27 @@ class DimTempo(Base):
     semana_ano = Column(Integer, nullable=False)
     is_dia_util = Column(Boolean, nullable=False)
     is_feriado = Column(Boolean, nullable=False, default=False)
-    nome_feriado = Column(String(100), nullable=True) 
+    nome_feriado = Column(String(100), nullable=True)
+
+class DashboardJiraSnapshot(Base):
+    """Tabela para armazenar snapshots dos dados do dashboard Jira"""
+    __tablename__ = "dashboard_jira_snapshot"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    secao = Column(String(10), nullable=False, index=True)  # DTIN, SEG, SGI
+    dashboard_tipo = Column(String(50), nullable=False, index=True)  # demandas, melhorias, recursos_alocados
+    status = Column(String(100), nullable=False)  # Status da issue
+    quantidade = Column(Integer, nullable=False)  # Quantidade de issues
+    percentual = Column(DECIMAL(5,2), nullable=False)  # Percentual do total
+    data_snapshot = Column(DateTime, nullable=False, index=True)  # Quando foi capturado
+    filtros_aplicados = Column(Text, nullable=True)  # JSON com filtros usados na captura
+    created_at = Column(DateTime, nullable=False, default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+    
+    # Índices compostos para performance
+    __table_args__ = (
+        # Índice para consultas por seção + tipo + data
+        UniqueConstraint('secao', 'dashboard_tipo', 'status', 'data_snapshot', name='uq_dashboard_snapshot'),
+        CheckConstraint('percentual >= 0 AND percentual <= 100', name='chk_dashboard_percentual'),
+        CheckConstraint('quantidade >= 0', name='chk_dashboard_quantidade'),
+    ) 

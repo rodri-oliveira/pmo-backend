@@ -12,19 +12,19 @@ class Settings(BaseSettings):
     # Configurações do banco de dados PostgreSQL da WEG
     DATABASE_URI: str = ""
     
-    # Valores separados para uso interno
-    DB_USER: str = "5e0dceda-d930-5742-a8d9-1f2d1ff22159"
-    DB_PASSWORD: str = "b@p5rk8&9BJRVEQ"
-    DB_HOST: str = "qas-postgresql-ap.weg.net"
-    DB_PORT: str = "40030"
-    DB_NAME: str = "automacaopmopostgre"
+    # Valores separados para uso interno (lidos do .env)
+    DB_USER: str = ""
+    DB_PASSWORD: str = ""
+    DB_HOST: str = ""
+    DB_PORT: str = ""
+    DB_NAME: str = ""
     
-    # Segurança
-    SECRET_KEY: str = "supersecretkey"
+    # Segurança (lidos do .env)
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # Auth
+    # Auth (lidos do .env)
     auth_keycloak_id: str = ""
     auth_keycloak_secret: str = ""
     auth_secret: str = ""
@@ -37,10 +37,10 @@ class Settings(BaseSettings):
     # Allowed origins for CORS – include frontend dev servers
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:8000"]
     
-    # Configurações do Jira
-    JIRA_BASE_URL: str = "https://jiracloudweg.atlassian.net"  # URL base do Jira Cloud
-    JIRA_USERNAME: str = "roliveira@weg.net"  # E-mail do usuário com permissão de API
-    JIRA_API_TOKEN: str = "cm9saXZlaXJhQHdlZy5uZXQ6QVRBVFQzeEZmR0YwZG0xUzdSSHNReGFSTDZkNmZiaEZUMFNxSjZLbE9ScWRXQzg1M1Jlb3hFMUpnM0dSeXRUVTN4dG5McjdGVWg3WWFKZ2M1RDZwd3J5bjhQc3lHVDNrSklyRUlyVHpmNF9lMGJYLUdJdmxOOFIxanhyMV9GVGhLY1h3V1N0dU9VbE5ucEY2eFlhclhfWFpRb3RhTzlXeFhVaXlIWkdHTDFaMEx5cmJ4VzVyNVYwPUYxMDA3MDNF"  # Token de API gerado no Jira
+    # Configurações do Jira (lidos do .env)
+    JIRA_BASE_URL: str = ""  # URL base do Jira Cloud
+    JIRA_USERNAME: str = ""  # E-mail do usuário com permissão de API
+    JIRA_API_TOKEN: str = ""  # Token de API gerado no Jira
     # A URL da API pode ser montada dinamicamente como f"{JIRA_BASE_URL}/rest/api/3"
     
     class Config:
