@@ -133,8 +133,16 @@ class DashboardJiraService:
         ano = filters.ano or 2025
         if filters.data_inicio and filters.data_fim:
             # Normalizar datas para formato aceito pelo Jira (YYYY-MM-DD)
-            data_inicio = filters.data_inicio.split('T')[0] if 'T' in filters.data_inicio else filters.data_inicio
-            data_fim = filters.data_fim.split('T')[0] if 'T' in filters.data_fim else filters.data_fim
+            # Tratar tanto strings quanto objetos datetime
+            if isinstance(filters.data_inicio, str):
+                data_inicio = filters.data_inicio.split('T')[0] if 'T' in filters.data_inicio else filters.data_inicio
+            else:
+                data_inicio = filters.data_inicio.strftime('%Y-%m-%d')
+            
+            if isinstance(filters.data_fim, str):
+                data_fim = filters.data_fim.split('T')[0] if 'T' in filters.data_fim else filters.data_fim
+            else:
+                data_fim = filters.data_fim.strftime('%Y-%m-%d')
             jql_parts.append(f'updated >= "{data_inicio}" AND updated <= "{data_fim}"')
         else:
             # Data específica por seção conforme JQLs fornecidos
@@ -188,8 +196,16 @@ class DashboardJiraService:
         ano = filters.ano or 2025
         if filters.data_inicio and filters.data_fim:
             # Normalizar datas para formato aceito pelo Jira (YYYY-MM-DD)
-            data_inicio = filters.data_inicio.split('T')[0] if 'T' in filters.data_inicio else filters.data_inicio
-            data_fim = filters.data_fim.split('T')[0] if 'T' in filters.data_fim else filters.data_fim
+            # Tratar tanto strings quanto objetos datetime
+            if isinstance(filters.data_inicio, str):
+                data_inicio = filters.data_inicio.split('T')[0] if 'T' in filters.data_inicio else filters.data_inicio
+            else:
+                data_inicio = filters.data_inicio.strftime('%Y-%m-%d')
+            
+            if isinstance(filters.data_fim, str):
+                data_fim = filters.data_fim.split('T')[0] if 'T' in filters.data_fim else filters.data_fim
+            else:
+                data_fim = filters.data_fim.strftime('%Y-%m-%d')
             jql_parts.append(f'updated >= "{data_inicio}" AND updated <= "{data_fim}"')
         else:
             jql_parts.append(f'updated >= {ano}-01-01 AND updated <= {ano}-12-31')
@@ -327,8 +343,16 @@ class DashboardJiraService:
         ano = filters.ano or 2025
         if filters.data_inicio and filters.data_fim:
             # Normalizar datas para formato aceito pelo Jira (YYYY-MM-DD)
-            data_inicio = filters.data_inicio.split('T')[0] if 'T' in filters.data_inicio else filters.data_inicio
-            data_fim = filters.data_fim.split('T')[0] if 'T' in filters.data_fim else filters.data_fim
+            # Tratar tanto strings quanto objetos datetime
+            if isinstance(filters.data_inicio, str):
+                data_inicio = filters.data_inicio.split('T')[0] if 'T' in filters.data_inicio else filters.data_inicio
+            else:
+                data_inicio = filters.data_inicio.strftime('%Y-%m-%d')
+            
+            if isinstance(filters.data_fim, str):
+                data_fim = filters.data_fim.split('T')[0] if 'T' in filters.data_fim else filters.data_fim
+            else:
+                data_fim = filters.data_fim.strftime('%Y-%m-%d')
             jql_parts.append(f'updated >= "{data_inicio}" AND updated <= "{data_fim}"')
         else:
             jql_parts.append(f'updated >= {ano}-01-01 AND updated <= {ano}-12-31')
