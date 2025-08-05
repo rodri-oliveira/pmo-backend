@@ -48,6 +48,7 @@ api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboar
 api_router.include_router(dashboard_jira.router, prefix="/dashboard-jira", tags=["Dashboard Jira"])
 api_router.include_router(dashboard_jira_sync.router, prefix="/dashboard-jira/sync", tags=["Dashboard Jira Sync"])
 api_router.include_router(dashboard_cache.router, prefix="/dashboard-cache", tags=["Dashboard Cache Frontend"])
+api_router.include_router(matriz_planejamento.router, prefix="/matriz-planejamento", tags=["Matriz de Planejamento"])
 
 logger.info("Todas as rotas foram incluídas no api_router.")
 # Força o salvamento do arquivo para limpar o cache de importação
