@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     DB_USER: str = ""
     DB_PASSWORD: str = ""
     DB_HOST: str = ""
-    DB_PORT: str = "40030"  # Valor padrão banco WEG
+    DB_PORT: str = ""
     DB_NAME: str = ""
     
     # Segurança (lidos do .env)
@@ -53,9 +53,8 @@ settings = Settings()
 # String de conexão para o banco de dados
 from urllib.parse import quote_plus
 password = quote_plus(settings.DB_PASSWORD)
-# Garantir que DB_PORT tenha um valor válido
-port = settings.DB_PORT or "40030"
-settings.DATABASE_URI = f"postgresql+asyncpg://{settings.DB_USER}:{password}@{settings.DB_HOST}:{port}/{settings.DB_NAME}"
+db_port = settings.DB_PORT if settings.DB_PORT else "40030"
+settings.DATABASE_URI = f"postgresql+asyncpg://{settings.DB_USER}:{password}@{settings.DB_HOST}:{db_port}/{settings.DB_NAME}"
 # A linha que imprimia a URI do banco de dados foi removida para limpar os logs.
 
 # Defina a URL de conexão diretamente nas configurações do contexto

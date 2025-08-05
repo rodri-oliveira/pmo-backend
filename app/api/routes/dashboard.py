@@ -91,8 +91,8 @@ async def get_projetos_ativos_por_secao(
             WHERE p.ativo = TRUE 
                 AND p.secao_id IN (1, 2, 3)
                 AND arp.status_alocacao_id = 3
-                AND EXTRACT(YEAR FROM arp.data_inicio) <= :ano
-                AND (arp.data_fim IS NULL OR EXTRACT(YEAR FROM arp.data_fim) >= :ano)
+                AND EXTRACT(YEAR FROM arp.data_inicio_alocacao) <= :ano
+                AND (arp.data_fim_alocacao IS NULL OR EXTRACT(YEAR FROM arp.data_fim_alocacao) >= :ano)
             GROUP BY p.secao_id
         """)
 
@@ -375,8 +375,8 @@ async def get_equipes_ativas_por_secao(
             WHERE e.ativo = TRUE 
                 AND e.secao_id IN (1, 2, 3)
                 AND arp.status_alocacao_id = 3
-                AND EXTRACT(YEAR FROM arp.data_inicio) <= :ano
-                AND (arp.data_fim IS NULL OR EXTRACT(YEAR FROM arp.data_fim) >= :ano)
+                AND EXTRACT(YEAR FROM arp.data_inicio_alocacao) <= :ano
+                AND (arp.data_fim_alocacao IS NULL OR EXTRACT(YEAR FROM arp.data_fim_alocacao) >= :ano)
             GROUP BY e.secao_id
         """)
 
@@ -512,8 +512,8 @@ async def get_status_projetos_por_secao(
                 WHERE
                     p.ativo = TRUE
                     AND p.secao_id IN (1, 2, 3)
-                    AND EXTRACT(YEAR FROM arp.data_inicio) <= :ano
-                    AND (arp.data_fim IS NULL OR EXTRACT(YEAR FROM arp.data_fim) >= :ano)
+                    AND EXTRACT(YEAR FROM arp.data_inicio_alocacao) <= :ano
+                    AND (arp.data_fim_alocacao IS NULL OR EXTRACT(YEAR FROM arp.data_fim_alocacao) >= :ano)
                 GROUP BY
                     p.secao_id, arp.status_alocacao_id
             )
