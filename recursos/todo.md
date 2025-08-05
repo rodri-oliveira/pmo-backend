@@ -1,7 +1,0 @@
-- [ ] Reestruturar projeto em camadas (Domínio, Aplicação, Infraestrutura)
-- [x] Refatorar funcionalidade 'items' para novo modelo em camadas
-- [x] Implementar persistência de dados com repositórios e banco
-- [x] Expandir endpoints para entidades principais (Seção, Equipe, Recurso, Status Projeto, Projeto) e suas regras de negócio básicas
-- [x] Garantir validações e regras de negócio em todas as camadas
-- [ ] Reportar progresso e confirmar funcionalidades ao usuário
-- [ ] Exibir estrutura atualizada e aguardar novas instruções

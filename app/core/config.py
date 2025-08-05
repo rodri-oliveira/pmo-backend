@@ -34,13 +34,8 @@ class Settings(BaseSettings):
     next_public_backend_url: str = ""
     
     # CORS
-    # Allowed origins for CORS – include frontend dev servers and QAS
-    CORS_ORIGINS: List[str] = [
-        "http://localhost:3000", 
-        "http://localhost:3001", 
-        "http://localhost:8000",
-        "https://automacao-pmo-qas.weg.net"  # QAS environment
-    ]
+    # Allowed origins for CORS – include frontend dev servers
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:8000"]
     
     # Configurações do Jira (lidos do .env)
     JIRA_BASE_URL: str = ""  # URL base do Jira Cloud
@@ -58,8 +53,7 @@ settings = Settings()
 # String de conexão para o banco de dados
 from urllib.parse import quote_plus
 password = quote_plus(settings.DB_PASSWORD)
-db_port = settings.DB_PORT if settings.DB_PORT else "40030"
-settings.DATABASE_URI = f"postgresql+asyncpg://{settings.DB_USER}:{password}@{settings.DB_HOST}:{db_port}/{settings.DB_NAME}"
+settings.DATABASE_URI = f"postgresql+asyncpg://{settings.DB_USER}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 # A linha que imprimia a URI do banco de dados foi removida para limpar os logs.
 
 # Defina a URL de conexão diretamente nas configurações do contexto
