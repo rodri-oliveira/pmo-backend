@@ -69,9 +69,15 @@ def encontrar_melhor_match_nome(nome_procurado: str, nomes_disponiveis: List[str
     return melhor_match
 
 @router.get("/projetos-ativos-por-secao", tags=["Dashboard"]) 
-async def get_projetos_ativos_por_secao(db: AsyncSession = Depends(get_async_db)):
+async def get_projetos_ativos_por_secao(
+    ano: int = Query(2025, description="Ano de referência para filtrar os dados"),
+    db: AsyncSession = Depends(get_async_db)
+):
     """
     Retorna o total de projetos que possuem alocações com status "Em andamento" para as seções SGI, SEG e TIN.
+    
+    Args:
+        ano: Ano de referência para filtrar os dados (default: 2025)
     """
     logger.info("--- EXECUTANDO ENDPOINT /projetos-ativos-por-secao (BASEADO EM ALOCAÇÕES) ---")
     try:
@@ -85,11 +91,13 @@ async def get_projetos_ativos_por_secao(db: AsyncSession = Depends(get_async_db)
             WHERE p.ativo = TRUE 
                 AND p.secao_id IN (1, 2, 3)
                 AND arp.status_alocacao_id = 3
+                AND EXTRACT(YEAR FROM arp.data_inicio) <= :ano
+                AND (arp.data_fim IS NULL OR EXTRACT(YEAR FROM arp.data_fim) >= :ano)
             GROUP BY p.secao_id
         """)
 
-        db_result = (await db.execute(raw_sql)).mappings().all()
-        logger.info(f"[RAW SQL RESULT] Projetos com alocações em andamento: {db_result}")
+        db_result = (await db.execute(raw_sql, {"ano": ano})).mappings().all()
+        logger.info(f"[RAW SQL RESULT] Projetos com alocações em andamento para ano {ano}: {db_result}")
 
         for row in db_result:
             sigla = id_para_sigla.get(row['secao_id'])
@@ -345,9 +353,15 @@ async def get_alocacao_projeto(
 
 
 @router.get("/equipes-ativas-por-secao", tags=["Dashboard"])
-async def get_equipes_ativas_por_secao(db: AsyncSession = Depends(get_async_db)):
+async def get_equipes_ativas_por_secao(
+    ano: int = Query(2025, description="Ano de referência para filtrar os dados"),
+    db: AsyncSession = Depends(get_async_db)
+):
     """
     Retorna o total de equipes que possuem alocações com status "Em andamento" para as seções SGI, SEG e TIN.
+    
+    Args:
+        ano: Ano de referência para filtrar os dados (default: 2025)
     """
     logger.info("--- EXECUTANDO ENDPOINT /equipes-ativas-por-secao (BASEADO EM ALOCAÇÕES) ---")
     try:
@@ -361,11 +375,13 @@ async def get_equipes_ativas_por_secao(db: AsyncSession = Depends(get_async_db))
             WHERE e.ativo = TRUE 
                 AND e.secao_id IN (1, 2, 3)
                 AND arp.status_alocacao_id = 3
+                AND EXTRACT(YEAR FROM arp.data_inicio) <= :ano
+                AND (arp.data_fim IS NULL OR EXTRACT(YEAR FROM arp.data_fim) >= :ano)
             GROUP BY e.secao_id
         """)
 
-        db_result = (await db.execute(raw_sql)).mappings().all()
-        logger.info(f"[RAW SQL RESULT] Equipes com alocações em andamento: {db_result}")
+        db_result = (await db.execute(raw_sql, {"ano": ano})).mappings().all()
+        logger.info(f"[RAW SQL RESULT] Equipes com alocações em andamento para ano {ano}: {db_result}")
 
         for row in db_result:
             sigla = id_para_sigla.get(row['secao_id'])
@@ -384,41 +400,46 @@ async def get_equipes_ativas_por_secao(db: AsyncSession = Depends(get_async_db))
 
 
 @router.get("/horas-por-secao", tags=["Dashboard"])
-async def get_horas_por_secao(db: AsyncSession = Depends(get_async_db)):
+async def get_horas_por_secao(
+    ano: int = Query(2025, description="Ano de referência para filtrar os dados"),
+    db: AsyncSession = Depends(get_async_db)
+):
     """
-    Retorna o total de horas planejadas e apontadas por seção para o ano corrente.
+    Retorna o total de horas planejadas e apontadas por seção para o ano especificado.
     Considera apenas alocações com status "Em andamento" (ID 3).
+    
+    Args:
+        ano: Ano de referência para filtrar os dados (default: 2025)
     """
-    logger.info("--- EXECUTANDO ENDPOINT /horas-por-secao (BASEADO EM ALOCAÇÕES EM ANDAMENTO) ---")
+    logger.info(f"--- EXECUTANDO ENDPOINT /horas-por-secao (BASEADO EM ALOCAÇÕES EM ANDAMENTO) - ANO {ano} ---")
     try:
-        ano_corrente = datetime.now().year
         id_para_sigla = {1: "SGI", 2: "SEG", 3: "TIN"}
         
         result = { sigla: {"planejado": 0, "apontado": 0} for sigla in id_para_sigla.values() }
 
         # Query para horas planejadas (apenas alocações em andamento)
-        sql_planejado = text(f"""
+        sql_planejado = text("""
             SELECT p.secao_id, SUM(hp.horas_planejadas) as total
             FROM horas_planejadas_alocacao hp
             JOIN alocacao_recurso_projeto arp ON hp.alocacao_id = arp.id
             JOIN projeto p ON arp.projeto_id = p.id
-            WHERE hp.ano = {ano_corrente} 
+            WHERE hp.ano = :ano 
                 AND p.secao_id IN (1, 2, 3)
                 AND arp.status_alocacao_id = 3
             GROUP BY p.secao_id
         """)
-        db_planejado = (await db.execute(sql_planejado)).mappings().all()
+        db_planejado = (await db.execute(sql_planejado, {"ano": ano})).mappings().all()
         for row in db_planejado:
             sigla = id_para_sigla.get(row['secao_id'])
             if sigla:
                 result[sigla]["planejado"] = float(row['total'] or 0)
 
         # Query para horas apontadas (apenas projetos com alocações em andamento)
-        sql_apontado = text(f"""
+        sql_apontado = text("""
             SELECT p.secao_id, SUM(a.horas_apontadas) as total
             FROM apontamento a
             JOIN projeto p ON a.projeto_id = p.id
-            WHERE EXTRACT(YEAR FROM a.data_apontamento) = {ano_corrente} 
+            WHERE EXTRACT(YEAR FROM a.data_apontamento) = :ano 
                 AND p.secao_id IN (1, 2, 3)
                 AND EXISTS (
                     SELECT 1 FROM alocacao_recurso_projeto arp 
@@ -426,7 +447,7 @@ async def get_horas_por_secao(db: AsyncSession = Depends(get_async_db)):
                 )
             GROUP BY p.secao_id
         """)
-        db_apontado = (await db.execute(sql_apontado)).mappings().all()
+        db_apontado = (await db.execute(sql_apontado, {"ano": ano})).mappings().all()
         for row in db_apontado:
             sigla = id_para_sigla.get(row['secao_id'])
             if sigla:
@@ -444,13 +465,19 @@ async def get_horas_por_secao(db: AsyncSession = Depends(get_async_db)):
 
 
 @router.get("/status-projetos-por-secao", tags=["Dashboard"])
-async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)):
+async def get_status_projetos_por_secao(
+    ano: int = Query(2025, description="Ano de referência para filtrar os dados"),
+    db: AsyncSession = Depends(get_async_db)
+):
     """
     Retorna a contagem e o percentual de alocações por status para cada seção.
     Mostra TODOS os status das alocações e seus percentuais.
     Garante que todos os status ativos sejam retornados para cada seção, mesmo que com contagem zero.
+    
+    Args:
+        ano: Ano de referência para filtrar os dados (default: 2025)
     """
-    logger.info("--- EXECUTANDO ENDPOINT /status-projetos-por-secao (TODOS OS STATUS DAS ALOCAÇÕES) ---")
+    logger.info(f"--- EXECUTANDO ENDPOINT /status-projetos-por-secao (TODOS OS STATUS DAS ALOCAÇÕES) - ANO {ano} ---")
     try:
         id_para_sigla = {1: "SGI", 2: "SEG", 3: "TIN"}
         
@@ -485,6 +512,8 @@ async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)
                 WHERE
                     p.ativo = TRUE
                     AND p.secao_id IN (1, 2, 3)
+                    AND EXTRACT(YEAR FROM arp.data_inicio) <= :ano
+                    AND (arp.data_fim IS NULL OR EXTRACT(YEAR FROM arp.data_fim) >= :ano)
                 GROUP BY
                     p.secao_id, arp.status_alocacao_id
             )
@@ -500,7 +529,7 @@ async def get_status_projetos_por_secao(db: AsyncSession = Depends(get_async_db)
                 c.secao_id, c.status_nome
         """)
         
-        db_result = (await db.execute(sql_query)).mappings().all()
+        db_result = (await db.execute(sql_query, {"ano": ano})).mappings().all()
         logger.info(f"[RAW SQL RESULT] Resultado do banco (status alocações em andamento): {db_result}")
 
         for row in db_result:
