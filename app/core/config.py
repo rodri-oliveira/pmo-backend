@@ -53,14 +53,11 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         extra = "forbid"  # Não permite variáveis extras para segurança
 
-settings = Settings()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.DATABASE_URI = f"postgresql+asyncpg://{quote_plus(self.DB_USER)}:{quote_plus(self.DB_PASSWORD)}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
-# String de conexão para o banco de dados
-from urllib.parse import quote_plus
-password = quote_plus(settings.DB_PASSWORD)
-db_port = settings.DB_PORT if settings.DB_PORT else "40030"
-settings.DATABASE_URI = f"postgresql+asyncpg://{settings.DB_USER}:{password}@{settings.DB_HOST}:{db_port}/{settings.DB_NAME}"
-# A linha que imprimia a URI do banco de dados foi removida para limpar os logs.
+settings = Settings()
 
 # Defina a URL de conexão diretamente nas configurações do contexto
 def get_url():

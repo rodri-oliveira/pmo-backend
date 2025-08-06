@@ -1,10 +1,11 @@
 
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from app.db.session import get_async_db
 from app.db.orm_models import Secao, Equipe, Recurso, AlocacaoRecursoProjeto, Projeto
 from sqlalchemy.future import select
+import traceback
 
 router = APIRouter()
 
