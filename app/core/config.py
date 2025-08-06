@@ -35,7 +35,12 @@ class Settings(BaseSettings):
     
     # CORS
     # Allowed origins for CORS – include frontend dev servers
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:8000"]
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000", 
+        "http://localhost:3001", 
+        "http://localhost:8000",
+        "https://automacao-pmo-qas.weg.net"
+    ]
     
     # Configurações do Jira (lidos do .env)
     JIRA_BASE_URL: str = ""  # URL base do Jira Cloud

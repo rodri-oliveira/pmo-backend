@@ -4,5 +4,29 @@ metadata:
   name: ${K8S_CONFIG_MAP_NAME}
   namespace: ${K8S_NAMESPACE}
 data:
+  # Swagger Configuration
   SWAGGER_SERVERS_LIST: ${SWAGGER_SERVERS_LIST}
   
+  # Authentication - Keycloak
+  AUTH_KEYCLOAK_ID: "0a112d4c-41b2-4257-a834-bca92c4af089"
+  AUTH_KEYCLOAK_SECRET: "U2crdHqC1RmFW3o0y9n7Iqcn4wxMQR43"
+  AUTH_SECRET: "desenvolvimento-local-secreto"
+  NEXTAUTH_URL: "https://automacao-pmo-qas.weg.net"
+  AUTH_KEYCLOAK_ISSUER: "https://auth-qa.weg.net/realms/WEG"
+  NEXTAUTH_SECRET: "desenvolvimento-local-secreto"
+  NEXT_PUBLIC_BACKEND_URL: "https://automacao-pmo-qas.weg.net/backend/v1"
+  
+  # Database Configuration - QAS
+  DB_USER: "5e0dceda-d930-5742-a8d9-1f2d1ff22159"
+  DB_PASSWORD: "b@p5rk8&9BJRVEQ"
+  DB_HOST: "qas-postgresql-ap.weg.net"
+  DB_PORT: "40030"
+  DB_NAME: "automacaopmopostgre"
+  
+  # Security
+  SECRET_KEY: "desenvolvimento-local-secreto-super-forte"
+  
+  # Jira Configuration
+  JIRA_BASE_URL: "https://jiracloudweg.atlassian.net"
+  JIRA_USERNAME: "roliveira@weg.net"
+  JIRA_API_TOKEN: "cm9saXZlaXJhQHdlZy5uZXQ6QVRBVFQzeEZmR0YwZG0xUzdSSHNReGFSTDZkNmZiaEZUMFNxSjZLbE9ScWRXQzg1M1Jlb3hFMUpnM0dSeXRUVTN4dG5McjdGVWg3WWFKZ2M1RDZwd3J5bjhQc3lHVDNrSklyRUlyVHpmNF9lMGJYLUdJdmxOOFIxanhyMV9GVGhLY1h3V1N0dU9VbE5ucEY2eFlhclhfWFpRb3RhTzlXeFhVaXlIWkdHTDFaMEx5cmJ4VzVyNVYwPUYxMDA3MDNF"
