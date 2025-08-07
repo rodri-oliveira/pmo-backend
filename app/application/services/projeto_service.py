@@ -102,11 +102,11 @@ class ProjetoService:
 
         # Check for unique constraints: nome, codigo_empresa, jira_project_key
         if await self.projeto_repository.get_by_nome(projeto_create_dto.nome):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Projeto com nome \'{projeto_create_dto.nome}\' já existe.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Projeto com nome '{projeto_create_dto.nome}' já existe.")
         if projeto_create_dto.codigo_empresa and await self.projeto_repository.get_by_codigo_empresa(projeto_create_dto.codigo_empresa):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Projeto com Código Empresa \'{projeto_create_dto.codigo_empresa}\' já existe.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Projeto com Código Empresa '{projeto_create_dto.codigo_empresa}' já existe.")
         if projeto_create_dto.jira_project_key and await self.projeto_repository.get_by_jira_project_key(projeto_create_dto.jira_project_key):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Projeto com Jira Project Key \'{projeto_create_dto.jira_project_key}\' já existe.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Projeto com Jira Project Key '{projeto_create_dto.jira_project_key}' já existe.")
 
         projeto = await self.projeto_repository.create(projeto_create_dto)
         return ProjetoDTO.model_validate(projeto)
@@ -125,15 +125,15 @@ class ProjetoService:
         # Check for unique constraints if they are being changed
         if projeto_update_dto.nome and projeto_update_dto.nome != current_projeto.nome:
             if await self.projeto_repository.get_by_nome(projeto_update_dto.nome):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Outro projeto com nome \'{projeto_update_dto.nome}\' já existe.")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Outro projeto com nome '{projeto_update_dto.nome}' já existe.")
         
         if projeto_update_dto.codigo_empresa and projeto_update_dto.codigo_empresa != current_projeto.codigo_empresa:
             if await self.projeto_repository.get_by_codigo_empresa(projeto_update_dto.codigo_empresa):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Outro projeto com Código Empresa \'{projeto_update_dto.codigo_empresa}\' já existe.")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Outro projeto com Código Empresa '{projeto_update_dto.codigo_empresa}' já existe.")
 
         if projeto_update_dto.jira_project_key and projeto_update_dto.jira_project_key != current_projeto.jira_project_key:
             if await self.projeto_repository.get_by_jira_project_key(projeto_update_dto.jira_project_key):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Outro projeto com Jira Project Key \'{projeto_update_dto.jira_project_key}\' já existe.")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Outro projeto com Jira Project Key '{projeto_update_dto.jira_project_key}' já existe.")
 
         projeto = await self.projeto_repository.update(projeto_id, projeto_update_dto)
         if projeto:
@@ -143,7 +143,7 @@ class ProjetoService:
     async def get_projetos_detalhados(
         self,
         page: int = 1,
-        per_page: int = 10,
+        per_page: int = 100,
         search: Optional[str] = None,
         ativo: Optional[bool] = None,
         com_alocacoes: bool = True,
