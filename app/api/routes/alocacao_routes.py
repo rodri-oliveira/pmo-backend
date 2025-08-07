@@ -61,16 +61,6 @@ async def create_alocacao(
         HTTPException: Se houver erro na criação
     """
 
-@router.post("/alocacoes/", response_model=AlocacaoResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
-async def create_alocacao_duplicated_path(
-    alocacao: AlocacaoCreate,
-    db: AsyncSession = Depends(get_async_db)
-):
-    """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
-    logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
-    logging.info(f"Dados recebidos: {alocacao.dict()}")
-    # Reutilizar a mesma lógica do endpoint principal
-    return await create_alocacao(alocacao, db)
 
 from typing import List
 ...
@@ -176,35 +166,6 @@ async def list_alocacoes(
     else:
         return await service.list_all()
 
-@router.get("/alocacoes/", response_model=dict, include_in_schema=False)
-async def list_alocacoes_duplicated_path(
-    recurso_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do recurso"),
-    projeto_id: Optional[int] = Query(None, gt=0, description="Filtrar por ID do projeto"),
-    data_inicio: Optional[str] = Query(None, description="Filtrar por data inicial do período (formatos: YYYY-MM-DD ou DD/MM/YYYY)"),
-    data_fim: Optional[str] = Query(None, description="Filtrar por data final do período (formatos: YYYY-MM-DD ou DD/MM/YYYY)"),
-    db: AsyncSession = Depends(get_async_db)
-):
-    """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
-    logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
-    logging.info(f"Dados recebidos: recurso_id={recurso_id}, projeto_id={projeto_id}, data_inicio={data_inicio}, data_fim={data_fim}")
-    # Reutilizar a mesma lógica do endpoint principal
-    from datetime import datetime, date
-    def parse_date_field(v):
-        if v is None:
-            return v
-        if isinstance(v, date) and not isinstance(v, datetime):
-            return v
-        if isinstance(v, datetime):
-            return v.date()
-        if isinstance(v, str):
-            try:
-                return datetime.fromisoformat(v.replace('Z', '+00:00')).date()
-            except Exception:
-                pass
-            try:
-                return datetime.strptime(v, "%d/%m/%Y").date()
-            except Exception:
-                pass
         return v
     data_inicio_conv = parse_date_field(data_inicio)
     data_fim_conv = parse_date_field(data_fim)
@@ -261,16 +222,6 @@ async def get_alocacao(
             detail="Erro interno do servidor ao processar a solicitação"
         )
 
-@router.get("/alocacoes/{alocacao_id}", response_model=AlocacaoResponse, include_in_schema=False)
-async def get_alocacao_duplicated_path(
-    alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
-    db: AsyncSession = Depends(get_async_db)
-):
-    """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
-    logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
-    logging.info(f"Dados recebidos: alocacao_id={alocacao_id}")
-    # Reutilizar a mesma lógica do endpoint principal
-    return await get_alocacao(alocacao_id, db)
 
 @router.put("/{alocacao_id}", response_model=AlocacaoResponse)
 async def update_alocacao(
@@ -320,17 +271,6 @@ async def update_alocacao(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.put("/alocacoes/{alocacao_id}", response_model=AlocacaoResponse, include_in_schema=False)
-async def update_alocacao_duplicated_path(
-    alocacao_update: AlocacaoUpdate,
-    alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
-    db: AsyncSession = Depends(get_async_db)
-):
-    """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
-    logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
-    logging.info(f"Dados recebidos: alocacao_update={alocacao_update.dict()}, alocacao_id={alocacao_id}")
-    # Reutilizar a mesma lógica do endpoint principal
-    return await update_alocacao(alocacao_update, alocacao_id, db)
 
 @router.delete("/{alocacao_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_alocacao(
@@ -377,14 +317,3 @@ async def delete_alocacao(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro interno do servidor ao processar a solicitação"
         )
-
-@router.delete("/alocacoes/{alocacao_id}", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
-async def delete_alocacao_duplicated_path(
-    alocacao_id: int = Path(..., gt=0, description="ID da alocação"),
-    db: AsyncSession = Depends(get_async_db)
-):
-    """Endpoint para lidar com a URL duplicada /alocacoes/alocacoes/"""
-    logging.info("Endpoint duplicado /alocacoes/alocacoes/ foi chamado")
-    logging.info(f"Dados recebidos: alocacao_id={alocacao_id}")
-    # Reutilizar a mesma lógica do endpoint principal
-    return await delete_alocacao(alocacao_id, db)

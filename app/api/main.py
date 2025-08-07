@@ -38,7 +38,7 @@ api_router.include_router(equipe_routes.router, prefix="/equipes", tags=["Equipe
 api_router.include_router(recurso_routes.router, prefix="/recursos", tags=["Recursos"])
 api_router.include_router(status_projeto_routes.router, prefix="/status-projeto", tags=["Status de Projeto"])
 api_router.include_router(projeto_routes.router, prefix="/projetos", tags=["Projetos"])
-api_router.include_router(alocacao_routes.router, prefix="/alocacoes", tags=["Alocações"])
+
 api_router.include_router(horas_planejadas_routes.router, prefix="/horas-planejadas", tags=["Horas Planejadas"])
 api_router.include_router(apontamentos.router, prefix="/apontamentos", tags=["Apontamentos"])
 api_router.include_router(filtros.router, prefix="/filtros", tags=["Filtros"])
