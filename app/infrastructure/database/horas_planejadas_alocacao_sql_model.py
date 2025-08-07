@@ -14,4 +14,11 @@ class HorasPlanejadasAlocacaoSQL(Base):
     data_criacao = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     data_atualizacao = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
-    alocacao = relationship("AlocacaoRecursoProjetoSQL")
+    # Use passive_deletes to let the database handle cascade deletion and
+    # prevent SQLAlchemy from issuing an UPDATE that sets alocacao_id to NULL
+    # (which violates the NOT NULL constraint).
+    alocacao = relationship(
+        "AlocacaoRecursoProjetoSQL",
+        passive_deletes=True,
+        back_populates="horas_planejadas",
+    )

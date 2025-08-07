@@ -23,3 +23,13 @@ class AlocacaoRecursoProjetoSQL(Base):
     projeto = relationship("ProjetoSQL")
     equipe = relationship("EquipeSQL")
     status_alocacao = relationship("StatusProjetoSQL")
+
+    # Relacionamento com horas planejadas - garante que o SQLAlchemy NÃO faça UPDATE
+    # para NULL nos filhos durante a deleção da alocação. O banco (FK ON DELETE CASCADE)
+    # cuidará da remoção.
+    horas_planejadas = relationship(
+        "HorasPlanejadasAlocacaoSQL",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        back_populates="alocacao",
+    )

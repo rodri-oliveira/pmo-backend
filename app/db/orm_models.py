@@ -153,7 +153,12 @@ class AlocacaoRecursoProjeto(Base):
     projeto = relationship("Projeto", back_populates="alocacoes")
     equipe = relationship("Equipe")
     status_alocacao = relationship("StatusProjeto")
-    horas_planejadas = relationship("HorasPlanejadas", back_populates="alocacao")
+    # Evita que o SQLAlchemy faça UPDATE definindo alocacao_id=NULL antes do DELETE.
+    horas_planejadas = relationship(
+        "HorasPlanejadas",
+        back_populates="alocacao",
+        passive_deletes=True,
+    )
     
     # Restrições
     __table_args__ = (
@@ -194,7 +199,13 @@ class HorasPlanejadas(Base):
     data_atualizacao = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
     
     # Relacionamentos
-    alocacao = relationship("AlocacaoRecursoProjeto", back_populates="horas_planejadas")
+    # Relacionamento configurado com passive_deletes para que o SQLAlchemy
+    # deixe que o banco (ON DELETE CASCADE) remova os filhos sem emitir UPDATE.
+    alocacao = relationship(
+        "AlocacaoRecursoProjeto",
+        back_populates="horas_planejadas",
+        passive_deletes=True,
+    )
     
     # Restrições
     __table_args__ = (

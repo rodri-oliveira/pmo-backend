@@ -347,10 +347,19 @@ class AlocacaoService:
         
         logger.info(f"[ALOCACAO_DELETE] Alocação encontrada: recurso_id={alocacao.recurso_id}, projeto_id={alocacao.projeto_id}")
         
-        # Remover a alocação
-        logger.info(f"[ALOCACAO_DELETE] Executando exclusão no repositório...")
+        # Excluir horas planejadas associadas explicitamente para evitar violação de FK
+        from sqlalchemy import delete as sa_delete
+        from app.db.orm_models import HorasPlanejadas
+
+        logger.info(f"[ALOCACAO_DELETE] Removendo horas planejadas vinculadas à alocacao_id={alocacao_id}")
+        await self.db.execute(
+            sa_delete(HorasPlanejadas).where(HorasPlanejadas.alocacao_id == alocacao_id)
+        )
+
+        # Remover a alocação em seguida
+        logger.info(f"[ALOCACAO_DELETE] Executando exclusão da alocação no repositório...")
         await self.repository.delete(alocacao_id)
-        logger.info(f"[ALOCACAO_DELETE] Alocação ID {alocacao_id} excluída com sucesso")
+        logger.info(f"[ALOCACAO_DELETE] Alocação ID {alocacao_id} e horas planejadas associadas excluídas com sucesso")
     
     def _format_response(self, alocacao: AlocacaoRecursoProjeto) -> Dict[str, Any]:
         """
