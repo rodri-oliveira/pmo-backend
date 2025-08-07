@@ -75,7 +75,7 @@ Execute os seguintes comandos para preparar o banco de dados:
 Este projeto utiliza FastAPI. Para executar o servidor de desenvolvimento, utilize o comando:
 
 ```sh
-fastapi dev main.py
+python -m app.main
 ```
 
 A API estará disponível em [http://localhost:8000](http://localhost:8000).
