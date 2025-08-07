@@ -72,7 +72,7 @@ async def get_recurso(recurso_id: int, service: RecursoService = Depends(get_rec
 @router.get("/", response_model=dict)
 async def get_all_recursos(
     skip: int = 0,
-    limit: int = Query(default=100, ge=1, le=1000),
+    limit: int = Query(default=150, ge=1, le=1000),
     apenas_ativos: bool = False,
     equipe_id: Optional[int] = Query(default=None, description="Filtrar recursos por ID da equipe principal"),
     secao_id: Optional[int] = Query(default=None, description="Filtrar recursos por ID da seção"),
