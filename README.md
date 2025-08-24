@@ -35,16 +35,6 @@ POSTGRES_DB=automacaopmopostgre
 POSTGRES_PORT=5432
 ```
 
-### 2. Configuração do Banco de Dados (PostgreSQL)
-
-As credenciais de acesso para o ambiente de QAS são:
-
-- **Database:** `automacaopmopostgre`
-- **Username:** `5e0dceda-d930-5742-a8d9-1f2d1ff22159`
-- **Password:** `b@p5rk8&9BJRVEQ`
-- **Host:** `qas-postgresql-ap.weg.net`
-- **Port:** `40030`
-
 #### Comandos de Inicialização do Banco
 
 Execute os seguintes comandos para preparar o banco de dados:
